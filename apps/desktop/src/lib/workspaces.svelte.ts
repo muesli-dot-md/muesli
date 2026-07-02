@@ -1,0 +1,205 @@
+import {
+  currentIdentity,
+  serverLogin,
+  serverLogout,
+  hasToken,
+  listWorkspacesMerged,
+  registerLocalWorkspace,
+  registerClonedWorkspace,
+  cloneWorkspace,
+  promoteWorkspace as promoteWorkspaceCmd,
+  type Identity,
+  type WorkspaceView,
+} from "$lib/tauri";
+import { settings } from "$lib/settings.svelte";
+import { workspace } from "$lib/workspace.svelte";
+import { daemon } from "$lib/sync/daemon.svelte";
+import { ensureKeychainConsent, keychainGateAtLaunch } from "$lib/keychainConsent.svelte";
+
+class WorkspacesStore {
+  identity = $state<Identity | null>(null);
+  list = $state<WorkspaceView[]>([]);
+  loading = $state(false);
+  error = $state<string | null>(null);
+  cloning = $state(false);
+  busy = $state(false);
+
+  /** The active server URL, mirroring the existing Settings field. */
+  get activeServer(): string {
+    return settings.wsBase;
+  }
+
+  async refresh(): Promise<void> {
+    this.loading = true;
+    this.error = null;
+    try {
+      // Silent keychain gating (spec 2026-07-02 §3 launch row): refresh() also
+      // runs at startup, where the has_token read is the worst-case macOS
+      // Keychain prompt trigger — so this NEVER shows a dialog. Consent granted
+      // on a previous run → the gate reopens silently and the stored token
+      // signs us in exactly as before this feature. No consent → skip the
+      // keychain entirely and render the logged-out list; the explainer only
+      // ever appears from a user-initiated sign-in (login()).
+      const gateOpen = await keychainGateAtLaunch();
+      // Identity + the server workspace list are gated on whether we're logged
+      // in (a token exists), NOT on the editor's per-note `syncEnabled` flag —
+      // those are independent. `has_token` is a local Keychain check (no
+      // network), so a never-logged-in launch makes zero server calls.
+      if (gateOpen && (await hasToken(this.activeServer))) {
+        this.identity = await currentIdentity(this.activeServer).catch(() => null);
+        this.list = await listWorkspacesMerged(this.activeServer);
+      } else {
+        this.identity = null;
+        this.list = await listWorkspacesMerged(null);
+      }
+    } catch (e) {
+      this.error = String(e);
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  async login(): Promise<void> {
+    this.error = null;
+    // Keychain consent chokepoint (spec 2026-07-02 §3): sign-in reads and
+    // stores the Keychain token, so consent comes first — this is the ONLY
+    // path that can raise the explainer. On decline, abort quietly: no error,
+    // the surface stays usable, and the dialog re-appears at the next sign-in.
+    if (!(await ensureKeychainConsent())) return;
+    try {
+      // The gate may have JUST opened: a token stored before this feature
+      // existed (or by another install) is readable now — re-check before
+      // launching a browser device flow the user doesn't need (spec §3).
+      // A stale/invalid token falls through to the normal device flow.
+      if (await hasToken(this.activeServer)) {
+        const existing = await currentIdentity(this.activeServer).catch(() => null);
+        if (existing) {
+          this.identity = existing;
+          await this.refresh();
+          return;
+        }
+      }
+      this.identity = await serverLogin(this.activeServer);
+      await this.refresh();
+    } catch (e) {
+      this.error = String(e);
+    }
+  }
+
+  async logout(): Promise<void> {
+    try {
+      await serverLogout(this.activeServer);
+    } catch (e) {
+      this.error = String(e);
+    }
+    await daemon.stop();
+    this.identity = null;
+    await this.refresh();
+  }
+
+  /** Open an existing local folder as a local-only workspace (registers it). */
+  async openLocalFolder(path: string, name: string): Promise<void> {
+    await registerLocalWorkspace(path, name, path); // id = path for local-only
+    await daemon.stop();
+    await workspace.openWorkspace(path);
+    await this.refresh();
+  }
+
+  /**
+   * Open a workspace from the picker.
+   * - cloud-only → clone into `chosenPath`, register as cloned, start the daemon, open.
+   * - cloned / local-with-server → open, start the daemon for content sync.
+   * - local-only (no server) → open, no daemon (solo offline editing).
+   */
+  async openWorkspaceView(view: WorkspaceView, chosenPath?: string): Promise<void> {
+    this.error = null;
+    // cloud-only: clone first, into the folder the user picked.
+    if (!view.local_path && chosenPath && view.server) {
+      this.cloning = true;
+      try {
+        await cloneWorkspace(view.server, view.id, chosenPath);
+        await registerClonedWorkspace(view.id, view.server, view.name, chosenPath);
+      } catch (e) {
+        this.error = String(e);
+        this.cloning = false;
+        return;
+      }
+      this.cloning = false;
+      await this.openFolderWithSync(chosenPath, view.server, view.id);
+      await this.refresh();
+      return;
+    }
+    // Already-local (cloned or local-only).
+    if (view.local_path) {
+      await this.openFolderWithSync(view.local_path, view.server, view.id);
+    }
+  }
+
+  /**
+   * Finish a wizard-created workspace: register the (already-created, already-
+   * storage-bound) server workspace as cloned to `path`, open the folder, start
+   * the Tier-1 daemon. The wizard (CreateWorkspaceModal) owns the server-side
+   * creation now; this is only the local tail.
+   */
+  async finishRemoteWorkspace(workspaceId: string, name: string, path: string): Promise<void> {
+    if (!this.activeServer) return;
+    this.error = null;
+    this.busy = true;
+    try {
+      await registerClonedWorkspace(workspaceId, this.activeServer, name, path);
+      await this.openFolderWithSync(path, this.activeServer, workspaceId);
+      await this.refresh();
+    } catch (e) {
+      this.error = String(e);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /**
+   * Promote a LOCAL-ONLY workspace to a shared one: create the server workspace, swap the
+   * registry row (local-only id=path → cloned id=W), then open the SAME folder and go live.
+   * Requires a logged-in active server and a local path. Reuses the `busy` flag.
+   */
+  async promoteLocalToRemote(view: WorkspaceView): Promise<void> {
+    if (!this.identity || !this.activeServer || !view.local_path) return;
+    this.error = null;
+    this.busy = true;
+    try {
+      const id = await promoteWorkspaceCmd(view.id, this.activeServer, view.name, view.local_path);
+      await this.openFolderWithSync(view.local_path, this.activeServer, id);
+      await this.refresh();
+    } catch (e) {
+      this.error = String(e);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Restore a workspace by its folder path on startup: refresh the list, find the
+   *  matching view, and open it through the daemon-aware path. Returns false if no
+   *  registered workspace matches (caller falls back to a bare folder open). */
+  async openByPath(path: string): Promise<boolean> {
+    await this.refresh();
+    const view = this.list.find((v) => v.local_path === path);
+    if (!view) return false;
+    await this.openWorkspaceView(view);
+    return true;
+  }
+
+  /** Open a folder in the tree and, when it has a server, (re)start the Tier-1 daemon. */
+  private async openFolderWithSync(
+    path: string,
+    server: string | null,
+    workspaceId: string | null,
+  ): Promise<void> {
+    await workspace.openWorkspace(path);
+    if (server) {
+      await daemon.start(server, path, workspaceId); // start() stops any prior daemon
+    } else {
+      await daemon.stop();
+    }
+  }
+}
+
+export const workspaces = new WorkspacesStore();

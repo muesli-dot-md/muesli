@@ -1,0 +1,58 @@
+{
+  "name": "@muesli/workspace-setup",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./WorkspaceWizard.svelte": {
+      "svelte": "./src/WorkspaceWizard.svelte",
+      "default": "./src/WorkspaceWizard.svelte"
+    },
+    "./StepConnectSharePoint.svelte": {
+      "svelte": "./src/StepConnectSharePoint.svelte",
+      "default": "./src/StepConnectSharePoint.svelte"
+    },
+    "./OnboardingFlow.svelte": {
+      "svelte": "./src/OnboardingFlow.svelte",
+      "default": "./src/OnboardingFlow.svelte"
+    },
+    "./onboarding": {
+      "types": "./src/onboarding.ts",
+      "default": "./src/onboarding.ts"
+    },
+    "./sharepoint": {
+      "types": "./src/sharepoint.ts",
+      "default": "./src/sharepoint.ts"
+    },
+    "./host": {
+      "types": "./src/host.ts",
+      "default": "./src/host.ts"
+    },
+    "./machine": {
+      "types": "./src/machine.ts",
+      "default": "./src/machine.ts"
+    },
+    "./copy": {
+      "types": "./src/copy.ts",
+      "default": "./src/copy.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.7.1",
+    "typescript": "~5.7.0",
+    "vitest": "^4.1.9"
+  }
+}

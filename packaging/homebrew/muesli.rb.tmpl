@@ -1,0 +1,41 @@
+# Template for the muesli Homebrew formula. The cli-release.yml workflow
+# renders this ({{…}} placeholders → version, tag, per-target sha256 from
+# SHA256SUMS) and pushes the result to muesli-dot-md/homebrew-tap as
+# Formula/muesli.rb on every CLI release. Do not edit the tap copy by hand —
+# edit this template.
+class Muesli < Formula
+  desc "Live multiplayer for plain markdown files — the muesli local agent"
+  homepage "https://muesli.md"
+  version "{{VERSION}}"
+  license "AGPL-3.0-only"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/muesli-dot-md/muesli/releases/download/{{TAG}}/muesli-aarch64-apple-darwin.tar.gz"
+      sha256 "{{SHA_MAC_ARM}}"
+    end
+    on_intel do
+      url "https://github.com/muesli-dot-md/muesli/releases/download/{{TAG}}/muesli-x86_64-apple-darwin.tar.gz"
+      sha256 "{{SHA_MAC_X64}}"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/muesli-dot-md/muesli/releases/download/{{TAG}}/muesli-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "{{SHA_LINUX_ARM}}"
+    end
+    on_intel do
+      url "https://github.com/muesli-dot-md/muesli/releases/download/{{TAG}}/muesli-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "{{SHA_LINUX_X64}}"
+    end
+  end
+
+  def install
+    bin.install "muesli"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/muesli --version")
+  end
+end

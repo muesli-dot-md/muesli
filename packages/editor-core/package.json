@@ -1,0 +1,103 @@
+{
+  "name": "@muesli/editor-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./render": {
+      "types": "./src/render.ts",
+      "svelte": "./src/render.ts",
+      "default": "./src/render.ts"
+    },
+    "./mermaid": {
+      "types": "./src/mermaid.ts",
+      "svelte": "./src/mermaid.ts",
+      "default": "./src/mermaid.ts"
+    },
+    "./zoom": {
+      "types": "./src/zoom.ts",
+      "svelte": "./src/zoom.ts",
+      "default": "./src/zoom.ts"
+    },
+    "./scrollPastEnd": {
+      "types": "./src/scrollPastEnd.ts",
+      "svelte": "./src/scrollPastEnd.ts",
+      "default": "./src/scrollPastEnd.ts"
+    },
+    "./mermaidInteraction": {
+      "types": "./src/mermaidInteraction.ts",
+      "svelte": "./src/mermaidInteraction.ts",
+      "default": "./src/mermaidInteraction.ts"
+    },
+    "./tableModel": {
+      "types": "./src/tableModel.ts",
+      "svelte": "./src/tableModel.ts",
+      "default": "./src/tableModel.ts"
+    },
+    "./tableInteraction": {
+      "types": "./src/tableInteraction.ts",
+      "svelte": "./src/tableInteraction.ts",
+      "default": "./src/tableInteraction.ts"
+    },
+    "./offsets": {
+      "types": "./src/offsets.ts",
+      "svelte": "./src/offsets.ts",
+      "default": "./src/offsets.ts"
+    },
+    "./docExport": {
+      "types": "./src/docExport.ts",
+      "svelte": "./src/docExport.ts",
+      "default": "./src/docExport.ts"
+    },
+    "./annotations": {
+      "types": "./src/annotations.ts",
+      "svelte": "./src/annotations.ts",
+      "default": "./src/annotations.ts"
+    },
+    "./annotationsTheme": {
+      "types": "./src/annotationsTheme.ts",
+      "svelte": "./src/annotationsTheme.ts",
+      "default": "./src/annotationsTheme.ts"
+    },
+    "./mdCommands": {
+      "types": "./src/mdCommands.ts",
+      "svelte": "./src/mdCommands.ts",
+      "default": "./src/mdCommands.ts"
+    },
+    "./frontmatter": {
+      "types": "./src/frontmatter.ts",
+      "svelte": "./src/frontmatter.ts",
+      "default": "./src/frontmatter.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.0",
+    "katex": "^0.17.0",
+    "marked": "^15.0.0",
+    "mermaid": "^11.15.0"
+  },
+  "peerDependencies": {
+    "@codemirror/language": "^6.10.0",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.36.0"
+  },
+  "devDependencies": {
+    "@codemirror/language": "^6.10.0",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.36.0",
+    "@types/jsdom": "^28.0.3",
+    "@types/katex": "^0.16.8",
+    "jsdom": "^29.1.1",
+    "typescript": "~5.7.0",
+    "vitest": "^4.1.9"
+  }
+}

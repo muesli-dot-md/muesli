@@ -1,0 +1,1081 @@
+@import "tailwindcss";
+/* Tailwind v4 scans this app's own source by default but NOT the shared
+   workspace package. The editor widgets in packages/editor-core/ build DOM with
+   Tailwind/daisyUI utility class strings (e.g. active:scale-[0.96], bg-base-100,
+   badge badge-sm, menu-sm); without this directive any utility used ONLY there is
+   silently dropped from the compiled CSS and the widget renders unstyled. Scan
+   the shared package's source so its utility classes reliably compile. Path is
+   relative to THIS file (apps/web/src/app.css). */
+@source "../../../packages/editor-core/src/**/*.{ts,svelte}";
+/* Same reasoning for the workspace-creation wizard package: its ChoiceCard /
+   StepHeader / step components use Tailwind/daisyUI utility classes but live
+   outside this app's own source tree. */
+@source "../../../packages/workspace-setup/src/**/*.{ts,svelte}";
+/* Canonical arc tokens (colors + depth) live in the repo-root shared file, so a
+   single edit there reskins BOTH the webapp and the desktop app. The theme
+   blocks below keep their NAMES (muesli / muesli-dark) and point --color-* at
+   the shared --arc-* vars. The macOS-only window-vibrancy --floor-tint is
+   intentionally excluded (no web equivalent). */
+@import "../../../shared/palette.css";
+@plugin "daisyui" {
+  themes: false; /* only the custom muesli pair below */
+}
+
+/* Sentient — the brand's display serif, same file the marketing site ships
+   (website/public/fonts). Used ONLY for the wordmark (.wordmark below);
+   `swap` is fine since a tiny logo swap has no CLS worth fighting. */
+@font-face {
+  font-family: "Sentient";
+  font-style: normal;
+  font-weight: 200 700;
+  font-display: swap;
+  src: url("/fonts/sentient-latin.woff2") format("woff2");
+}
+
+/* The wordmark: lowercase "muesli" in Sentient at regular weight, matching the
+   site's nav (.wordmark-serif there). Sized by the usual text-* utilities. */
+.wordmark {
+  font-family: "Sentient", "Iowan Old Style", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   ║  MUESLI COLOR THEME — the color VALUES now live in shared/palette.css.   ║
+   ║                                                                          ║
+   ║  Two daisyUI 5 themes: "muesli" (light, the default) and "muesli-dark"   ║
+   ║  (applied when the OS prefers dark, or when the user picks Dark in the   ║
+   ║  account menu — see theme.svelte.ts; index.html sets data-theme before   ║
+   ║  first paint). Every component color derives from these tokens, which     ║
+   ║  resolve to the shared "arc" palette (periwinkle/lavender + layered      ║
+   ║  depth). If you change --arc-base-200 in the shared file, also update     ║
+   ║  the first-paint pins in index.html so a hard refresh doesn't flash.     ║
+   ════════════════════════════════════════════════════════════════════════════ */
+
+@plugin "daisyui/theme" {
+  name: "muesli";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+  --color-base-100: var(--arc-base-100);
+  --color-base-200: var(--arc-base-200);
+  --color-base-300: var(--arc-base-300);
+  --color-base-content: var(--arc-base-content);
+  --color-primary: var(--arc-primary);
+  --color-primary-content: var(--arc-primary-content);
+  --color-secondary: var(--arc-secondary);
+  --color-secondary-content: var(--arc-secondary-content);
+  --color-accent: var(--arc-accent);
+  --color-accent-content: var(--arc-accent-content);
+  --color-neutral: var(--arc-neutral);
+  --color-neutral-content: var(--arc-neutral-content);
+  --color-info: var(--arc-info);
+  --color-info-content: var(--arc-info-content);
+  --color-success: var(--arc-success);
+  --color-success-content: var(--arc-success-content);
+  --color-warning: var(--arc-warning);
+  --color-warning-content: var(--arc-warning-content);
+  --color-error: var(--arc-error);
+  --color-error-content: var(--arc-error-content);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem; /* 12px cards, menus, modals */
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0; /* flat: no daisyUI inner shadows — depth comes from --shadow-* */
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: "muesli-dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: var(--arc-base-100);
+  --color-base-200: var(--arc-base-200);
+  --color-base-300: var(--arc-base-300);
+  --color-base-content: var(--arc-base-content);
+  --color-primary: var(--arc-primary);
+  --color-primary-content: var(--arc-primary-content);
+  --color-secondary: var(--arc-secondary);
+  --color-secondary-content: var(--arc-secondary-content);
+  --color-accent: var(--arc-accent);
+  --color-accent-content: var(--arc-accent-content);
+  --color-neutral: var(--arc-neutral);
+  --color-neutral-content: var(--arc-neutral-content);
+  --color-info: var(--arc-info);
+  --color-info-content: var(--arc-info-content);
+  --color-success: var(--arc-success);
+  --color-success-content: var(--arc-success-content);
+  --color-warning: var(--arc-warning);
+  --color-warning-content: var(--arc-warning-content);
+  --color-error: var(--arc-error);
+  --color-error-content: var(--arc-error-content);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* Both screens render on bg-base-200; keep the page itself (overscroll, gaps
+   while a chunk loads) on the same token so live theme switches recolor it. */
+html {
+  background-color: var(--color-base-200);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Webapp accent override (item 2). The shared palette ships periwinkle as
+   --arc-primary (the desktop keeps it). The webapp instead points its
+   --color-primary at a user-selectable accent that DEFAULTS to a restrained
+   neutral slate gray. accent.svelte.ts sets --accent-primary* on the document
+   root from the chosen preset; the static defaults below (gray) avoid a flash
+   before the store applies. This layer comes after the theme blocks and shares
+   their selector specificity, so source order makes it win.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Default accent = gray (matches the "gray" preset in accent.svelte.ts). */
+  --accent-primary: oklch(0.44 0.012 285);
+  --accent-primary-content: oklch(0.98 0.005 285);
+  --accent-primary-dark: oklch(0.72 0.012 285);
+  --accent-primary-content-dark: oklch(0.18 0.006 285);
+}
+[data-theme="muesli"] {
+  --color-primary: var(--accent-primary);
+  --color-primary-content: var(--accent-primary-content);
+}
+[data-theme="muesli-dark"] {
+  --color-primary: var(--accent-primary-dark);
+  --color-primary-content: var(--accent-primary-content-dark);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Neutral-gray background floor (item 2 addendum). The shared arc palette tints
+   every neutral with the periwinkle hue (~285), which made the floor and the
+   (formerly periwinkle) buttons blend into one purple. The webapp strips that
+   tint from its BACKGROUND surfaces — base-200 (floor) and base-300 (borders),
+   plus the hue-carrying depth tokens — to a clean neutral gray, while base-100
+   cards stay white. The button accent stays its own thing (gray default or the
+   chosen preset) and reads distinct from the floor; soft --shadow-* separates
+   surfaces instead of the tint. Scoped to the muesli themes so the desktop
+   (arc-light/arc-dark) keeps its lavender.
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="muesli"] {
+  --color-base-100: oklch(1 0 0); /* cards stay pure white */
+  --color-base-200: oklch(0.967 0 0); /* floor / page = neutral gray */
+  --color-base-300: oklch(0.9 0 0); /* borders / recessed = neutral */
+  --color-base-content: oklch(0.25 0.004 285);
+  --lift: oklch(1 0 0); /* active pill = white, lifted by shadow */
+  --arc-border: oklch(0.9 0 0);
+  --text-muted: oklch(0.52 0.004 285);
+  --code-bg: oklch(0.965 0 0);
+  --row-hover: oklch(0.93 0 0); /* opaque neutral veil over the gray floor */
+}
+[data-theme="muesli-dark"] {
+  --color-base-100: oklch(0.215 0.002 285); /* cards (lightest neutral) */
+  --color-base-200: oklch(0.165 0.001 285); /* floor / near-black neutral */
+  --color-base-300: oklch(0.3 0.002 285); /* borders / recessed */
+  --color-base-content: oklch(0.92 0.003 285);
+  --lift: oklch(0.315 0.003 285);
+  --arc-border: oklch(0.3 0.002 285);
+  --text-muted: oklch(0.64 0.003 285);
+  --code-bg: oklch(0.25 0.002 285);
+  --row-hover: rgba(255, 255, 255, 0.06);
+}
+
+/* --- Interaction polish (impeccable pass) ----------------------------------------
+   One motion vocabulary: quick ease-out pops for floating surfaces, 150ms color
+   transitions on interactive rows/buttons. State, not decoration. */
+@keyframes muesli-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dropdown-content,
+.muesli-pop {
+  animation: muesli-pop 130ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+tr,
+.menu button,
+nav button {
+  transition:
+    background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-content,
+  .muesli-pop {
+    animation: none;
+  }
+  tr,
+  .menu button,
+  nav button {
+    transition: none;
+  }
+}
+
+/* Keyboard focus: themed, inset so it survives rounded rows and table edges. */
+tr:focus-visible,
+nav button:focus-visible,
+[role="option"]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Arc depth system (shared with the desktop app via shared/palette.css).
+   Active surfaces lift to a near-white pill (--lift + --shadow-lift); hover is
+   a translucent veil (--row-hover); cards/popovers float on --shadow-card;
+   overlays sit on --overlay + --shadow-overlay. Reused by the workspaces
+   sidebar, the file tree, and the controls toolbar.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Tactile press on every button — fast scale, named property (never `all`). */
+.btn,
+.arc-tap {
+  transition-property: background-color, border-color, color, box-shadow, scale;
+  transition-duration: 0.14s, 0.14s, 0.14s, 0.14s, 0.09s;
+  transition-timing-function: ease;
+}
+.btn:active:not(:disabled):not(.btn-disabled),
+.arc-tap:active:not(:disabled) {
+  scale: 0.96;
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn:active:not(:disabled):not(.btn-disabled),
+  .arc-tap:active:not(:disabled) {
+    scale: 1;
+  }
+}
+
+/* Arc-style file-tree / workspace rows: a full-width click target whose inner
+   pill carries the highlight. Inactive flat on the floor, active lifted. */
+.tree-row {
+  display: inline-flex;
+  max-width: 100%;
+  border-radius: var(--radius-selector);
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 500;
+  box-shadow: none;
+  transition:
+    background-color 0.12s ease,
+    box-shadow 0.12s ease,
+    color 0.12s ease;
+}
+.tree-row-wrap:hover .tree-row:not(.active),
+/* Standalone nav rows (e.g. "My documents" / "Graph") aren't inside a
+   .tree-row-wrap, so they darken on their own hover — matching Multica, where
+   every sidebar nav row takes the same neutral veil. */
+.tree-row:not(.active):hover {
+  background: var(--row-hover);
+  color: var(--color-base-content);
+}
+.tree-row.active {
+  background: var(--lift);
+  color: var(--color-base-content);
+  font-weight: 600;
+  box-shadow: var(--shadow-lift);
+}
+/* Drop target: while dragging a file/folder over a folder, the folder row
+   highlights to show it will receive the drop. */
+.tree-row-wrap.drop-target {
+  background: color-mix(in oklch, var(--color-primary) 16%, transparent);
+  border-radius: var(--radius-selector);
+  box-shadow: inset 0 0 0 1.5px var(--color-primary);
+}
+.tree-row-wrap.drop-target .tree-row {
+  color: var(--color-base-content);
+}
+
+/* Arc floating-pill rows for the workspace sidebar list. */
+.ws-row {
+  border-radius: var(--radius-selector);
+  color: var(--text-muted);
+  font-weight: 500;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+.ws-row:hover:not(.active) {
+  background: var(--row-hover);
+  color: var(--color-base-content);
+}
+.ws-row.active {
+  background: var(--lift);
+  color: var(--color-base-content);
+  font-weight: 600;
+  box-shadow: var(--shadow-lift);
+}
+
+/* Floating cards / popovers: soft layered shadow, not a hard border. */
+.arc-card {
+  background: var(--color-base-100);
+  border-radius: var(--radius-box);
+  box-shadow: var(--shadow-card);
+}
+/* Overlays (modals, palettes, dropdowns): deeper float on the overlay surface. */
+.arc-overlay {
+  background: var(--overlay);
+  border-radius: var(--radius-overlay);
+  box-shadow: var(--shadow-overlay);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   No chunky / double borders (polish pass). daisyUI's default .btn darkens its
+   border toward black and adds a drop shadow, and .input/.textarea/.select draw
+   a heavy focus ring on top of their 1px border — together they read as a thick
+   double outline (most visible on the New file / New folder modal inputs).
+   Refine everything to a quiet 1px hairline + soft tint, shadows over borders.
+   Ported from the desktop app so both apps read identically.
+   ────────────────────────────────────────────────────────────────────────── */
+.btn:focus,
+.btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.btn {
+  --btn-border: var(--arc-border);
+  --btn-shadow: none;
+  box-shadow: none;
+  border-color: var(--arc-border);
+}
+/* Plain neutral buttons (the toolbar New file / New folder, modal actions):
+   daisyUI paints these on base-200 — the same neutral gray as the floor — so
+   they vanish into it. Lift them onto the white card surface with a soft
+   layered shadow (shadows over borders) so interactive chips clearly stand out
+   from the background. Ghost/colored/active variants keep their own treatment. */
+.btn:not(.btn-ghost):not(.btn-primary):not(.btn-secondary):not(.btn-accent):not(.btn-info):not(
+    .btn-success
+  ):not(.btn-warning):not(.btn-error):not(.btn-neutral):not(.btn-active):not(.btn-link) {
+  --btn-bg: var(--color-base-100);
+  background-color: var(--color-base-100);
+  border-color: var(--arc-border);
+  box-shadow: var(--shadow-hover);
+}
+.btn:not(.btn-ghost):not(.btn-primary):not(.btn-secondary):not(.btn-accent):not(.btn-info):not(
+    .btn-success
+  ):not(.btn-warning):not(.btn-error):not(.btn-neutral):not(.btn-active):not(.btn-link):hover {
+  background-color: var(--color-base-100);
+  /* gentle lift on hover (not the full card shadow — that read as too heavy) */
+  box-shadow: var(--shadow-lift);
+}
+.btn-outline,
+.btn-outline:focus-visible {
+  --btn-border: var(--color-base-300);
+  border-color: var(--color-base-300);
+  background-color: transparent;
+}
+.btn-outline:hover,
+.btn-outline.btn-active,
+.btn-outline:active {
+  --btn-border: var(--color-base-300);
+  border-color: var(--color-base-300);
+  background-color: color-mix(in oklch, var(--color-base-content) 9%, transparent);
+  color: var(--color-base-content);
+}
+/* Filled accent buttons: match the border to the fill (no contrasting dark
+   hairline) and drop the heavy shadow. */
+.btn-primary,
+.btn-neutral,
+.btn-secondary,
+.btn-accent,
+.btn-info,
+.btn-success,
+.btn-warning,
+.btn-error {
+  --btn-border: var(--btn-color);
+  border-color: var(--btn-color);
+}
+.btn-primary:hover,
+.btn-neutral:hover,
+.btn-secondary:hover,
+.btn-accent:hover,
+.btn-info:hover,
+.btn-success:hover,
+.btn-warning:hover,
+.btn-error:hover {
+  --btn-border: var(--btn-color);
+  border-color: var(--btn-color);
+  background-color: color-mix(in oklch, var(--btn-color) 88%, #000);
+}
+.btn-ghost {
+  border-color: transparent;
+}
+.btn-ghost:hover,
+.btn-ghost:focus-visible {
+  background-color: color-mix(in oklch, var(--color-base-content) 9%, transparent);
+  border-color: transparent;
+}
+.btn-ghost.btn-active,
+.btn-ghost:active {
+  background-color: color-mix(in oklch, var(--color-base-content) 14%, transparent);
+  border-color: transparent;
+}
+/* Dropdown menu items: a soft, clearly-visible hover tint (light neutral wash),
+   rounded to match the menu radius. Selected rows are marked separately (a
+   solid fill + a primary left-accent, see .menu-item-selected) so hover and
+   selected never look the same — important since the default accent is gray.
+   Named transition (never `all`). */
+.menu li > button {
+  border-radius: var(--radius-field);
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+.menu li > button:hover,
+.menu li > button:focus-visible {
+  background-color: color-mix(in oklch, var(--color-base-content) 11%, transparent);
+  color: var(--color-base-content);
+  outline: none;
+}
+.menu li > .menu-active {
+  background-color: color-mix(in oklch, var(--color-base-content) 14%, transparent);
+}
+
+/* A selected menu row (e.g. the current sort key/order): solid base-200 fill
+   with a primary left-accent bar so it reads as "chosen" distinctly from a
+   hovered row. Hover deepens it slightly without losing the accent. */
+.menu-item-selected {
+  background-color: var(--color-base-200);
+  box-shadow: inset 3px 0 0 var(--color-primary);
+  font-weight: 600;
+}
+.menu li > button.menu-item-selected:hover {
+  background-color: color-mix(in oklch, var(--color-base-content) 12%, var(--color-base-200));
+}
+/* Inputs / textareas / selects: a quiet 1px hairline always, and on focus just
+   a subtle primary-tinted border — never a heavy focus ring on top of the
+   existing border (that doubling was the "thick black border" on modal inputs). */
+.input,
+.textarea,
+.select {
+  border-width: 1px;
+  border-color: var(--color-base-300);
+  box-shadow: none;
+}
+.input:focus,
+.input:focus-within,
+.input:focus-visible,
+.textarea:focus,
+.textarea:focus-within,
+.select:focus,
+.select:focus-within,
+.select:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border-color: color-mix(in oklch, var(--color-primary) 45%, var(--color-base-300));
+}
+.input:focus > input,
+.input :focus {
+  outline: none;
+}
+/* daisyUI toggle: explicit faint track + 1px hairline so it's discoverable on
+   the white settings panel without reading as a heavy border. */
+.toggle {
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 22%, transparent);
+  background-color: color-mix(in oklch, var(--color-base-content) 10%, transparent);
+}
+
+/* y-codemirror.next remote selection styling */
+.cm-ySelectionInfo {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  opacity: 1 !important;
+}
+
+.cm-editor {
+  height: 100%;
+  font-size: 15px;
+}
+
+/* Live preview (editor redesign §Core): the document reads as prose; code
+   contexts opt back into monospace via the .cm-live-* line/mark classes. */
+.cm-editor .cm-content {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.6;
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+/* --- Live-preview decorations (src/livePreview/, editor redesign §Core) ---
+   Typography mirrors .prose-muesli below so the live document matches the old
+   Preview pane's look. Heading sizing rides on LINE decorations that apply
+   whether or not the cursor is on the line, so revealing the `#` markers
+   never changes the line height while typing. */
+
+/* CodeMirror's defaultHighlightStyle underlines markdown headings (tags.heading);
+   our live preview sizes them instead — underlined headings read as links. */
+.cm-line[class*="cm-live-h"] span {
+  text-decoration: none;
+}
+
+.cm-line.cm-live-h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  padding-top: 0.6rem;
+  padding-bottom: 0.2rem;
+}
+.cm-line.cm-live-h2 {
+  font-size: 1.3rem;
+  font-weight: 650;
+  padding-top: 0.5rem;
+  padding-bottom: 0.15rem;
+}
+.cm-line.cm-live-h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding-top: 0.4rem;
+  padding-bottom: 0.1rem;
+}
+.cm-line.cm-live-h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  padding-top: 0.3rem;
+}
+.cm-line.cm-live-h5 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding-top: 0.3rem;
+}
+.cm-line.cm-live-h6 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  opacity: 0.85;
+  padding-top: 0.3rem;
+}
+.cm-line.cm-live-setext-mark {
+  opacity: 0.4;
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.cm-live-strong {
+  font-weight: 700;
+}
+.cm-live-em {
+  font-style: italic;
+}
+.cm-live-strike {
+  text-decoration: line-through;
+}
+.cm-live-mark {
+  background: var(--color-warning, oklch(0.9 0.16 95));
+  color: var(--color-warning-content, inherit);
+  border-radius: 3px;
+  padding: 0.05rem 0.15rem;
+}
+.cm-live-inline-math {
+  white-space: nowrap;
+}
+.cm-live-inline-math .katex {
+  font-size: 1em;
+}
+.cm-live-inline-code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 0.05rem 0.25rem;
+  font-size: 0.85em;
+}
+
+.cm-live-link {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+.cm-live-wikilink {
+  color: var(--color-accent, oklch(0.6 0.18 180));
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  font-weight: 500;
+}
+.cm-live-image-alt {
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.cm-live-list-mark {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+input.cm-live-task {
+  vertical-align: -0.15em;
+  margin-right: 0.15rem;
+  cursor: pointer;
+}
+
+.cm-line.cm-live-blockquote {
+  border-left: 3px solid var(--color-base-300);
+  padding-left: 0.8rem;
+  color: oklch(from var(--color-base-content) l c h / 0.7);
+}
+
+.cm-line.cm-live-codeline,
+.cm-line.cm-live-tableline,
+.cm-line.cm-live-frontmatter {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+.cm-line.cm-live-codeline {
+  background: var(--code-bg);
+}
+.cm-line.cm-live-codefence {
+  color: oklch(from var(--color-base-content) l c h / 0.45);
+}
+.cm-line.cm-live-frontmatter {
+  opacity: 0.6;
+}
+
+/* Block widgets (tables, math, mermaid, images, hr) — prose-muesli already
+   styles their innards; this is just spacing + affordances. */
+.cm-live-widget {
+  padding: 0.1rem 0;
+}
+.cm-live-widget.cm-live-hr hr {
+  margin: 0.6rem 0;
+}
+.cm-live-widget.cm-live-image img {
+  max-width: 100%;
+  max-height: 360px;
+  border-radius: 6px;
+  margin: 0.25rem 0;
+}
+.cm-live-widget.cm-live-image-broken img {
+  min-height: 1.5rem;
+}
+.cm-live-widget.cm-live-table td p,
+.cm-live-widget.cm-live-table th p {
+  margin: 0;
+}
+.cm-live-widget.cm-live-math .katex-display {
+  margin: 0.4rem 0;
+}
+
+/* --- WYSIWYG tables (sub-project ⑥ B) ---
+   Editable cells, a right-click structural context menu (insert/delete rows &
+   columns), transient column resize and formula value / error chips. daisyUI
+   semantic tokens only; concentric radius. */
+.cm-live-table.cm-live-table-wysiwyg {
+  position: relative;
+}
+.cm-live-table .cm-live-table-grid {
+  position: relative;
+}
+.cm-live-table .cm-live-cell-editable {
+  position: relative;
+  outline: none;
+  cursor: text;
+}
+.cm-live-table .cm-live-cell-editable:hover {
+  background: oklch(from var(--color-base-content) l c h / 0.04);
+}
+.cm-live-table .cm-live-cell-editable[contenteditable] {
+  background: var(--color-base-100);
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+  border-radius: var(--radius-field, 0.25rem);
+}
+/* Formula cells: computed value, and the malformed-formula error chip. */
+.cm-live-table .cm-live-formula-value {
+  font-variant-numeric: tabular-nums;
+}
+.cm-live-table .cm-live-formula-error {
+  cursor: help;
+}
+
+/* Transient column resize handles. One per column, a child of the <table>
+   (.cm-live-table-grid, position:relative), straddling the column's right edge
+   and spanning the FULL table height so a grab works over ANY row — not just the
+   header strip (the old header-only handle was the inconsistent-resize bug). An
+   ~8px invisible hit zone centered on the border with a subtle hover affordance. */
+.cm-live-table .cm-live-table-grid {
+  position: relative;
+}
+.cm-live-table .cm-live-col-resize {
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  margin-left: -4px; /* center the hit zone on the column border */
+  cursor: col-resize;
+  z-index: 3;
+  touch-action: none;
+  user-select: none;
+}
+/* A 2px visible affordance centered in the 8px hit zone, shown on hover/active. */
+.cm-live-table .cm-live-col-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background 0.1s ease;
+}
+.cm-live-table .cm-live-col-resize:hover::after,
+.cm-live-table .cm-live-col-resize-active::after {
+  background: oklch(from var(--color-primary) l c h / 0.55);
+}
+
+/* Quip-style right-click structural context menu. Appended to <body> at the
+   pointer (position:fixed, set inline) so the editor's overflow never clips it,
+   so it is NOT nested under .cm-live-table. daisyUI menu tokens; concentric
+   radius, overlay shadow, ≥adequate hit areas. */
+.cm-live-table-menu {
+  min-width: 12rem;
+  padding: 0.25rem;
+  background: var(--color-base-100);
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-box, 0.5rem);
+  box-shadow: var(--shadow-overlay, 0 10px 30px oklch(0% 0 0 / 0.18));
+}
+.cm-live-table-menu .cm-live-table-menu-item {
+  display: block;
+  width: 100%;
+  text-align: start;
+  padding: 0.4rem 0.6rem;
+  min-height: 2rem;
+  border-radius: var(--radius-field, 0.25rem);
+  color: var(--color-base-content);
+  transition:
+    background-color 120ms ease,
+    transform 80ms ease;
+}
+.cm-live-table-menu .cm-live-table-menu-item:hover {
+  background: var(--color-base-200);
+}
+/* A subtle divider between the insert items and the delete items. */
+.cm-live-table-menu .cm-live-table-menu-sep {
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--color-base-300);
+}
+
+/* --- Docs-style centered sheet (editor redesign §Layout) ---
+   The page is base-200; the document itself is a centered base-100 "sheet".
+   The sheet is the CodeMirror content element so selection, decorations and
+   remote cursors all live inside it; the scroller keeps the page color. */
+.doc-sheet .cm-editor {
+  background: transparent;
+}
+.doc-sheet .cm-scroller {
+  padding: 1.25rem 1.5rem 35vh;
+}
+.doc-sheet .cm-content {
+  max-width: 50rem;
+  margin: 0 auto;
+  background: var(--color-base-100);
+  border: 1px solid var(--color-base-300);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.07);
+  padding: 2.5rem 3.5rem 4rem;
+}
+@media (max-width: 64rem) {
+  .doc-sheet .cm-content {
+    padding: 1.5rem 1.5rem 3rem;
+  }
+}
+
+/* --- Collaboration decorations (ADR 0019) --- */
+
+/* Comment anchors: subtle highlight, like a faint marker pen. Clickable —
+   routes to the thread card in the sidebar (annotations.ts). */
+.cm-comment-anchor {
+  background: oklch(0.85 0.12 90 / 0.35);
+  border-bottom: 2px solid oklch(0.75 0.15 85 / 0.7);
+  cursor: pointer;
+}
+
+/* Sidebar thread card flash after clicking its highlight in the editor */
+.muesli-thread-flash {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -1px;
+  transition: outline-color 0.3s ease;
+}
+
+/* Pending suggestion: deleted range struck through with a red tint */
+.cm-suggest-deletion {
+  background: oklch(0.6 0.2 25 / 0.12);
+  text-decoration: line-through;
+  text-decoration-color: oklch(0.55 0.2 25 / 0.7);
+}
+
+/* Pending suggestion: proposed insertion as an inline green widget */
+.cm-suggest-insertion {
+  background: oklch(0.6 0.17 150 / 0.15);
+  color: oklch(0.45 0.15 150);
+  border-radius: 3px;
+  padding: 0 2px;
+  margin: 0 1px;
+}
+
+/* Flash when a sidebar card is clicked */
+.cm-collab-flash {
+  background: color-mix(in oklch, var(--color-primary) 30%, transparent);
+  transition: background 0.3s ease;
+}
+
+/* Sidebar suggestion diff text */
+.suggest-old {
+  color: oklch(0.5 0.18 25);
+  text-decoration: line-through;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-word;
+}
+.suggest-new {
+  color: oklch(0.45 0.15 150);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-word;
+}
+
+/* Minimal rendered-markdown styles for the preview pane (full theme is later UI polish) */
+.prose-muesli h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 1rem 0 0.5rem;
+}
+.prose-muesli h2 {
+  font-size: 1.3rem;
+  font-weight: 650;
+  margin: 1rem 0 0.5rem;
+}
+.prose-muesli h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0.8rem 0 0.4rem;
+}
+.prose-muesli p {
+  margin: 0.5rem 0;
+  line-height: 1.6;
+}
+.prose-muesli ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+.prose-muesli ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+.prose-muesli code {
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.85em;
+}
+.prose-muesli pre {
+  background: var(--color-neutral);
+  color: var(--color-neutral-content);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  margin: 0.6rem 0;
+}
+.prose-muesli pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+.prose-muesli blockquote {
+  border-left: 3px solid var(--color-base-300);
+  padding-left: 0.8rem;
+  color: oklch(from var(--color-base-content) l c h / 0.7);
+  margin: 0.6rem 0;
+}
+.prose-muesli a {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+.prose-muesli table {
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+}
+.prose-muesli th,
+.prose-muesli td {
+  border: 1px solid var(--color-base-300);
+  padding: 0.3rem 0.6rem;
+}
+.prose-muesli hr {
+  border-top: 1px solid var(--color-base-300);
+  margin: 1rem 0;
+}
+
+/* --- ADR 0015 rendered extensions (preview pane) --- */
+
+/* KaTeX: keep display math scrollable instead of overflowing the pane */
+.prose-muesli .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2rem 0;
+}
+.prose-muesli .katex-error {
+  color: oklch(0.55 0.2 25);
+}
+
+/* Wikilinks: accent-colored with a dotted underline to stand apart from normal links */
+.prose-muesli a.wikilink {
+  color: var(--color-accent, oklch(0.6 0.18 180));
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  font-weight: 500;
+}
+
+/* Callouts: daisyUI alert blocks, laid out as prose rather than the alert's grid */
+.prose-muesli .callout {
+  display: block;
+  margin: 0.75rem 0;
+}
+.prose-muesli .callout .callout-title {
+  font-weight: 650;
+  margin: 0 0 0.25rem;
+}
+.prose-muesli .callout p:last-child {
+  margin-bottom: 0;
+}
+/* IMPORTANT has no daisyUI alert color — give it the GitHub-style purple */
+.prose-muesli .callout-important {
+  border-color: oklch(0.55 0.2 295);
+  background: oklch(0.55 0.2 295 / 0.08);
+  color: oklch(0.45 0.2 295);
+}
+
+/* Frontmatter: compact metadata table at the top of the document */
+.prose-muesli .frontmatter {
+  margin: 0 0 1rem;
+  overflow-x: auto;
+}
+.prose-muesli .frontmatter table {
+  margin: 0;
+}
+.prose-muesli .frontmatter th,
+.prose-muesli .frontmatter td {
+  border: none;
+}
+.prose-muesli .frontmatter .frontmatter-key {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+/* Mermaid: placeholder shows dimmed source until the SVG lands; errors keep it */
+.prose-muesli .mermaid-block {
+  margin: 0.6rem 0;
+}
+.prose-muesli .mermaid-block:not([data-rendered]) .mermaid-source,
+.prose-muesli .mermaid-block[data-rendered="error"] .mermaid-source {
+  background: var(--color-base-200);
+  color: oklch(from var(--color-base-content) l c h / 0.7);
+  border: 1px dashed var(--color-base-300);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.8rem;
+  overflow-x: auto;
+}
+.prose-muesli .mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+.prose-muesli .mermaid-error {
+  display: flex;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.8rem;
+  margin-bottom: 0.4rem;
+}
+
+/* Interactive (pannable/zoomable) mermaid: the .mermaid-block becomes a clipped
+   viewport, and a .mermaid-pan-layer inside it carries the translate+scale. The
+   SVG keeps its natural size inside the layer so zooming has headroom. */
+.prose-muesli .mermaid-block.mermaid-interactive {
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  border-radius: 8px;
+}
+.prose-muesli .mermaid-block.mermaid-panning {
+  cursor: grabbing;
+}
+.prose-muesli .mermaid-pan-layer {
+  transform-origin: 0 0;
+}
+.prose-muesli .mermaid-block.mermaid-interactive .mermaid-pan-layer svg {
+  max-width: none;
+}
+
+/* +/1:1/− zoom cluster — pinned to the diagram's bottom-right corner, overlaying
+   it like a map control (NOT in normal flow below the diagram). Lives in app.css
+   rather than as Tailwind utilities on the shared module so positioning never
+   depends on cross-package Tailwind scanning. daisyUI tokens, concentric radius,
+   ≥40×40 hit areas. Subtle by default; fully opaque on hover/focus of the
+   diagram (focus-within keeps it keyboard-accessible). */
+.prose-muesli .mermaid-block.mermaid-interactive .mermaid-controls {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-box, 0.5rem);
+  background: var(--color-base-100);
+  box-shadow: var(--shadow-card);
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.prose-muesli .mermaid-block.mermaid-interactive:hover .mermaid-controls,
+.prose-muesli .mermaid-block.mermaid-interactive:focus-within .mermaid-controls {
+  opacity: 1;
+}
+.prose-muesli .mermaid-block .mermaid-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  line-height: 1;
+  cursor: pointer;
+  color: oklch(from var(--color-base-content) l c h / 0.7);
+  background: transparent;
+  border: 0;
+  transition:
+    transform 0.1s ease,
+    background 0.1s ease,
+    color 0.1s ease;
+}
+.prose-muesli .mermaid-block .mermaid-control-btn:hover {
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+}
+.prose-muesli .mermaid-block .mermaid-control-btn:active {
+  transform: scale(0.96);
+}
+.prose-muesli .mermaid-block .mermaid-control-glyph {
+  font-size: 1.125rem;
+}
+.prose-muesli .mermaid-block .mermaid-control-reset {
+  border-top: 1px solid var(--color-base-300);
+  border-bottom: 1px solid var(--color-base-300);
+  font-size: 11px;
+  font-weight: 500;
+}

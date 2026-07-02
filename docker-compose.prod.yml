@@ -1,0 +1,102 @@
+# Production stack (ADR 0017): Traefik terminates TLS (Let's Encrypt) and routes
+# ${MUESLI_DOMAIN} to the single Muesli container (server + web app). Postgres/Redis are
+# internal-only. On shared infrastructure where Traefik/Postgres/Redis already exist, drop
+# those services and point the env at them instead.
+#
+# Required .env: MUESLI_DOMAIN, ACME_EMAIL, POSTGRES_PASSWORD,
+#                OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET
+services:
+  traefik:
+    image: traefik:v3.3
+    command:
+      - --providers.docker
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    restart: unless-stopped
+
+  muesli:
+    build: .
+    environment:
+      DATABASE_URL: postgres://muesli:${POSTGRES_PASSWORD}@postgres:5432/muesli
+      REDIS_URL: redis://redis:6379
+      OIDC_ISSUER: ${OIDC_ISSUER}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      MUESLI_PUBLIC_URL: https://${MUESLI_DOMAIN}
+      MUESLI_WEB_ORIGIN: https://${MUESLI_DOMAIN}
+      # S3 storage backend (ADR 0013): point at external S3/R2 (typical) or the optional
+      # minio service below. Secrets are env-only — never stored in Postgres.
+      MUESLI_S3_ACCESS_KEY: ${MUESLI_S3_ACCESS_KEY:-}
+      MUESLI_S3_SECRET_KEY: ${MUESLI_S3_SECRET_KEY:-}
+      MUESLI_S3_POLL_SECS: ${MUESLI_S3_POLL_SECS:-20}
+      RUST_LOG: muesli_server=info
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.muesli.rule=Host(`${MUESLI_DOMAIN}`)
+      - traefik.http.routers.muesli.entrypoints=websecure
+      - traefik.http.routers.muesli.tls.certresolver=le
+      - traefik.http.services.muesli.loadbalancer.server.port=8787
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: muesli
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: muesli
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U muesli"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+
+  # Self-hosted S3 (ADR 0013) — OPTIONAL. External S3/Cloudflare R2 is the typical
+  # production choice (set MUESLI_S3_* and create a storage connection pointing at it).
+  # Uncomment to run MinIO next to Muesli instead; the endpoint for storage connections
+  # is then http://minio:9000 from inside the compose network.
+  # minio:
+  #   image: minio/minio:latest
+  #   command: ["server", "/data", "--console-address", ":9001"]
+  #   environment:
+  #     MINIO_ROOT_USER: ${MUESLI_S3_ACCESS_KEY}
+  #     MINIO_ROOT_PASSWORD: ${MUESLI_S3_SECRET_KEY}
+  #   volumes:
+  #     - miniodata:/data
+  #   healthcheck:
+  #     test: ["CMD", "mc", "ready", "local"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 20
+  #   restart: unless-stopped
+
+volumes:
+  letsencrypt:
+  pgdata:
+  redisdata:
+  # miniodata:

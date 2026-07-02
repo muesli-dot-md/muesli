@@ -1,0 +1,24 @@
+# build outputs & deps
+node_modules
+dist
+build
+.svelte-kit
+target
+coverage
+
+# not ours / generated
+pnpm-lock.yaml
+apps/desktop/vendor
+apps/desktop/static
+apps/desktop/src-tauri/gen
+apps/desktop/src-tauri/target
+apps/web/public
+dev
+
+# prose & config formats we don't want reflowed
+*.md
+*.yml
+*.yaml
+
+# internal planning docs
+internal

@@ -1,0 +1,36 @@
+[package]
+name = "muesli-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Muesli local agent: CLI + daemon sync bridge (ADR 0014)"
+
+[lib]
+name = "muesli_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "muesli"
+path = "src/main.rs"
+
+[dependencies]
+muesli-core = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+notify = "7"
+clap = { version = "4", features = ["derive", "env"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# OS keychain for the API token (local-agent-cli.md: never plaintext on disk by default).
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+dirs = "5"
+# Per-run client-id (origin echo-guard, Plan 4 Contract 3) — string uuids only.
+uuid = { version = "1", features = ["v4"] }
+# The path ↔ document_id index (index.db; internal/design/local-agent-cli.md). Bundled: no
+# system sqlite needed; version pinned in the workspace for MSRV rustc 1.86.
+rusqlite = { workspace = true }

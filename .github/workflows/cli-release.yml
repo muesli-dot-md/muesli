@@ -1,0 +1,172 @@
+# Builds and publishes the `muesli` CLI on every `cli-v*` tag:
+#
+#   git tag cli-v0.1.0 && git push origin cli-v0.1.0
+#
+# One native-runner build per target (no cross toolchains — the CLI is fully
+# self-contained: rustls TLS, bundled sqlite, keyutils keyring on Linux), a
+# combined SHA256SUMS, a GitHub Release with all archives attached, and an
+# automatic version/sha bump of the Homebrew formula in muesli-dot-md/homebrew-tap.
+#
+# Consumers of the artifacts (keep names stable):
+#   install.sh (repo root, served at https://muesli.md/install.sh)
+#     → muesli-<target>.tar.gz + SHA256SUMS
+#   homebrew-tap Formula/muesli.rb
+#     → the four unix tarballs by target triple
+#
+# Required repo secret:
+#   HOMEBREW_TAP_TOKEN — fine-grained PAT with contents:write on
+#     muesli-dot-md/homebrew-tap (the default GITHUB_TOKEN cannot push to a
+#     sibling repo). CI must never print it. If absent, the bump step is
+#     skipped and the release still succeeds.
+#
+# Apple signing/notarization is intentionally NOT done here: `curl | sh` and
+# Homebrew installs don't set the quarantine attribute, so Gatekeeper never
+# evaluates the binary. Revisit if we ever ship the CLI via a .pkg or DMG.
+
+name: CLI Release
+
+on:
+  push:
+    tags: ["cli-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing cli-v* tag to (re)build and publish"
+        required: true
+
+permissions:
+  contents: write # create the release + upload assets
+
+env:
+  # The version is derived from the tag (cli-v0.1.0 → 0.1.0) in the release job.
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: aarch64-apple-darwin
+            os: macos-15
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: cli-${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked -p muesli-cli --target ${{ matrix.target }}
+
+      - name: Package (tar.gz, unix)
+        if: runner.os != 'Windows'
+        run: |
+          BIN=target/${{ matrix.target }}/release/muesli
+          # Smoke test on the native runner: the binary must at least print its version.
+          "$BIN" --version
+          mkdir -p dist
+          tar -C "$(dirname "$BIN")" -czf dist/muesli-${{ matrix.target }}.tar.gz muesli
+
+      - name: Package (zip, windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bin = "target/${{ matrix.target }}/release/muesli.exe"
+          & $bin --version
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path $bin -DestinationPath dist/muesli-${{ matrix.target }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: muesli-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve tag and version
+        id: v
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#cli-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Guard — tag version must match the workspace Cargo version
+        run: |
+          CARGO_V=$(grep -A2 '^\[workspace.package\]' Cargo.toml | grep '^version' | cut -d'"' -f2)
+          if [ "$CARGO_V" != "${{ steps.v.outputs.version }}" ]; then
+            echo "::error::tag says ${{ steps.v.outputs.version }} but Cargo.toml says $CARGO_V — bump [workspace.package] version first"
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum muesli-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" \
+            --title "muesli CLI ${{ steps.v.outputs.version }}" \
+            --notes "Install: \`curl -fsSL https://muesli.md/install.sh | sh\` or \`brew install muesli-dot-md/tap/muesli\`. Binaries below; verify with SHA256SUMS." \
+            dist/muesli-* dist/SHA256SUMS
+
+      - name: Bump Homebrew formula
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN not set — skipping formula bump"
+            exit 0
+          fi
+          VERSION="${{ steps.v.outputs.version }}"
+          TAG="${{ steps.v.outputs.tag }}"
+          sha() { grep "muesli-$1.tar.gz" dist/SHA256SUMS | cut -d' ' -f1; }
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/muesli-dot-md/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          sed \
+            -e "s/{{VERSION}}/$VERSION/g" \
+            -e "s/{{TAG}}/$TAG/g" \
+            -e "s/{{SHA_MAC_ARM}}/$(sha aarch64-apple-darwin)/" \
+            -e "s/{{SHA_MAC_X64}}/$(sha x86_64-apple-darwin)/" \
+            -e "s/{{SHA_LINUX_ARM}}/$(sha aarch64-unknown-linux-gnu)/" \
+            -e "s/{{SHA_LINUX_X64}}/$(sha x86_64-unknown-linux-gnu)/" \
+            packaging/homebrew/muesli.rb.tmpl > tap/Formula/muesli.rb
+          cd tap
+          git config user.name "muesli-release-bot"
+          git config user.email "info@muesli.md"
+          git add Formula/muesli.rb
+          git commit -m "muesli $VERSION"
+          git push
