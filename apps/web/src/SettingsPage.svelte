@@ -128,7 +128,8 @@
   }
 
   async function signOut() {
-    await logout();
+    // true = the browser is off to the IdP's end_session URL (RP-initiated logout).
+    if (await logout()) return;
     auth = { ...auth, user: null };
     workspaces = [];
     selectedWsId = null;

@@ -123,6 +123,37 @@ export function orgLoginUrl(email: string): string {
   return `${httpBase}/auth/login/select?email=${encodeURIComponent(email)}&next=${next}`;
 }
 
-export async function logout(): Promise<void> {
-  await fetch(`${httpBase}/auth/logout`, { method: "POST", credentials: "include" });
+/** The end_session URL a logout response tells the browser to visit, if any.
+ *  Defensive: open mode answers 204 with no body (null here), older servers answered
+ *  204 in OIDC mode too, and an issuer without RP-initiated logout (dev dex) yields
+ *  `logout_url: null` — all of those mean "local logout only, stay in the app". */
+export function logoutRedirect(body: unknown): string | null {
+  if (body !== null && typeof body === "object" && "logout_url" in body) {
+    const url = (body as { logout_url?: unknown }).logout_url;
+    if (typeof url === "string" && url) return url;
+  }
+  return null;
+}
+
+/** Sign out. Kills the app session, then — when the server answers with the issuer's
+ *  end_session URL (OIDC RP-initiated logout) — navigates the browser there so the
+ *  IdP's SSO session dies too. Without that hop the app gate's next /auth/login would
+ *  silently sign the user right back in. Resolves true when the browser is off to the
+ *  IdP (callers must do nothing more); false means local-only logout (open mode, or
+ *  an issuer without end_session support) and the caller keeps its usual after-logout
+ *  behavior. */
+export async function logout(): Promise<boolean> {
+  const res = await fetch(`${httpBase}/auth/logout`, { method: "POST", credentials: "include" });
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    // 204 (open mode / older server): no body, nothing to navigate to.
+  }
+  const url = logoutRedirect(body);
+  if (url) {
+    window.location.assign(url);
+    return true;
+  }
+  return false;
 }

@@ -25,12 +25,13 @@ use axum::Json;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use openidconnect::core::{
     CoreAuthenticationFlow, CoreClient, CoreIdToken, CoreIdTokenClaims, CoreIdTokenVerifier,
-    CoreJsonWebKeySet, CoreProviderMetadata,
+    CoreJsonWebKeySet,
 };
 use openidconnect::{
     AuthorizationCode, ClaimsVerificationError, ClientId, ClientSecret, CsrfToken,
-    EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, JsonWebKeySet, JsonWebKeySetUrl,
-    Nonce, NonceVerifier, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
+    EndSessionUrl, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, JsonWebKeySet,
+    JsonWebKeySetUrl, LogoutRequest, Nonce, NonceVerifier, PkceCodeChallenge, PkceCodeVerifier,
+    PostLogoutRedirectUrl, ProviderMetadataWithLogout, RedirectUrl, Scope,
     SignatureVerificationError, TokenResponse,
 };
 use rand::RngCore;
@@ -223,6 +224,10 @@ pub(crate) struct ConnectedIssuer {
     /// (the web callback verifies as a confidential client; both need the client_id).
     client_id: ClientId,
     client_secret: ClientSecret,
+    /// RP-initiated logout (OIDC RP-Initiated Logout 1.0): the issuer's end_session
+    /// endpoint from discovery, or None for issuers that don't support it (dev dex) —
+    /// logout then only kills the local session, exactly the pre-RP-logout behavior.
+    end_session_endpoint: Option<EndSessionUrl>,
 }
 
 /// True iff a claims-verification failure was specifically "no key matched the token's
@@ -276,6 +281,32 @@ impl ConnectedIssuer {
         };
         let verifier = build_verifier(refreshed);
         id_token.claims(&verifier, nonce_verifier).cloned()
+    }
+
+    /// The end_session URL a signing-out browser must visit so the ISSUER's SSO session
+    /// dies with ours (RP-initiated logout) — without it the app gate bounces a signed-out
+    /// visitor straight back through /auth/login and the IdP silently re-issues a code,
+    /// making sign-out impossible. None when the issuer advertises no end_session_endpoint
+    /// (dev dex): local-only logout is all such an issuer supports.
+    ///
+    /// `id_token` is the RAW id token stored on the session at login; a session from
+    /// before id tokens were stored (or an unparseable one) still gets the URL, just
+    /// without `id_token_hint` — the IdP then shows its own confirm screen, which beats
+    /// silently keeping the user signed in.
+    pub(crate) fn rp_logout_url(&self, web_origin: &str, id_token: Option<&str>) -> Option<String> {
+        let end_session = self.end_session_endpoint.clone()?;
+        let mut req = LogoutRequest::from(end_session)
+            .set_client_id(self.client_id.clone())
+            .set_state(CsrfToken::new_random());
+        // Must EQUAL a post-logout redirect URI registered at the IdP: the OIDC app
+        // registers exactly "{MUESLI_WEB_ORIGIN}/" (web_origin is stored slash-trimmed).
+        if let Ok(uri) = PostLogoutRedirectUrl::new(format!("{web_origin}/")) {
+            req = req.set_post_logout_redirect_uri(uri);
+        }
+        if let Some(token) = id_token.and_then(|raw| raw.parse::<CoreIdToken>().ok()) {
+            req = req.set_id_token_hint(&token);
+        }
+        Some(req.http_get_url().to_string())
     }
 }
 
@@ -483,7 +514,9 @@ impl AuthCtx {
         if let Some(c) = handle.connected.lock().unwrap().clone() {
             return Ok(c);
         }
-        let metadata = CoreProviderMetadata::discover_async(
+        // Discovery with the RP-initiated-logout extension: same document, plus the
+        // optional `end_session_endpoint` field (absent on issuers without it, e.g. dex).
+        let metadata = ProviderMetadataWithLogout::discover_async(
             IssuerUrl::new(handle.issuer.clone())?,
             &self.http,
         )
@@ -492,6 +525,7 @@ impl AuthCtx {
         let issuer_url = metadata.issuer().clone();
         let jwks_uri = metadata.jwks_uri().clone();
         let jwks = JwksCache::new(jwks_uri, metadata.jwks().clone());
+        let end_session_endpoint = metadata.additional_metadata().end_session_endpoint.clone();
         let client_id = ClientId::new(handle.client_id.clone());
         let client_secret = ClientSecret::new(handle.client_secret.clone());
         let oidc = CoreClient::from_provider_metadata(
@@ -506,6 +540,7 @@ impl AuthCtx {
             jwks,
             client_id,
             client_secret,
+            end_session_endpoint,
         });
         *handle.connected.lock().unwrap() = Some(connected.clone());
         Ok(connected)
@@ -540,7 +575,7 @@ impl AuthCtx {
     /// Resolve the session cookie to a user id, if any.
     pub async fn session_user(&self, jar: &CookieJar) -> Option<Uuid> {
         let token = jar.get(SESSION_COOKIE)?.value().to_string();
-        self.sessions.get(&token).await
+        self.sessions.get(&token).await.map(|r| r.user_id)
     }
 
     /// Resolve the calling principal: a session cookie (human) or a Bearer API token
@@ -614,8 +649,42 @@ pub fn hash_token(raw: &str) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// What a session remembers beyond "who": enough to end the ISSUER's session again at
+/// sign-out (RP-initiated logout). `id_token` is the raw JWT the login callback verified —
+/// a few KB per session in Redis, the price of a working `id_token_hint`. `issuer` picks
+/// which registered IdP to end the session at (per-workspace IdPs, ADR 0012 Phase 5).
+/// Both are None on sessions minted before this record existed (see [`SessionRecord::decode`]).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct SessionRecord {
+    pub user_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+}
+
+impl SessionRecord {
+    fn encode(&self) -> String {
+        serde_json::to_string(self).expect("session record serializes")
+    }
+
+    /// Redis values from before this record existed are the bare user uuid — decode
+    /// those as a record with no id_token/issuer (logout then falls back to the
+    /// hint-less end_session URL) rather than logging everyone out on deploy.
+    fn decode(s: &str) -> Option<SessionRecord> {
+        if let Ok(r) = serde_json::from_str::<SessionRecord>(s) {
+            return Some(r);
+        }
+        Uuid::parse_str(s).ok().map(|user_id| SessionRecord {
+            user_id,
+            id_token: None,
+            issuer: None,
+        })
+    }
+}
+
 enum SessionStore {
-    Memory(Mutex<HashMap<String, (Uuid, Instant)>>),
+    Memory(Mutex<HashMap<String, (SessionRecord, Instant)>>),
     Redis(redis::aio::ConnectionManager),
 }
 
@@ -624,20 +693,20 @@ impl SessionStore {
     /// to Redis (backup, exposed port) or process memory yields no replayable cookie
     /// values, mirroring how API tokens are stored (`lookup_api_token(&hash_token(..))`).
     /// The raw token lives only in the client's cookie.
-    async fn put(&self, token: &str, user_id: Uuid) -> Result<()> {
+    async fn put(&self, token: &str, record: SessionRecord) -> Result<()> {
         let key = hash_token(token);
         match self {
             SessionStore::Memory(map) => {
                 let mut map = map.lock().unwrap();
                 map.retain(|_, (_, at)| at.elapsed().as_secs() < SESSION_TTL_SECS);
-                map.insert(key, (user_id, Instant::now()));
+                map.insert(key, (record, Instant::now()));
                 Ok(())
             }
             SessionStore::Redis(mgr) => {
                 let mut conn = mgr.clone();
                 redis::cmd("SET")
                     .arg(format!("muesli:session:{key}"))
-                    .arg(user_id.to_string())
+                    .arg(record.encode())
                     .arg("EX")
                     .arg(SESSION_TTL_SECS)
                     .query_async::<()>(&mut conn)
@@ -647,13 +716,13 @@ impl SessionStore {
         }
     }
 
-    async fn get(&self, token: &str) -> Option<Uuid> {
+    async fn get(&self, token: &str) -> Option<SessionRecord> {
         let key = hash_token(token);
         match self {
             SessionStore::Memory(map) => {
                 let map = map.lock().unwrap();
-                let (user_id, at) = map.get(&key)?;
-                (at.elapsed().as_secs() < SESSION_TTL_SECS).then_some(*user_id)
+                let (record, at) = map.get(&key)?;
+                (at.elapsed().as_secs() < SESSION_TTL_SECS).then(|| record.clone())
             }
             SessionStore::Redis(mgr) => {
                 let mut conn = mgr.clone();
@@ -662,7 +731,7 @@ impl SessionStore {
                     .query_async(&mut conn)
                     .await
                     .ok()?;
-                v.and_then(|s| Uuid::parse_str(&s).ok())
+                v.and_then(|s| SessionRecord::decode(&s))
             }
         }
     }
@@ -1016,7 +1085,15 @@ async fn finish_login(
     );
 
     let session_token = random_token();
-    auth.sessions.put(&session_token, user_id).await?;
+    // The raw id token rides along with the session so /auth/logout can present it as
+    // `id_token_hint` (RP-initiated logout skips the IdP's confirm screen with it), and
+    // the issuer so logout ends the session at the IdP this login actually came from.
+    let record = SessionRecord {
+        user_id,
+        id_token: Some(id_token.to_string()),
+        issuer: Some(normalize_issuer(iss)),
+    };
+    auth.sessions.put(&session_token, record).await?;
     info!(%user_id, subject, issuer = iss, "user signed in");
     Ok((session_token, pending.next))
 }
@@ -1088,13 +1165,32 @@ async fn ensure_sso_memberships(auth: &AuthCtx, iss: &str, user_id: Uuid) {
     }
 }
 
-/// POST /auth/logout
+#[derive(Serialize)]
+struct LogoutResponse {
+    /// The issuer's end_session URL the browser must now navigate to so the IdP's SSO
+    /// session dies with ours (RP-initiated logout) — otherwise the app gate's next
+    /// /auth/login silently signs the user right back in. Null when there is nothing
+    /// to end IdP-side (no session cookie, or the issuer has no end_session_endpoint).
+    logout_url: Option<String>,
+}
+
+/// POST /auth/logout — kill the local session AND hand the browser the issuer's
+/// end_session URL (OIDC RP-initiated logout). The web client fetches this and then
+/// navigates to `logout_url`; the IdP ends its SSO session and redirects back to
+/// `post_logout_redirect_uri` (the app root — where the gate now finds a dead session
+/// and the IdP, its session gone too, ASKS for credentials instead of auto-signing-in;
+/// a terminal login form, not a loop). Every IdP-side failure degrades to the old
+/// local-only logout (`logout_url: null`) — signing out locally must never error.
 pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> Response {
     let Some(auth) = state.auth.as_ref() else {
+        // Open mode: no session store, nothing to end anywhere.
         return StatusCode::NO_CONTENT.into_response();
     };
+    let mut logout_url = None;
     if let Some(c) = jar.get(SESSION_COOKIE) {
+        let record = auth.sessions.get(c.value()).await;
         auth.sessions.delete(c.value()).await;
+        logout_url = idp_logout_url(auth, record.as_ref()).await;
     }
     // Attributes must mirror the set cookie (callback) so browsers match-and-remove it.
     let removal = Cookie::build((SESSION_COOKIE, ""))
@@ -1103,7 +1199,32 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> Response {
         .same_site(SameSite::Lax)
         .path("/")
         .build();
-    (jar.remove(removal), StatusCode::NO_CONTENT).into_response()
+    (jar.remove(removal), Json(LogoutResponse { logout_url })).into_response()
+}
+
+/// The end_session URL for a dying session, or None when the IdP side can't (or
+/// needn't) be ended — the caller treats None as "local logout only", never an error.
+async fn idp_logout_url(auth: &AuthCtx, record: Option<&SessionRecord>) -> Option<String> {
+    // End the session at the issuer this login CAME FROM (per-workspace IdPs, ADR 0012).
+    // A recorded issuer that is no longer registered has nowhere safe to send the
+    // browser (None); sessions predating the record (issuer: None) — or whose Redis
+    // value was the legacy bare uuid — fall back to the primary, hint-less.
+    let handle = match record.and_then(|r| r.issuer.as_deref()) {
+        Some(iss) => auth.issuers.lookup(iss)?,
+        None => auth.issuers.primary(),
+    };
+    let issuer = match auth.connect_issuer(&handle).await {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(error = %format!("{e:#}"), issuer = %handle.issuer,
+                "issuer discovery failed at logout; ending the local session only");
+            return None;
+        }
+    };
+    issuer.rp_logout_url(
+        &auth.web_origin,
+        record.and_then(|r| r.id_token.as_deref()),
+    )
 }
 
 #[derive(Serialize)]
@@ -1919,6 +2040,7 @@ mod tests {
             jwks: JwksCache::new(JsonWebKeySetUrl::new(url).unwrap(), stale),
             client_id: ClientId::new(TEST_CLIENT_ID.to_string()),
             client_secret: ClientSecret::new(String::new()),
+            end_session_endpoint: None,
         };
         let http = reqwest::Client::new();
 
@@ -1965,6 +2087,7 @@ mod tests {
             ),
             client_id: ClientId::new(TEST_CLIENT_ID.to_string()),
             client_secret: ClientSecret::new(String::new()),
+            end_session_endpoint: None,
         };
         let http = reqwest::Client::new();
 
@@ -2011,6 +2134,7 @@ mod tests {
             ),
             client_id: ClientId::new(TEST_CLIENT_ID.to_string()),
             client_secret: ClientSecret::new(String::new()),
+            end_session_endpoint: None,
         };
         let http = reqwest::Client::new();
 
@@ -2052,6 +2176,7 @@ mod tests {
             ),
             client_id: ClientId::new(TEST_CLIENT_ID.to_string()),
             client_secret: ClientSecret::new(String::new()),
+            end_session_endpoint: None,
         };
         let r = issuer2
             .validate_id_token(&http, &foreign, accepting, |_: Option<&Nonce>| Ok(()))
@@ -2081,6 +2206,7 @@ mod tests {
             ),
             client_id: ClientId::new(TEST_CLIENT_ID.to_string()),
             client_secret: ClientSecret::new(String::new()),
+            end_session_endpoint: None,
         };
         let http = reqwest::Client::new();
         let wrong_issuer = |keys: CoreJsonWebKeySet| {
@@ -2144,5 +2270,131 @@ mod tests {
         }
         let empty = json!({ "issuer": "", "client_id": "c", "client_secret": "s" });
         assert_eq!(sso_credentials(&empty), None);
+    }
+
+    // ---- RP-initiated logout (the "sign-out is impossible" bug) ---------------------
+
+    /// Sessions must carry the raw id token and issuer from login to logout — that is
+    /// what makes `id_token_hint` possible at sign-out time.
+    #[tokio::test]
+    async fn session_store_roundtrips_id_token_and_issuer() {
+        let store = SessionStore::Memory(Mutex::new(HashMap::new()));
+        let user_id = Uuid::new_v4();
+        store
+            .put(
+                "tok",
+                SessionRecord {
+                    user_id,
+                    id_token: Some("raw.jwt.value".into()),
+                    issuer: Some(TEST_ISSUER.into()),
+                },
+            )
+            .await
+            .unwrap();
+        let r = store.get("tok").await.expect("stored session");
+        assert_eq!(r.user_id, user_id);
+        assert_eq!(r.id_token.as_deref(), Some("raw.jwt.value"));
+        assert_eq!(r.issuer.as_deref(), Some(TEST_ISSUER));
+        store.delete("tok").await;
+        assert!(store.get("tok").await.is_none());
+    }
+
+    /// Redis holds sessions minted before the record existed (bare user uuid): those
+    /// must decode as hint-less records — a deploy must not sign everyone out, and
+    /// logout falls back to the end_session URL without id_token_hint.
+    #[test]
+    fn session_record_decode_accepts_pre_upgrade_values() {
+        let user_id = Uuid::new_v4();
+        let legacy = SessionRecord::decode(&user_id.to_string()).expect("legacy bare-uuid value");
+        assert_eq!(legacy.user_id, user_id);
+        assert!(legacy.id_token.is_none() && legacy.issuer.is_none());
+
+        // Current JSON values round-trip losslessly.
+        let rec = SessionRecord {
+            user_id,
+            id_token: Some("a.b.c".into()),
+            issuer: Some("https://idp.example".into()),
+        };
+        let back = SessionRecord::decode(&rec.encode()).expect("json value");
+        assert_eq!(back.user_id, user_id);
+        assert_eq!(back.id_token.as_deref(), Some("a.b.c"));
+        assert_eq!(back.issuer.as_deref(), Some("https://idp.example"));
+
+        // Garbage never resolves to a session.
+        assert!(SessionRecord::decode("not-a-session").is_none());
+    }
+
+    fn issuer_with_end_session(end_session_endpoint: Option<EndSessionUrl>) -> ConnectedIssuer {
+        ConnectedIssuer {
+            oidc: dummy_oidc(),
+            issuer_url: IssuerUrl::new(TEST_ISSUER.to_string()).unwrap(),
+            jwks: JwksCache::new(
+                JsonWebKeySetUrl::new(format!("{TEST_ISSUER}/keys")).unwrap(),
+                CoreJsonWebKeySet::new(vec![]),
+            ),
+            client_id: ClientId::new(TEST_CLIENT_ID.to_string()),
+            client_secret: ClientSecret::new(String::new()),
+            end_session_endpoint,
+        }
+    }
+
+    /// The end_session URL carries id_token_hint + the EXACT registered
+    /// post_logout_redirect_uri (web_origin + "/") + client_id + state.
+    #[test]
+    fn rp_logout_url_builds_end_session_request() {
+        let issuer = issuer_with_end_session(Some(
+            EndSessionUrl::new(format!("{TEST_ISSUER}/oidc/v1/end_session")).unwrap(),
+        ));
+        let (token, _) = signed_id_token_with_jwk("key-1");
+        let raw = token.to_string();
+
+        let url = issuer
+            .rp_logout_url("https://app.example.com", Some(&raw))
+            .expect("end_session url");
+        assert!(url.starts_with(&format!("{TEST_ISSUER}/oidc/v1/end_session?")));
+        let parsed = reqwest::Url::parse(&url).unwrap();
+        let q: HashMap<String, String> = parsed.query_pairs().into_owned().collect();
+        assert_eq!(q.get("id_token_hint"), Some(&raw));
+        assert_eq!(
+            q.get("post_logout_redirect_uri").map(String::as_str),
+            Some("https://app.example.com/")
+        );
+        assert_eq!(q.get("client_id").map(String::as_str), Some(TEST_CLIENT_ID));
+        assert!(q.get("state").is_some_and(|s| !s.is_empty()));
+    }
+
+    /// Sessions without a stored id token (pre-upgrade) — or with an unparseable one —
+    /// still get the end_session URL, just hint-less: the IdP then shows its own
+    /// confirm screen, which beats silently keeping the user signed in. Never an error.
+    #[test]
+    fn rp_logout_url_without_id_token_omits_the_hint() {
+        let issuer = issuer_with_end_session(Some(
+            EndSessionUrl::new(format!("{TEST_ISSUER}/oidc/v1/end_session")).unwrap(),
+        ));
+        for id_token in [None, Some("not!a!jwt")] {
+            let url = issuer
+                .rp_logout_url("https://app.example.com", id_token)
+                .expect("hint-less end_session url");
+            let parsed = reqwest::Url::parse(&url).unwrap();
+            let q: HashMap<String, String> = parsed.query_pairs().into_owned().collect();
+            assert!(!q.contains_key("id_token_hint"));
+            assert_eq!(
+                q.get("post_logout_redirect_uri").map(String::as_str),
+                Some("https://app.example.com/")
+            );
+        }
+    }
+
+    /// Dev dex advertises NO end_session_endpoint (it has no RP-initiated logout):
+    /// logout degrades to local-only (`logout_url: null`), exactly the old behavior.
+    #[test]
+    fn rp_logout_url_is_none_without_end_session_endpoint() {
+        let issuer = issuer_with_end_session(None);
+        assert_eq!(issuer.rp_logout_url("https://app.example.com", None), None);
+        let (token, _) = signed_id_token_with_jwk("key-1");
+        assert_eq!(
+            issuer.rp_logout_url("https://app.example.com", Some(&token.to_string())),
+            None
+        );
     }
 }

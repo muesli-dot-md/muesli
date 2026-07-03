@@ -201,7 +201,9 @@
   }
 
   async function signOut() {
-    await logout();
+    // true = the browser is off to the IdP's end_session URL (RP-initiated logout);
+    // navigating home now would race that page unload.
+    if (await logout()) return;
     // The doc room's ws auth is gone with the cookie; go home, which unmounts
     // this component and destroys the session (and shows the sign-in screen).
     gotoHome();

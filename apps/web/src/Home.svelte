@@ -889,7 +889,8 @@
 
   // --- auth ------------------------------------------------------------------------------
   async function signOut() {
-    await logout();
+    // true = the browser is off to the IdP's end_session URL (RP-initiated logout).
+    if (await logout()) return;
     // No reload: drop the user locally and re-list (a 401 flips to the sign-in state).
     auth = { ...auth, user: null };
     void load();
