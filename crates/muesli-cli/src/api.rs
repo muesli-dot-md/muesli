@@ -528,6 +528,18 @@ struct WorkspacesEnvelope {
     workspaces: Vec<WorkspaceInfo>,
 }
 
+/// Whether an error from this module is an HTTP 401 (a stale or revoked token).
+/// Lives here so callers (the desktop app) don't need their own reqwest
+/// dependency just to inspect a status — downcasting only works against the
+/// same reqwest version anyway.
+pub fn is_unauthorized(e: &anyhow::Error) -> bool {
+    e.chain().any(|c| {
+        c.downcast_ref::<reqwest::Error>()
+            .and_then(reqwest::Error::status)
+            == Some(reqwest::StatusCode::UNAUTHORIZED)
+    })
+}
+
 /// List the workspaces the authenticated caller belongs to.
 /// `GET {server}/api/workspaces` → `{ workspaces: [...] }`.
 pub async fn list_workspaces(server: &str, token: &str) -> anyhow::Result<Vec<WorkspaceInfo>> {

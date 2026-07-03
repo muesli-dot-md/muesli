@@ -1374,7 +1374,12 @@ pub async fn cli_login(
                 claims.subject().as_str(),
                 email,
                 claims.name().and_then(|n| n.get(None)).map(|n| n.as_str()),
-                None,
+                // Same claim mapping as the browser callback: without this, a
+                // device-flow-only account never gets an avatar.
+                claims
+                    .picture()
+                    .and_then(|p| p.get(None))
+                    .map(|p| p.as_str()),
             )
             .await?;
         // The CLI login is an OIDC login too — claim any pending invites (ADR 0011) and

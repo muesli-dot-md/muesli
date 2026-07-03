@@ -73,18 +73,45 @@ fn open() -> Result<rusqlite::Connection, String> {
     idx::open_index(&path).map_err(|e| e.to_string())
 }
 
+/// The last remote-fetch error already reported, so the poll loop logs each
+/// distinct failure once instead of every tick. Cleared on the next success.
+static LAST_REMOTE_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn remote_fetch_failed(msg: &str) {
+    let mut last = LAST_REMOTE_ERROR.lock().unwrap_or_else(|e| e.into_inner());
+    if last.as_deref() != Some(msg) {
+        eprintln!("remote fetch failed, degrading to local-only: {msg}");
+        *last = Some(msg.to_string());
+    }
+}
+
+fn remote_fetch_recovered() {
+    let mut last = LAST_REMOTE_ERROR.lock().unwrap_or_else(|e| e.into_inner());
+    *last = None;
+}
+
 #[tauri::command]
 pub async fn list_workspaces_merged(server: Option<String>) -> Result<Vec<WorkspaceView>, String> {
     let conn = open()?;
     let local = idx::list_local(&conn).map_err(|e| e.to_string())?;
     let remote = match &server {
         Some(s) => match muesli_cli::store::load_token(s) {
-            Some(token) => muesli_cli::api::list_workspaces(s, &token)
-                .await
-                .unwrap_or_else(|e| {
-                    eprintln!("remote fetch failed, degrading to local-only: {e}");
+            Some(token) => match muesli_cli::api::list_workspaces(s, &token).await {
+                Ok(list) => {
+                    remote_fetch_recovered();
+                    list
+                }
+                Err(e) => {
+                    // 401 = the stored token is stale (revoked, or the server's DB was
+                    // reset): that's plain signed-out, which the identity UI already
+                    // shows — not an error worth logging on every poll. Everything
+                    // else (offline, DNS) logs once per distinct message, not per tick.
+                    if !muesli_cli::api::is_unauthorized(&e) {
+                        remote_fetch_failed(&format!("{e}"));
+                    }
                     Vec::new()
-                }),
+                }
+            },
             None => Vec::new(),
         },
         None => Vec::new(),
@@ -138,7 +165,11 @@ fn relocate_impl(id: &str, old_path: &Path, new_parent: &Path) -> anyhow::Result
     let mut target = new_parent.join(&name);
     let mut i = 2u32;
     while target.exists() {
-        anyhow::ensure!(i <= 100, "no free folder name for {name:?} under {}", new_parent.display());
+        anyhow::ensure!(
+            i <= 100,
+            "no free folder name for {name:?} under {}",
+            new_parent.display()
+        );
         target = new_parent.join(format!("{name}-{i}"));
         i += 1;
     }
@@ -149,11 +180,9 @@ fn relocate_impl(id: &str, old_path: &Path, new_parent: &Path) -> anyhow::Result
             target.display()
         )
     })?;
-    muesli_cli::store::relocate_links(&old_root, &target)
-        .context("rewriting the link index")?;
+    muesli_cli::store::relocate_links(&old_root, &target).context("rewriting the link index")?;
     let conn = idx::open_index(&index_path()).context("opening the registry")?;
-    idx::set_local_path(&conn, id, &target.to_string_lossy())
-        .context("updating the registry")?;
+    idx::set_local_path(&conn, id, &target.to_string_lossy()).context("updating the registry")?;
     Ok(target)
 }
 
