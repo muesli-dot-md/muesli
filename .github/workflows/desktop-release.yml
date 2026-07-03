@@ -65,6 +65,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Self-hosted PATH hygiene: the runner machine can carry stale mise shims
+      # (a broken `rustup` shim once bricked this job — "rustup is not a valid
+      # shim"). `command -v rustup` inside dtolnay's action passes on such a
+      # shim, so put a REAL rustup ahead of any shim dir, installing it first
+      # if ~/.cargo/bin doesn't have one.
+      - name: Ensure a working rustup
+        run: |
+          if ! "$HOME/.cargo/bin/rustup" --version >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- --default-toolchain none -y
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
