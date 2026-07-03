@@ -299,6 +299,43 @@ async fn rename_in(c: &WsCtx, workspace_id: Uuid, name: &str) -> Response {
     }
 }
 
+/// DELETE /api/workspaces/{id} — admin-only, irreversible. Purges every document in the
+/// workspace (live and trashed) and the workspace itself; the client is expected to have
+/// confirmed the destruction with the user. The audit entry survives (workspace_id goes
+/// null via the FK, the id lives on in `detail`).
+pub async fn delete_workspace(
+    State(state): State<AppState>,
+    Path(workspace_id): Path<Uuid>,
+    jar: CookieJar,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    let c = match ctx(&state, &jar, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    if let Err(r) = c.require_admin(workspace_id).await {
+        return r;
+    }
+    let slugs = match c.persistence.delete_workspace(workspace_id).await {
+        Ok(s) => s,
+        Err(e) => return err500(e),
+    };
+    // Evict the purged documents' live rooms so open editors stop persisting.
+    {
+        let mut rooms = state.rooms.lock().unwrap();
+        for slug in &slugs {
+            rooms.remove(slug);
+        }
+    }
+    audit::record(
+        &c.persistence,
+        AuditEvent::new("workspace_deleted")
+            .actor(Some(c.user_id))
+            .detail(json!({ "workspace_id": workspace_id, "documents_purged": slugs.len() })),
+    );
+    Json(json!({ "deleted": true, "id": workspace_id })).into_response()
+}
+
 // ---------------------------------------------------------------------------
 // Invites & members
 // ---------------------------------------------------------------------------

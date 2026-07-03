@@ -538,6 +538,10 @@ pub async fn graph(
                 "title": d.title.as_deref().unwrap_or(&d.slug),
                 "links_out": out_count.get(&d.id).copied().unwrap_or(0),
                 "links_in": in_count.get(&d.id).copied().unwrap_or(0),
+                // Lets the client scope the "universe" graph to one workspace (mirrors
+                // GET /api/documents, which already returns this) — the endpoint itself
+                // stays cross-workspace so edges into other visible workspaces resolve.
+                "workspace_id": d.workspace_id,
             })
         })
         .collect();

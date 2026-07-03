@@ -1824,6 +1824,67 @@ impl Persistence {
         Ok(())
     }
 
+    /// Hard-delete a workspace: every document in it (live AND trashed) is purged with
+    /// the same ordered deletes as [`Self::purge_document`] — set-based, one transaction —
+    /// then folders, then the workspace row (memberships / invites / storage connections /
+    /// SSO cascade; audit_log keeps its rows via on-delete-set-null). Tokens scoped to the
+    /// workspace or its documents are REVOKED, never widened (purge_document's rule).
+    /// Returns the purged documents' slugs so the caller can evict their live rooms.
+    pub async fn delete_workspace(&self, workspace_id: Uuid) -> Result<Vec<String>> {
+        let mut tx = self.pool.begin().await?;
+        let slugs: Vec<String> =
+            sqlx::query_scalar("select slug from documents where workspace_id = $1")
+                .bind(workspace_id)
+                .fetch_all(&mut *tx)
+                .await?;
+        const DOCS: &str = "(select id from documents where workspace_id = $1)";
+        for stmt in [
+            format!("delete from crdt_snapshots where document_id in {DOCS}"),
+            format!(
+                "delete from comments where thread_id in
+                     (select id from comment_threads where document_id in {DOCS})"
+            ),
+            format!("delete from comment_threads where document_id in {DOCS}"),
+            format!("delete from suggestions where document_id in {DOCS}"),
+            format!("delete from document_acl where document_id in {DOCS}"),
+            format!("delete from share_links where document_id in {DOCS}"),
+            format!("delete from document_links where src_document_id in {DOCS}"),
+            format!(
+                "update document_links set dst_document_id = null where dst_document_id in {DOCS}"
+            ),
+            format!("update audit_log set document_id = null where document_id in {DOCS}"),
+            format!(
+                "update api_tokens set revoked_at = coalesce(revoked_at, now()),
+                        document_id = null
+                 where document_id in {DOCS}"
+            ),
+            format!("delete from crdt_updates where document_id in {DOCS}"),
+        ] {
+            sqlx::query(&stmt).bind(workspace_id).execute(&mut *tx).await?;
+        }
+        sqlx::query(
+            "update api_tokens set revoked_at = coalesce(revoked_at, now()), workspace_id = null
+             where workspace_id = $1",
+        )
+        .bind(workspace_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("delete from documents where workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("delete from folders where workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("delete from workspaces where id = $1")
+            .bind(workspace_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(slugs)
+    }
+
     pub async fn list_members(&self, workspace_id: Uuid) -> Result<Vec<MemberRow>> {
         let rows = sqlx::query(
             "select u.id as user_id,

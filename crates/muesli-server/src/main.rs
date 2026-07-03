@@ -376,7 +376,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/workspaces/{id}/events", get(events::workspace_events_sse))
         .route(
             "/api/workspaces/{id}",
-            get(workspace::get_workspace).patch(workspace::rename_workspace),
+            get(workspace::get_workspace)
+                .patch(workspace::rename_workspace)
+                .delete(workspace::delete_workspace),
         )
         .route("/api/workspaces/{id}/invites", post(workspace::create_invite))
         .route(
