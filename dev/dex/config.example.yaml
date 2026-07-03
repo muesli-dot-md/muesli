@@ -1,0 +1,44 @@
+# Template for the local dev OIDC issuer. Copy to `config.yaml` (gitignored) before
+# `docker compose up dex` — docker-compose.yml mounts ./dev/dex/config.yaml:
+#   cp dev/dex/config.example.yaml dev/dex/config.yaml
+# These are local-only dev fixtures (localhost issuer, throwaway client secret,
+# test-user password "password"); tweak your config.yaml freely without git noise.
+#
+# Dev-only OIDC issuer (ADR 0012: Muesli is a pure relying party — any compliant issuer
+# works; production cloud uses Zitadel, self-host uses Authentik/Keycloak/Zitadel).
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+  # Lets tests fetch an id_token in one call (grant_type=password); harmless in dev.
+  passwordConnector: local
+
+staticClients:
+  - id: muesli
+    secret: muesli-dev-secret
+    name: Muesli (dev)
+    redirectURIs:
+      - http://localhost:8787/auth/callback
+  # Public client for the CLI's device-code flow (local-agent-cli.md).
+  - id: muesli-cli
+    public: true
+    name: Muesli CLI (dev)
+
+enablePasswordDB: true
+staticPasswords:
+  # password is "password"
+  - email: dev@muesli.md
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: dev
+    userID: 08a8684b-db88-4b73-90a9-3cd1661f5466
+  # a second user for the invite-claim flow (workspace-s3-e2e.mjs); password is "password"
+  - email: friend@muesli.md
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: friend
+    userID: 4c1f4f0a-6e2b-4d36-9f30-1d6a2b8d5b7e

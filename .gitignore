@@ -1,41 +1,31 @@
-# Planning docs — not for publication yet
+# ── Internal docs — planning/design notes, not for publication yet ──────────
 docs/
 
-# Rust
-/target/
-**/target/
+# ── Rust ─────────────────────────────────────────────────────────────────────
+target/
 *.rs.bk
 
-# Node / web
+# ── Node / web ───────────────────────────────────────────────────────────────
 node_modules/
 dist/
+build/
 .vite/
+.svelte-kit/
+coverage/
 *.tsbuildinfo
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
 
-# Env & secrets
+# ── Env & secrets ────────────────────────────────────────────────────────────
 .env
 .env.*
 !.env.example
 
-# OS / editor
-.DS_Store
-*.swp
-.idea/
-.vscode/
-
-# Local dev OIDC issuer configs — kept local so you can tweak for testing without
-# git noise. Copy from the tracked dev/dex*/config.example.yaml templates.
-dev/*
-
 # Google OAuth client (Drive connector) — never commit
 muesli.json
-# Gitea test instance token — never commit
+# Gitea test-instance token — never commit
 gitea.json
 test_google_creds.json
-
-.claude/*
-.impeccable/*
-.superpowers/*
 
 # Tauri updater signing key + password — NEVER commit. The public key's
 # canonical home is apps/desktop/src-tauri/tauri.conf.json; the human uploads
@@ -43,3 +33,25 @@ test_google_creds.json
 apps/desktop/.updater-key
 apps/desktop/.updater-key.pass
 apps/desktop/.updater-key.pub
+
+# ── Local dev overrides ──────────────────────────────────────────────────────
+# Dex OIDC issuer configs stay local so you can tweak them for testing without
+# git noise; copy from the tracked dev/*/config.example.yaml templates.
+dev/*/config.yaml
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── OS / editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# ── Agent tooling state ──────────────────────────────────────────────────────
+.claude/
+.impeccable/
+.superpowers/

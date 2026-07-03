@@ -1,0 +1,39 @@
+# Template for the SECOND local dev OIDC issuer. Copy to `config.yaml` (gitignored) before
+# `docker compose up dex2` — docker-compose.yml mounts ./dev/dex2/config.yaml:
+#   cp dev/dex2/config.example.yaml dev/dex2/config.yaml
+# Local-only dev fixtures (localhost issuer, throwaway client secret, password "password").
+#
+# SECOND dev OIDC issuer (Phase 5 multi-issuer SSO, ADR 0012 "Per-Workspace IdP").
+# Plays the corporate IdP a workspace brings via PUT /api/workspaces/{id}/sso;
+# apps/web/scripts/enterprise-e2e.mjs drives the whole dance against it.
+issuer: http://localhost:5558/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5558
+
+oauth2:
+  skipApprovalScreen: true
+  # Lets tests fetch an id_token in one call (grant_type=password); harmless in dev.
+  passwordConnector: local
+
+staticClients:
+  # The client the workspace registers with Muesli ({issuer, client_id, client_secret}).
+  # Redirects to the SAME callback as the primary issuer — one redirect URI serves
+  # every registered issuer (auth.rs IssuerRegistry).
+  - id: muesli
+    secret: muesli-dev-secret
+    name: Muesli (corp dev)
+    redirectURIs:
+      - http://localhost:8787/auth/callback
+
+enablePasswordDB: true
+staticPasswords:
+  # The corporate user; password is "password" (same dev bcrypt hash as dev/dex).
+  # corpdomain.example is the email_domains entry /auth/login/select matches on.
+  - email: corp@corpdomain.example
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: corp
+    userID: 7f0d2c5e-91a4-4b8f-bb1e-2a6c9e4d8f31
