@@ -1,3 +1,9 @@
+// The dictation stack (audio capture, VAD, Parakeet STT) is macOS-only in the
+// UI today but still compiles on every platform; until the mod-level
+// cfg(target_os = "macos") refactor lands, silence the resulting dead-code
+// lints off-macOS so -D warnings stays enforceable everywhere else.
+#![cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+
 mod appearance;
 pub mod audio;
 mod auth;
