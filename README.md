@@ -1,8 +1,8 @@
 # muesli
 
-**Google Docs for Markdown files.** Real-time multiplayer editing where the plain `.md` in your
-storage stays canonical, AI agents are first-class collaborators, and the whole thing is
-self-hostable.
+**The real-time editor where your whole team — and your AI agents — write the same Markdown
+files at once.** Live cursors, comments, suggestions and history on plain `.md` files that stay
+canonical in your own storage. Self-hostable and open source.
 
 The live document is a text CRDT (`yrs`/Yjs) over the raw markdown source; it is continuously
 materialized to a plain `.md`, and external edits to that file (your editor, your agent, git) are
