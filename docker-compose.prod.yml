@@ -27,7 +27,11 @@ services:
     restart: unless-stopped
 
   muesli:
-    build: .
+    # Published by .github/workflows/docker.yml on v* tags. Pin a semver tag
+    # (e.g. :0.1) for controlled rollouts, or track :latest and deploy with
+    # `docker compose pull muesli && docker compose up -d muesli`.
+    # To build from source instead: swap `image:` for `build: .`.
+    image: ghcr.io/muesli-dot-md/muesli:${MUESLI_IMAGE_TAG:-latest}
     environment:
       DATABASE_URL: postgres://muesli:${POSTGRES_PASSWORD}@postgres:5432/muesli
       REDIS_URL: redis://redis:6379
