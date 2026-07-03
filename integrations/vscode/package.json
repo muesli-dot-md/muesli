@@ -4,7 +4,7 @@
   "description": "Live presence (cursors + participants) inside VS Code for muesli-linked markdown files. Presence only — content syncs via `muesli open` (ADR 0014).",
   "version": "0.1.0",
   "publisher": "muesli",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "engines": {
     "vscode": "^1.90.0"
   },

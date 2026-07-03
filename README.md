@@ -435,3 +435,15 @@ Dev second issuer: `docker compose up -d dex2` (issuer `http://localhost:5558/de
 ```sh
 node apps/web/scripts/enterprise-e2e.mjs   # audit + multi-issuer SSO (starts its own server)
 ```
+
+## License
+
+Muesli is free software licensed under the [GNU AGPL v3.0](LICENSE): use it,
+self-host it, and modify it freely — if you offer a modified Muesli to others
+over a network, you must share your changes under the same license.
+
+Contributions require signing the [Contributor License Agreement](CLA.md)
+(a bot walks you through it on your first PR). The CLA lets the project also
+offer commercial licenses to organizations that can't adopt the AGPL — that's
+what funds full-time development. For commercial licensing, contact
+julianlbeaulieu@gmail.com.
