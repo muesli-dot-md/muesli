@@ -1,11 +1,14 @@
 # macOS / Apple desktop app build.
 #
-# This job requires a SELF-HOSTED macOS runner running macOS 15 (Sequoia): the
-# desktop crate uses `screencapturekit` with the `macos_15_0` feature, and
-# src-tauri/build.rs adds a `/usr/lib/swift` rpath for the Swift runtime the
-# screencapturekit/apple-* crates link against. Build it on the user's own
-# Sequoia runner (label below). To use a GitHub-hosted runner instead, swap
-# `runs-on` for the `macos-15` line shown in the comment.
+# Runs on GitHub-hosted macos-15 (Sequoia): the desktop crate uses
+# `screencapturekit` with the `macos_15_0` feature, and src-tauri/build.rs adds
+# a `/usr/lib/swift` rpath for the Swift runtime the screencapturekit/apple-*
+# crates link against, so macOS 15 is required.
+#
+# SECURITY: this workflow runs on pull requests, so it must NEVER use the
+# self-hosted runner — fork PRs would execute arbitrary code on the release
+# machine. Only tag-triggered desktop-release.yml may target [self-hosted,
+# macOS].
 #
 # This workflow builds UNSIGNED (Apple-wise) for build verification only, with
 # updater artifacts disabled (see the step below) so no signing secret is
@@ -30,12 +33,7 @@ concurrency:
 
 jobs:
   build-macos:
-    # Self-hosted macOS 15 (Sequoia) runner -- this is the job that needs the
-    # user's runner.
-    runs-on: [self-hosted, macOS]
-    # GitHub-hosted alternative (Sequoia image): uncomment the next line and
-    # comment out the `runs-on` above.
-    # runs-on: macos-15
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
