@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, Cloud, FolderOpen, HardDrive } from "lucide-svelte";
+  import { Check, Cloud, FolderOpen, FolderSymlink, HardDrive } from "lucide-svelte";
   import { workspaces } from "$lib/workspaces.svelte";
   import { workspace } from "$lib/workspace.svelte";
   import { pickFolder, prepareCloneDir } from "$lib/tauri";
@@ -45,6 +45,14 @@
   let showCreateWizard = $state(false);
 
   const loggedIn = $derived(workspaces.identity != null && !!workspaces.activeServer);
+
+  async function move(view: WorkspaceView) {
+    if (workspaces.busy || !view.local_path) return;
+    const parent = await pickFolder();
+    if (!parent) return;
+    open = false;
+    await workspaces.relocateWorkspace(view, parent);
+  }
 
   async function promote(view: WorkspaceView) {
     if (workspaces.busy) return;
@@ -101,6 +109,17 @@
               <Check size={15} class="shrink-0 text-success" />
             {/if}
           </button>
+
+          {#if view.state === "cloned"}
+            <button
+              class="shrink-0 px-1.5 py-1.5 rounded-selector text-[11px] text-base-content/60 hover:text-base-content hover:bg-base-200 transition-transform active:scale-[0.96] disabled:opacity-40 disabled:pointer-events-none"
+              title="Move folder…"
+              disabled={workspaces.busy}
+              onclick={() => move(view)}
+            >
+              <FolderSymlink size={14} class="text-base-content/50" />
+            </button>
+          {/if}
 
           {#if view.state === "local-only" && loggedIn}
             <button

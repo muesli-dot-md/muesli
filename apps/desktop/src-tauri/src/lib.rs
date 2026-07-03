@@ -96,6 +96,7 @@ pub fn run() {
             workspaces_cmd::register_local_workspace,
             workspaces_cmd::set_workspace_path,
             workspaces_cmd::register_cloned_workspace,
+            workspaces_cmd::relocate_workspace,
             workspaces_cmd::create_remote_workspace,
             workspaces_cmd::promote_workspace,
             sync_cmd::clone_workspace,

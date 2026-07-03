@@ -385,6 +385,28 @@ pub fn touch_synced(file: &Path) -> Result<()> {
     touch_synced_in(&data_dir()?, file)
 }
 
+/// Rewrite every link under `old_root` to the same relative location under
+/// `new_root` (a workspace folder move/rename). Prefix-matched with substr, not
+/// LIKE, so `%`/`_` in paths need no escaping. Returns how many links moved.
+pub fn relocate_links(old_root: &Path, new_root: &Path) -> Result<usize> {
+    relocate_links_in(&data_dir()?, old_root, new_root)
+}
+
+fn relocate_links_in(dir: &Path, old_root: &Path, new_root: &Path) -> Result<usize> {
+    let _guard = STORE_LOCK.lock().unwrap();
+    let conn = open_index_in(dir)?;
+    let old_prefix = format!("{}/", old_root.to_string_lossy().trim_end_matches('/'));
+    let new_prefix = format!("{}/", new_root.to_string_lossy().trim_end_matches('/'));
+    let n = conn.execute(
+        "UPDATE links SET file_path = ?2 || substr(file_path, length(?1) + 1)
+         WHERE substr(file_path, 1, length(?1)) = ?1",
+        params![old_prefix, new_prefix],
+    )?;
+    drop(conn);
+    write_mirror_in(dir)?;
+    Ok(n)
+}
+
 pub fn find_link(file: &Path) -> Option<Link> {
     load_links().into_iter().find(|l| l.file == file)
 }
@@ -415,6 +437,26 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn relocate_links_moves_only_the_old_root_prefix() {
+        let dir = tmp_dir("relocate");
+        let ws = "ws://localhost:8787/ws";
+        record_link_in(&dir, Path::new("/old/root/a.md"), "doc-a", ws, None).unwrap();
+        record_link_in(&dir, Path::new("/old/root/sub/b.md"), "doc-b", ws, None).unwrap();
+        // Sibling that merely shares the string prefix without the separator: untouched.
+        record_link_in(&dir, Path::new("/old/rootish/c.md"), "doc-c", ws, None).unwrap();
+        let n =
+            relocate_links_in(&dir, Path::new("/old/root"), Path::new("/new/home")).unwrap();
+        assert_eq!(n, 2);
+        let links = load_links_in(&dir).unwrap();
+        let path_of = |doc: &str| {
+            links.iter().find(|l| l.doc == doc).unwrap().file.clone()
+        };
+        assert_eq!(path_of("doc-a"), PathBuf::from("/new/home/a.md"));
+        assert_eq!(path_of("doc-b"), PathBuf::from("/new/home/sub/b.md"));
+        assert_eq!(path_of("doc-c"), PathBuf::from("/old/rootish/c.md"));
     }
 
     #[test]

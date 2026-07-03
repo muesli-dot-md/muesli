@@ -1,6 +1,6 @@
 use crate::workspace_index::{self as idx, WorkspaceRecord};
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Where the SQLite registry lives: <app-data>/Muesli/index.db.
 pub fn index_path() -> PathBuf {
@@ -106,6 +106,55 @@ pub fn register_local_workspace(id: String, name: String, path: String) -> Resul
         },
     )
     .map_err(|e| e.to_string())
+}
+
+/// Move a cloned workspace's folder under a new parent directory (mistake
+/// recovery for a clone landed in the wrong place): fs::rename, rewrite every
+/// link in the shared index to the new prefix, update the registry row. The
+/// caller stops the daemon first if this workspace is the active one. Returns
+/// the new root. Same-volume only — fs::rename does not cross filesystems, and
+/// the error says to move the folder manually in that case.
+#[tauri::command]
+pub fn relocate_workspace(
+    id: String,
+    old_path: String,
+    new_parent: String,
+) -> Result<String, String> {
+    relocate_impl(&id, Path::new(&old_path), Path::new(&new_parent))
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| format!("{e:#}"))
+}
+
+fn relocate_impl(id: &str, old_path: &Path, new_parent: &Path) -> anyhow::Result<PathBuf> {
+    use anyhow::Context;
+    let old_root = old_path
+        .canonicalize()
+        .context("the workspace folder does not exist")?;
+    let name = old_root
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("workspace")
+        .to_string();
+    let mut target = new_parent.join(&name);
+    let mut i = 2u32;
+    while target.exists() {
+        anyhow::ensure!(i <= 100, "no free folder name for {name:?} under {}", new_parent.display());
+        target = new_parent.join(format!("{name}-{i}"));
+        i += 1;
+    }
+    std::fs::rename(&old_root, &target).with_context(|| {
+        format!(
+            "moving {} to {} (a cross-volume move is not supported; move the folder manually,              then open it from the picker)",
+            old_root.display(),
+            target.display()
+        )
+    })?;
+    muesli_cli::store::relocate_links(&old_root, &target)
+        .context("rewriting the link index")?;
+    let conn = idx::open_index(&index_path()).context("opening the registry")?;
+    idx::set_local_path(&conn, id, &target.to_string_lossy())
+        .context("updating the registry")?;
+    Ok(target)
 }
 
 #[tauri::command]

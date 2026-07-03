@@ -7,6 +7,7 @@ import {
   registerLocalWorkspace,
   registerClonedWorkspace,
   cloneWorkspace,
+  relocateWorkspace as relocateWorkspaceCmd,
   promoteWorkspace as promoteWorkspaceCmd,
   type Identity,
   type WorkspaceView,
@@ -148,6 +149,29 @@ class WorkspacesStore {
     try {
       await registerClonedWorkspace(workspaceId, this.activeServer, name, path);
       await this.openFolderWithSync(path, this.activeServer, workspaceId);
+      await this.refresh();
+    } catch (e) {
+      this.error = String(e);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /**
+   * Move a cloned workspace's folder somewhere else (mistake recovery): the
+   * picker chooses the new PARENT; the folder keeps its name (suffixed past a
+   * collision). Stops the daemon only when the moved workspace is the open one,
+   * then reopens it at the new location.
+   */
+  async relocateWorkspace(view: WorkspaceView, newParent: string): Promise<void> {
+    if (!view.local_path) return;
+    this.error = null;
+    this.busy = true;
+    try {
+      const wasActive = workspace.root === view.local_path;
+      if (wasActive) await daemon.stop();
+      const newPath = await relocateWorkspaceCmd(view.id, view.local_path, newParent);
+      if (wasActive) await this.openFolderWithSync(newPath, view.server, view.id);
       await this.refresh();
     } catch (e) {
       this.error = String(e);

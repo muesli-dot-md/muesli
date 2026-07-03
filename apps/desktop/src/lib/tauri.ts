@@ -214,6 +214,14 @@ export const cloneWorkspace = (
 export const prepareCloneDir = (parent: string, name: string): Promise<string> =>
   invoke("prepare_clone_dir", { parent, name });
 
+/** Move a cloned workspace's folder under a new parent dir; rewrites the link
+ *  index and registry. Returns the new root path. Same-volume moves only. */
+export const relocateWorkspace = (
+  id: string,
+  oldPath: string,
+  newParent: string,
+): Promise<string> => invoke("relocate_workspace", { id, oldPath, newParent });
+
 export const startWorkspaceSync = (
   server: string,
   path: string,
