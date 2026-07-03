@@ -6,6 +6,7 @@ mod account;
 mod api;
 mod audit;
 mod auth;
+mod error_page;
 mod events;
 mod folders;
 mod gdrive;

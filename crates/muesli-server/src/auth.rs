@@ -268,7 +268,7 @@ impl ConnectedIssuer {
         let refreshed = match self.jwks.refresh(http).await {
             Ok(keys) => keys,
             Err(e) => {
-                warn!(%e, "JWKS refresh failed; rejecting token");
+                warn!(error = %format!("{e:#}"), "JWKS refresh failed; rejecting token");
                 return Err(ClaimsVerificationError::SignatureVerification(
                     SignatureVerificationError::NoMatchingKey,
                 ));
@@ -691,8 +691,27 @@ pub fn random_token() -> String {
 }
 
 fn err500(e: anyhow::Error) -> Response {
-    warn!(%e, "auth error");
+    // `{:#}` logs the FULL anyhow chain ("context: …: root cause"), not just the
+    // outermost context — "id token validation" alone once hid the real cause (a
+    // Zitadel audience mismatch) and made a production outage needlessly opaque.
+    warn!(error = %format!("{e:#}"), "auth error");
     (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response()
+}
+
+/// Like [`err500`] but for BROWSER navigations (the /auth/* redirect dances): the
+/// person gets the branded error page; the full error chain stays in the log.
+fn err500_browser(e: anyhow::Error, retry_href: &str) -> Response {
+    warn!(error = %format!("{e:#}"), "auth error");
+    crate::error_page::browser_error_page(StatusCode::INTERNAL_SERVER_ERROR, retry_href)
+}
+
+/// The "Try again" target for a failed login flow: restart /auth/login with the
+/// original post-login destination when we know it, else land on the app root.
+fn login_retry_href(next: Option<&str>) -> String {
+    match next {
+        Some(n) => format!("/auth/login?next={}", crate::storage::uri_encode(n, true)),
+        None => "/".to_string(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -727,7 +746,8 @@ pub async fn login(
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
     let Some(auth) = state.auth.as_ref() else {
-        return (StatusCode::NOT_FOUND, "auth is not configured (open mode)").into_response();
+        warn!("/auth/login hit but auth is not configured (open mode)");
+        return crate::error_page::browser_error_page(StatusCode::NOT_FOUND, "/");
     };
 
     // Only redirect back to ourselves or the web app (open-redirect guard, safe_next).
@@ -742,23 +762,19 @@ pub async fn login(
         Some(iss) => match auth.issuers.lookup(iss) {
             Some(h) => h,
             None => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    "that issuer is not registered with this server",
-                )
-                    .into_response()
+                warn!(issuer = %iss, "login against an issuer not registered with this server");
+                return crate::error_page::browser_error_page(StatusCode::NOT_FOUND, "/");
             }
         },
     };
     let issuer = match auth.connect_issuer(&handle).await {
         Ok(c) => c,
         Err(e) => {
-            warn!(%e, issuer = %handle.issuer, "issuer discovery failed at login");
-            return (
+            warn!(error = %format!("{e:#}"), issuer = %handle.issuer, "issuer discovery failed at login");
+            return crate::error_page::browser_error_page(
                 StatusCode::BAD_GATEWAY,
-                "the identity provider is unreachable",
-            )
-                .into_response();
+                &login_retry_href(Some(&next)),
+            );
         }
     };
 
@@ -813,27 +829,26 @@ pub async fn login_select(
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
     let Some(auth) = state.auth.as_ref() else {
-        return (StatusCode::NOT_FOUND, "auth is not configured (open mode)").into_response();
+        warn!("/auth/login/select hit but auth is not configured (open mode)");
+        return crate::error_page::browser_error_page(StatusCode::NOT_FOUND, "/");
     };
     let Some(domain) = params.get("email").and_then(|e| domain_of(e)) else {
-        return (StatusCode::BAD_REQUEST, "pass ?email=you@company.com").into_response();
+        warn!("/auth/login/select called without a usable ?email=");
+        return crate::error_page::browser_error_page(StatusCode::BAD_REQUEST, "/");
     };
     let configs = match auth.persistence.workspace_sso_configs().await {
         Ok(c) => c,
-        Err(e) => return err500(e),
+        Err(e) => return err500_browser(e, "/"),
     };
     let Some(issuer) = issuer_for_domain(configs.iter().map(|(_, c)| c), &domain) else {
         // Enumeration tradeoff (accepted): success is a 302 into the issuer's login and
-        // an unclaimed domain is this 404 (the web UI shows a toast), so the response
-        // does reveal which email domains have SSO configured here. A uniform response
-        // is not feasible — there is nowhere to redirect an unclaimed domain without
-        // breaking the login flow. Mitigations: the body is generic (never echoes the
-        // domain), and the per-IP rate limit on /auth/* keeps bulk harvesting slow.
-        return (
-            StatusCode::NOT_FOUND,
-            "no organization SSO is configured for that email domain",
-        )
-            .into_response();
+        // an unclaimed domain is this 404 (the web UI probes the status and shows a
+        // toast), so the response does reveal which email domains have SSO configured
+        // here. A uniform response is not feasible — there is nowhere to redirect an
+        // unclaimed domain without breaking the login flow. Mitigations: the body is
+        // generic (never echoes the domain), and the per-IP rate limit on /auth/*
+        // keeps bulk harvesting slow.
+        return crate::error_page::browser_error_page(StatusCode::NOT_FOUND, "/");
     };
     let mut target = format!(
         "/auth/login?issuer={}",
@@ -863,55 +878,55 @@ pub async fn callback(
     jar: CookieJar,
     Query(params): Query<CallbackParams>,
 ) -> Response {
+    // Every error below faces a PERSON mid-navigation (the IdP just redirected their
+    // browser here), so failures render the branded error page; the specifics stay
+    // in the log (never on the page — don't leak internals to an unauthenticated UA).
     let Some(auth) = state.auth.as_ref() else {
-        return (StatusCode::NOT_FOUND, "auth is not configured (open mode)").into_response();
+        warn!("/auth/callback hit but auth is not configured (open mode)");
+        return crate::error_page::browser_error_page(StatusCode::NOT_FOUND, "/");
     };
     if let Some(err) = params.error {
         let desc = params.error_description.unwrap_or_default();
-        return (
-            StatusCode::BAD_REQUEST,
-            format!("issuer error: {err} {desc}"),
-        )
-            .into_response();
+        warn!(error = %err, description = %desc, "issuer returned an error to the callback");
+        return crate::error_page::browser_error_page(StatusCode::BAD_REQUEST, "/");
     }
     let (Some(code), Some(csrf_state)) = (params.code, params.state) else {
-        return (StatusCode::BAD_REQUEST, "missing code/state").into_response();
+        warn!("callback missing code/state");
+        return crate::error_page::browser_error_page(StatusCode::BAD_REQUEST, "/");
     };
     // Login-CSRF binding: the state must match the cookie /auth/login set in THIS
     // browser — a callback URL captured from another browser's flow (classic login
     // CSRF: forcing the victim into the attacker's session) dies here, before any
     // code exchange. PKCE/nonce checks below are unchanged.
     if jar.get(LOGIN_BIND_COOKIE).map(|c| c.value()) != Some(csrf_state.as_str()) {
-        return (
-            StatusCode::BAD_REQUEST,
-            "this login attempt was not started by this browser",
-        )
-            .into_response();
+        warn!("callback state does not match the login-bind cookie (login CSRF or stale attempt)");
+        return crate::error_page::browser_error_page(StatusCode::BAD_REQUEST, "/");
     }
     // The binding cookie is one-shot: clear it however the rest of the callback goes.
     let jar = jar.remove(Cookie::build((LOGIN_BIND_COOKIE, "")).path("/auth").build());
     let Some(pending) = auth.pending.lock().unwrap().remove(&csrf_state) else {
+        warn!("callback for an unknown or expired login attempt");
         return (
             jar,
-            (StatusCode::BAD_REQUEST, "unknown or expired login attempt"),
+            crate::error_page::browser_error_page(StatusCode::BAD_REQUEST, "/"),
         )
             .into_response();
     };
+    // A failed exchange restarts the login with the original destination intact.
+    let retry_href = login_retry_href(Some(&pending.next));
     // Bind the callback to the issuer the attempt started with — its client credentials
     // and its jwks validate this code, nothing else.
     let Some(handle) = auth.issuers.lookup(&pending.issuer) else {
+        warn!(issuer = %pending.issuer, "the issuer for this login attempt is no longer registered");
         return (
             jar,
-            (
-                StatusCode::BAD_REQUEST,
-                "the issuer for this login attempt is no longer registered",
-            ),
+            crate::error_page::browser_error_page(StatusCode::BAD_REQUEST, &retry_href),
         )
             .into_response();
     };
     let issuer = match auth.connect_issuer(&handle).await {
         Ok(c) => c,
-        Err(e) => return (jar, err500(e)).into_response(),
+        Err(e) => return (jar, err500_browser(e, &retry_href)).into_response(),
     };
 
     match finish_login(auth, &issuer, code, pending).await {
@@ -926,7 +941,7 @@ pub async fn callback(
                 .build();
             (jar.add(cookie), Redirect::to(&next)).into_response()
         }
-        Err(e) => (jar, err500(e)).into_response(),
+        Err(e) => (jar, err500_browser(e, &retry_href)).into_response(),
     }
 }
 
@@ -960,6 +975,13 @@ async fn finish_login(
                     issuer.issuer_url.clone(),
                     keys,
                 )
+                // Zitadel-style IdPs mint id tokens whose `aud` lists every app of the
+                // project (web + CLI + project id), not just the requesting client. Our
+                // client_id must still be among the audiences (the crate enforces that
+                // regardless of this hook), and issuer/signature/expiry/nonce all still
+                // verify — the extra audiences are sibling apps of the same trusted
+                // issuer, so accepting them is safe and expected.
+                .set_other_audience_verifier_fn(|_aud| true)
             },
             &nonce,
         )
@@ -1205,6 +1227,10 @@ pub async fn cli_login(
                         issuer_url.clone(),
                         keys,
                     )
+                    // Same multi-audience stance as the web callback: Zitadel-style
+                    // IdPs list every project app in `aud`. The CLI client_id must
+                    // still be present; issuer/signature/expiry all still verify.
+                    .set_other_audience_verifier_fn(|_aud| true)
                 },
                 |_: Option<&Nonce>| Ok(()),
             )
@@ -1276,8 +1302,9 @@ pub async fn cli_login(
         Ok(r) => Json(r).into_response(),
         Err(e) => {
             // The full anyhow chain (issuer URLs, discovery/DB error text) stays in the
-            // log; an unauthenticated caller gets only the generic verdict.
-            warn!(%e, "cli login rejected");
+            // log ({:#} prints every layer); an unauthenticated caller gets only the
+            // generic verdict.
+            warn!(error = %format!("{e:#}"), "cli login rejected");
             (StatusCode::UNAUTHORIZED, "login rejected").into_response()
         }
     }
@@ -1764,8 +1791,11 @@ mod tests {
     const TEST_CLIENT_ID: &str = "muesli-cli";
 
     /// Sign a minimal id token (far-future `exp`, so it never expires under the real clock)
-    /// and return it alongside its public verification JWK.
-    fn signed_id_token_with_jwk(kid: &str) -> (CoreIdToken, CoreJsonWebKey) {
+    /// with the given `aud` list and return it alongside its public verification JWK.
+    fn signed_id_token_with_audiences(
+        kid: &str,
+        audiences: Vec<Audience>,
+    ) -> (CoreIdToken, CoreJsonWebKey) {
         let key = CoreRsaPrivateSigningKey::from_pem(
             TEST_RSA_PRIV_KEY,
             Some(JsonWebKeyId::new(kid.to_string())),
@@ -1776,7 +1806,7 @@ mod tests {
         let token = CoreIdToken::new(
             CoreIdTokenClaims::new(
                 IssuerUrl::new(TEST_ISSUER.to_string()).unwrap(),
-                vec![Audience::new(TEST_CLIENT_ID.to_string())],
+                audiences,
                 Utc.timestamp_opt(4_102_444_800, 0).single().unwrap(), // year 2100
                 Utc.timestamp_opt(1_700_000_000, 0).single().unwrap(),
                 StandardClaims::new(SubjectIdentifier::new("subject-1".to_string())),
@@ -1789,6 +1819,10 @@ mod tests {
         )
         .expect("sign id token");
         (token, jwk)
+    }
+
+    fn signed_id_token_with_jwk(kid: &str) -> (CoreIdToken, CoreJsonWebKey) {
+        signed_id_token_with_audiences(kid, vec![Audience::new(TEST_CLIENT_ID.to_string())])
     }
 
     fn public_verifier(keys: CoreJsonWebKeySet) -> CoreIdTokenVerifier<'static> {
@@ -1922,6 +1956,81 @@ mod tests {
             1,
             "rate-limited to one fetch"
         );
+    }
+
+    /// PRODUCTION-DOWN regression (Zitadel): id tokens whose `aud` lists every app of the
+    /// IdP project (requesting client + sibling clients + project id) must validate. The
+    /// crate's default verifier rejects any audience beyond the client_id; both real call
+    /// sites opt into accepting the extras via `set_other_audience_verifier_fn` — while
+    /// still requiring OUR client_id to be among the audiences (second half of the test).
+    #[tokio::test]
+    async fn multi_audience_id_tokens_validate() {
+        let multi_aud = || {
+            vec![
+                Audience::new(TEST_CLIENT_ID.to_string()),
+                Audience::new("web-client-id".to_string()),
+                Audience::new("project-id".to_string()),
+            ]
+        };
+        let (token, jwk) = signed_id_token_with_audiences("key-1", multi_aud());
+        let issuer = ConnectedIssuer {
+            oidc: dummy_oidc(),
+            issuer_url: IssuerUrl::new(TEST_ISSUER.to_string()).unwrap(),
+            jwks: JwksCache::new(
+                JsonWebKeySetUrl::new(format!("{TEST_ISSUER}/keys")).unwrap(),
+                CoreJsonWebKeySet::new(vec![jwk]),
+            ),
+            client_id: ClientId::new(TEST_CLIENT_ID.to_string()),
+            client_secret: ClientSecret::new(String::new()),
+        };
+        let http = reqwest::Client::new();
+
+        // The verifier shape both production call sites use: extra audiences accepted.
+        let accepting = |keys: CoreJsonWebKeySet| {
+            public_verifier(keys).set_other_audience_verifier_fn(|_aud| true)
+        };
+        let claims = issuer
+            .validate_id_token(&http, &token, accepting, |_: Option<&Nonce>| Ok(()))
+            .await
+            .expect("multi-audience token must validate");
+        assert_eq!(claims.subject().as_str(), "subject-1");
+
+        // Sanity: the default verifier is what broke production — pin that behavior so
+        // a future crate upgrade changing it is noticed.
+        let r = issuer
+            .validate_id_token(&http, &token, public_verifier, |_: Option<&Nonce>| Ok(()))
+            .await;
+        assert!(matches!(
+            r,
+            Err(ClaimsVerificationError::InvalidAudience(_))
+        ));
+
+        // The lenient hook is NOT a blank check: a token that omits our client_id from
+        // its audiences is still rejected.
+        let (foreign, jwk2) = signed_id_token_with_audiences(
+            "key-1",
+            vec![
+                Audience::new("web-client-id".to_string()),
+                Audience::new("project-id".to_string()),
+            ],
+        );
+        let issuer2 = ConnectedIssuer {
+            oidc: dummy_oidc(),
+            issuer_url: IssuerUrl::new(TEST_ISSUER.to_string()).unwrap(),
+            jwks: JwksCache::new(
+                JsonWebKeySetUrl::new(format!("{TEST_ISSUER}/keys")).unwrap(),
+                CoreJsonWebKeySet::new(vec![jwk2]),
+            ),
+            client_id: ClientId::new(TEST_CLIENT_ID.to_string()),
+            client_secret: ClientSecret::new(String::new()),
+        };
+        let r = issuer2
+            .validate_id_token(&http, &foreign, accepting, |_: Option<&Nonce>| Ok(()))
+            .await;
+        assert!(matches!(
+            r,
+            Err(ClaimsVerificationError::InvalidAudience(_))
+        ));
     }
 
     /// A non-key failure (here: wrong issuer) must fail fast with NO network call — proving

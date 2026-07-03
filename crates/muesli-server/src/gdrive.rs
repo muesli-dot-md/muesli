@@ -903,14 +903,19 @@ pub async fn callback(
     State(state): State<AppState>,
     Query(params): Query<GoogleCallbackParams>,
 ) -> Response {
+    // The callback is a BROWSER navigation (Google just redirected the user here), so
+    // failures render the branded error page; the operator detail stays in the log.
     let Some(auth) = state.auth.as_ref() else {
-        return err(StatusCode::SERVICE_UNAVAILABLE, OPEN_MODE);
+        warn!("gdrive callback: {OPEN_MODE}");
+        return crate::error_page::browser_error_page(StatusCode::SERVICE_UNAVAILABLE, "/");
     };
     let Some(p) = state.persistence.clone() else {
-        return err(StatusCode::SERVICE_UNAVAILABLE, NO_DB);
+        warn!("gdrive callback: {NO_DB}");
+        return crate::error_page::browser_error_page(StatusCode::SERVICE_UNAVAILABLE, "/");
     };
     let Some(google) = google() else {
-        return err(StatusCode::SERVICE_UNAVAILABLE, NOT_CONFIGURED);
+        warn!("gdrive callback: {NOT_CONFIGURED}");
+        return crate::error_page::browser_error_page(StatusCode::SERVICE_UNAVAILABLE, "/");
     };
     // The user-journey failure (consent denied at Google) lands back wherever the dance
     // started: the wizard if it was wizard-initiated, else Settings → Connections
@@ -927,13 +932,12 @@ pub async fn callback(
         return Redirect::to(&target).into_response();
     }
     let (Some(code), Some(state_token)) = (params.code, params.state) else {
-        return err(StatusCode::BAD_REQUEST, "missing code/state");
+        warn!("gdrive callback: missing code/state");
+        return crate::error_page::browser_error_page(StatusCode::BAD_REQUEST, "/");
     };
     let Some((workspace_id, user_id, wizard)) = google.take_pending(&state_token) else {
-        return err(
-            StatusCode::BAD_REQUEST,
-            "unknown or expired connect attempt",
-        );
+        warn!("gdrive callback: unknown or expired connect attempt");
+        return crate::error_page::browser_error_page(StatusCode::BAD_REQUEST, "/");
     };
     // Cloned BEFORE the async block: `state` itself isn't captured by it, and
     // bind_workspace() (plan 1a task 7) is the single place the pending→active
