@@ -1,6 +1,6 @@
 <script lang="ts">
   // Docs-style toolbar: every command is a markdown-semantic transform from
-  // $lib/editor/mdCommands dispatched on the active editor view from editorState.
+  // @muesli/editor-core/mdCommands dispatched on the active editor view from editorState.
   import { Undo2, Redo2, Bold, Italic, Strikethrough, Code, Link, ListTodo, List, ListOrdered, Plus, Download, FileDown, Printer, ChevronDown, Table, Image, Minus, FileCode, Sigma, Workflow, CircleAlert, Brackets, Mic, Pencil, MessageSquareText } from "lucide-svelte";
   import { recorder } from "$lib/recorder.svelte";
   import { platform } from "$lib/platform.svelte";
@@ -26,7 +26,7 @@
     type BlockStyle,
     type InlineMark,
     type ListKind,
-  } from "$lib/editor/mdCommands";
+  } from "@muesli/editor-core/mdCommands";
   import { downloadHtml, downloadMarkdown, printDocument } from "@muesli/editor-core/docExport";
 
   const view = $derived(editorState.activeView);

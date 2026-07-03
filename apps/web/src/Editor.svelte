@@ -12,7 +12,7 @@
   import { scrollPastEnd } from "@muesli/editor-core/scrollPastEnd";
   import { fenceLanguage, livePreview } from "./livePreview";
   import { mentionAutocomplete } from "./mentionAction.svelte";
-  import { toggleInlineMark, type InlineMark } from "./mdCommands";
+  import { toggleInlineMark, type InlineMark } from "@muesli/editor-core/mdCommands";
 
   // DocApp is keyed on the doc id, so this whole component (EditorView, undo
   // manager, CRDT binding) remounts against the new session on doc switch.

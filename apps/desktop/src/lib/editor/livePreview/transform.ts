@@ -92,16 +92,11 @@ export function hiddenRanges(spans: readonly LiveSpan[], sel: readonly Range16[]
 }
 
 // --- frontmatter ----------------------------------------------------------------
-// Same shape render.ts accepts. Lezer has no frontmatter notion (the ---
-// fences parse as setext/thematic-break noise), so live preview suppresses
-// all decoration inside this range and styles it as dim metadata instead.
-
-const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/;
-
-export function frontmatterRange(docText: string): Range16 | null {
-  const m = FRONTMATTER.exec(docText);
-  return m ? { from: 0, to: m[0].length } : null;
-}
+// Canonical implementation lives in editor-core (mdCommands needs it too);
+// re-exported here for the live-preview callers below, which suppress all
+// decoration inside the range and style it as dim metadata instead.
+import { frontmatterRange } from "@muesli/editor-core/frontmatter";
+export { frontmatterRange };
 
 // --- inline spans ------------------------------------------------------------
 

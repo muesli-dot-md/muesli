@@ -3,7 +3,7 @@ import { EditorState } from "@codemirror/state";
 import {
   setBlockStyle, currentBlockStyle, toggleList, currentListKind,
   isProbablyUrl, parseOutline, tableSkeleton,
-} from "$lib/editor/mdCommands";
+} from "./mdCommands";
 
 function stateWith(doc: string, anchor = 0, head = anchor) {
   return EditorState.create({ doc, selection: { anchor, head } });

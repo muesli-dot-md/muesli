@@ -50,7 +50,7 @@
     type BlockStyle,
     type InlineMark,
     type ListKind,
-  } from "./mdCommands";
+  } from "@muesli/editor-core/mdCommands";
   import { downloadHtml, downloadMarkdown, printDocument } from "@muesli/editor-core/docExport";
 
   let { title }: { title: string } = $props();

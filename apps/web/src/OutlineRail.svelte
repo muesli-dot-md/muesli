@@ -10,7 +10,7 @@
   import { EditorView } from "@codemirror/view";
   import { onMount } from "svelte";
   import { t } from "./i18n/index.svelte";
-  import { parseOutline, type OutlineItem } from "./mdCommands";
+  import { parseOutline, type OutlineItem } from "@muesli/editor-core/mdCommands";
   import { useDocSession } from "./session.svelte";
 
   const session = useDocSession();

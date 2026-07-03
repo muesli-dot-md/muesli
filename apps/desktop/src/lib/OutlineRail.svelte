@@ -1,6 +1,6 @@
 <script lang="ts">
   import { EditorView } from "@codemirror/view";
-  import { parseOutline } from "$lib/editor/mdCommands";
+  import { parseOutline } from "@muesli/editor-core/mdCommands";
   import { editorState } from "$lib/editorState.svelte";
 
   const items = $derived(parseOutline(editorState.currentText));

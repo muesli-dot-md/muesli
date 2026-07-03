@@ -1,9 +1,9 @@
 // Markdown-semantic editing commands behind the Docs-style toolbar
-// (editor redesign §Toolbar). Every command is a pure transform:
-// EditorState in, TransactionSpec out — the toolbar dispatches the spec on the
-// live EditorView. Deliberately DOM-free and @codemirror/view-free so
-// scripts/md-commands-test.mjs can drive the EXACT functions the toolbar uses
-// headlessly under plain node (same pattern as livePreview/transform.ts).
+// (editor redesign §Toolbar), shared by the web and desktop apps. Every
+// command is a pure transform: EditorState in, TransactionSpec out — the
+// toolbar dispatches the spec on the live EditorView. Deliberately DOM-free
+// and @codemirror/view-free so apps/web/scripts/md-commands-test.mjs can
+// drive the EXACT functions the toolbar uses headlessly under plain node.
 //
 // Inline toggles resolve the enclosing markdown node via the syntax tree (the
 // state carries the same GFM parser Editor.svelte configures), so unwrapping
@@ -16,8 +16,10 @@ import {
   type TransactionSpec,
 } from "@codemirror/state";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
-// .ts extension: must resolve under plain `node` for the headless test.
-import { frontmatterRange } from "$lib/editor/livePreview/transform";
+// Self-referencing subpath (not a relative path): resolves via this package's
+// own `exports` map under Vite, svelte-check, AND plain `node` (same pattern
+// as render.ts → tableModel).
+import { frontmatterRange } from "@muesli/editor-core/frontmatter";
 
 // --- inline marks (bold / italic / strikethrough / inline code) ---------------
 

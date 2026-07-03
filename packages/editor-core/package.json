@@ -63,6 +63,16 @@
       "types": "./src/annotationsTheme.ts",
       "svelte": "./src/annotationsTheme.ts",
       "default": "./src/annotationsTheme.ts"
+    },
+    "./mdCommands": {
+      "types": "./src/mdCommands.ts",
+      "svelte": "./src/mdCommands.ts",
+      "default": "./src/mdCommands.ts"
+    },
+    "./frontmatter": {
+      "types": "./src/frontmatter.ts",
+      "svelte": "./src/frontmatter.ts",
+      "default": "./src/frontmatter.ts"
     }
   },
   "scripts": {

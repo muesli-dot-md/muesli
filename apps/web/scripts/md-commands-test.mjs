@@ -1,5 +1,5 @@
 // Headless test for the toolbar's markdown command transforms
-// (src/mdCommands.ts — pure, DOM-free by design, same pattern as
+// (editor-core mdCommands.ts — pure, DOM-free by design, same pattern as
 // live-preview-test.mjs).
 //
 // Run from apps/web:  node scripts/md-commands-test.mjs
@@ -30,7 +30,7 @@ import {
   tableSkeleton,
   toggleInlineMark,
   toggleList,
-} from "../src/mdCommands.ts";
+} from "../../../packages/editor-core/src/mdCommands.ts";
 import { parseTableMarkdown } from "../src/livePreview/transform.ts";
 
 let passed = 0;
