@@ -1,9 +1,17 @@
-# Desktop release: signed updater artifacts + latest.json on a GitHub Release.
+# Desktop release: signed updater artifacts + latest.json on a GitHub Release,
+# plus unsigned Windows and Linux installers uploaded to the same release.
 #
 # Triggered by pushing a `desktop-vX.Y.Z` tag (or manually via
 # workflow_dispatch, which releases whatever version tauri.conf.json declares).
-# Runs on the same self-hosted macOS 15 (Sequoia) runner as desktop-macos.yml —
-# see that file for why (screencapturekit macos_15_0 + Swift rpath).
+# The macOS job runs on the same self-hosted macOS 15 (Sequoia) runner as
+# desktop-macos.yml — see that file for why (screencapturekit macos_15_0 +
+# Swift rpath). The windows/linux jobs MUST stay on GitHub-hosted runners:
+# self-hosted is reserved for the trusted macOS release job (see the security
+# note in desktop-macos.yml).
+#
+# Release coordination: release-macos creates the GitHub Release (it owns the
+# updater latest.json); windows/linux depend on it and only `gh release upload`
+# their installers to the existing release, so there is no create race.
 #
 # Version source of truth: apps/desktop/src-tauri/tauri.conf.json `version`.
 # Tag pushes FAIL FAST if the tag doesn't match it.
@@ -25,7 +33,7 @@
 # and staples the ticket. The minisign updater signature is independent and is
 # what tauri-plugin-updater enforces.
 
-name: Desktop Release (macOS)
+name: Desktop Release
 
 on:
   push:
@@ -119,6 +127,9 @@ jobs:
                   pub_date: new Date().toISOString(),
                   // aarch64-only for now; add darwin-x86_64 if/when an Intel
                   // build lands (spec: out of scope).
+                  // TODO: add windows-x86_64 / linux-x86_64 here if/when the
+                  // updater ships on those platforms (it is macOS-only today;
+                  // the windows/linux jobs publish plain installers only).
                   platforms: { "darwin-aarch64": { url, signature } },
                 },
                 null,
@@ -144,3 +155,159 @@ jobs:
             "$BUNDLE_DIR"/macos/*.app.tar.gz.sig \
             "$BUNDLE_DIR"/dmg/*.dmg \
             latest.json
+
+  # ----------------------------------------------------------------------------
+  # Windows installers — unsigned until we have a Windows signing cert.
+  # GitHub-hosted runner only (self-hosted is reserved for the trusted macOS
+  # release job). Uploads to the release created by release-macos.
+  # ----------------------------------------------------------------------------
+  windows:
+    needs: [release-macos]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build (desktop)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          cache-on-failure: true
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        # release-macos already fail-fasted if the tag mismatches tauri.conf.json.
+        run: |
+          VERSION=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # Unsigned until we have a Windows signing cert.
+      # createUpdaterArtifacts is disabled here: the updater only ships on
+      # macOS (latest.json is darwin-only), and leaving it on would require
+      # the minisign updater key on this GitHub-hosted runner.
+      # Retries: pyke's CDN intermittently 403s runner IPs (ort-sys download;
+      # Windows downloads fine otherwise — no ORT_LIB_LOCATION mirror needed).
+      - name: Build Tauri app (unsigned NSIS + MSI)
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            pnpm tauri build --bundles nsis,msi \
+              --config '{"bundle":{"createUpdaterArtifacts":false}}' && exit 0
+            [ $i -lt 3 ] && { echo "attempt $i failed; retrying in 90s"; sleep 90; }
+          done
+          exit 1
+
+      - name: Upload installers to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BUNDLE_DIR="apps/desktop/src-tauri/target/release/bundle"
+          gh release upload "desktop-v${VERSION}" --clobber \
+            "$BUNDLE_DIR"/nsis/*-setup.exe \
+            "$BUNDLE_DIR"/msi/*.msi
+
+  # ----------------------------------------------------------------------------
+  # Linux installers (AppImage + .deb), unsigned. GitHub-hosted runner only
+  # (self-hosted is reserved for the trusted macOS release job). Uploads to the
+  # release created by release-macos. System deps and the ONNX Runtime mirror
+  # step are copied from ci.yml's desktop-build (ubuntu) job.
+  # ----------------------------------------------------------------------------
+  linux:
+    needs: [release-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Tauri v2 Linux system prerequisites (webkit2gtk 4.1 + gtk + appindicator +
+      # build tooling). Same list as ci.yml's desktop-build job.
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libasound2-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libxdo-dev \
+            patchelf
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build (desktop)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          cache-on-failure: true
+
+      - name: Resolve version
+        id: version
+        # release-macos already fail-fasted if the tag mismatches tauri.conf.json.
+        run: |
+          VERSION=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # pyke's CDN 403s GitHub's Linux runner IPs, so we mirror pyke's own
+      # ms@1.24.2 static build as a release asset and link against it.
+      - name: Provide ONNX Runtime static lib
+        run: |
+          curl -fsSL --retry 3 -o /tmp/ort.tgz \
+            https://github.com/muesli-dot-md/.github/releases/download/ci-assets/onnxruntime-1.24.2-linux-x64-static.tar.gz
+          mkdir -p "$HOME/onnxruntime"
+          tar xzf /tmp/ort.tgz -C "$HOME/onnxruntime"
+          echo "ORT_LIB_LOCATION=$HOME/onnxruntime" >> "$GITHUB_ENV"
+
+      # createUpdaterArtifacts is disabled here: the updater only ships on
+      # macOS (latest.json is darwin-only), and leaving it on would require
+      # the minisign updater key on this GitHub-hosted runner.
+      - name: Build Tauri app (AppImage + deb)
+        working-directory: apps/desktop
+        run: |
+          pnpm tauri build --bundles appimage,deb \
+            --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Upload installers to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BUNDLE_DIR="apps/desktop/src-tauri/target/release/bundle"
+          gh release upload "desktop-v${VERSION}" --clobber \
+            "$BUNDLE_DIR"/appimage/*.AppImage \
+            "$BUNDLE_DIR"/deb/*.deb
