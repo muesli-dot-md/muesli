@@ -22,6 +22,8 @@ export type GraphNode = {
   /** Resolved outgoing/incoming edge counts (unresolved targets not included). */
   links_out: number;
   links_in: number;
+  /** null for ownerless/open-mode documents — mirrors DocumentSummary.workspace_id. */
+  workspace_id: string | null;
 };
 
 export type GraphEdge = { src: string; dst: string; raw_target: string };

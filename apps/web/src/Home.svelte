@@ -1067,7 +1067,7 @@
             <SettingsPage section={settingsSection} embedded />
           {/await}
         {:else if mainPanel === "graph"}
-          <GraphView embedded />
+          <GraphView embedded {selectedWorkspaceId} {personalWorkspaceId} />
         {:else}
           <!-- title row: workspace name / breadcrumbs · view toggle + info -->
           <div class="flex items-center justify-between gap-3 px-6 pt-5 pb-2">

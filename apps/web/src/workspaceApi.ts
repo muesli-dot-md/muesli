@@ -301,6 +301,11 @@ export function createWorkspaceApi(cfg: WorkspaceApiConfig) {
         method: "PATCH",
         body: { name },
       }),
+    /** Irreversible: purges every document in the workspace (admin-only). */
+    deleteWorkspace: (id: string) =>
+      req<{ deleted: boolean; id: string }>(`/api/workspaces/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }),
 
     // --- invites (admin) ---
     createInvite: (id: string, email: string, role: WorkspaceRole) =>

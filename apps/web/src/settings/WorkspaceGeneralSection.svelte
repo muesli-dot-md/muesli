@@ -1,11 +1,12 @@
 <script lang="ts">
   // Settings → workspace General (Multica's "General"). muesli's workspace model
   // backs ONLY the Name field (PATCH /api/workspaces/{id} {name}) — there is no
-  // description/context/slug column and no delete-workspace endpoint, so those
-  // Multica fields are intentionally absent (see the report). The Danger Zone
-  // carries the one real destructive action: Leave workspace (self-removal via
-  // DELETE …/members/{me}), available only for non-personal workspaces and not
-  // when you're the last admin.
+  // description/context/slug column, so those Multica fields are intentionally
+  // absent (see the report). The Danger Zone carries two destructive actions:
+  // Leave workspace (self-removal via DELETE …/members/{me}; non-personal only,
+  // not when you're the last admin) and Delete workspace (admin-only, DELETE
+  // /api/workspaces/{id} — purges every document; guarded by a typed-name
+  // confirmation).
   import { t } from "../i18n/index.svelte";
   import { httpBase, type Me } from "../identity";
   import {
@@ -45,6 +46,7 @@
 
   let saving = $state(false);
   let leaving = $state(false);
+  let deleting = $state(false);
 
   const isAdmin = $derived(workspace.role === "admin");
   const adminCount = $derived(detail?.members.filter((m) => m.role === "admin").length ?? 0);
@@ -85,6 +87,28 @@
       leaving = false;
     }
   }
+
+  /** Typed-name confirmation: a plain OK-click is too cheap for an action that
+   *  purges every document for every member. Mistyped/cancelled → no-op. */
+  async function deleteWorkspaceForever() {
+    const typed = prompt(t("confirm.deleteWorkspace", { name: workspace.name }));
+    if (typed === null) return;
+    if (typed.trim() !== workspace.name) {
+      toast(t("settings.general.deleteNameMismatch"), "warning");
+      return;
+    }
+    deleting = true;
+    try {
+      await api.deleteWorkspace(workspace.id);
+      toast(t("settings.general.deleted", { name: workspace.name }));
+      onchanged();
+    } catch (e) {
+      if (e instanceof WorkspaceApiError && e.status === 403) toast(t("ws.notAllowed"), "warning");
+      else toast(errMsg(e), "warning");
+    } finally {
+      deleting = false;
+    }
+  }
 </script>
 
 <header class="mb-5">
@@ -116,23 +140,46 @@
   </div>
 </SettingsCard>
 
-{#if !workspace.is_personal}
+{#if !workspace.is_personal || isAdmin}
   <SettingsCard heading={t("settings.general.dangerZone")} tone="danger">
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-3 px-5 py-4">
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium text-error">{t("settings.general.leave")}</p>
-        <p class="mt-0.5 text-xs text-[var(--text-muted)]" style="text-wrap: pretty;">
-          {onlyAdmin ? t("settings.general.leaveLastAdmin") : t("settings.general.leaveNote")}
-        </p>
+    {#if !workspace.is_personal}
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-3 px-5 py-4">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-error">{t("settings.general.leave")}</p>
+          <p class="mt-0.5 text-xs text-[var(--text-muted)]" style="text-wrap: pretty;">
+            {onlyAdmin ? t("settings.general.leaveLastAdmin") : t("settings.general.leaveNote")}
+          </p>
+        </div>
+        <button
+          class="btn btn-sm btn-error btn-outline shrink-0"
+          disabled={leaving || onlyAdmin}
+          onclick={leave}
+        >
+          {t("settings.general.leave")}
+        </button>
       </div>
-      <button
-        class="btn btn-sm btn-error btn-outline shrink-0"
-        disabled={leaving || onlyAdmin}
-        onclick={leave}
+    {/if}
+    {#if isAdmin}
+      <div
+        class="flex flex-wrap items-center gap-x-4 gap-y-3 px-5 py-4 {!workspace.is_personal
+          ? 'border-t border-base-300'
+          : ''}"
       >
-        {t("settings.general.leave")}
-      </button>
-    </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-error">{t("settings.general.delete")}</p>
+          <p class="mt-0.5 text-xs text-[var(--text-muted)]" style="text-wrap: pretty;">
+            {t("settings.general.deleteNote")}
+          </p>
+        </div>
+        <button
+          class="btn btn-sm btn-error btn-outline shrink-0"
+          disabled={deleting}
+          onclick={deleteWorkspaceForever}
+        >
+          {t("settings.general.delete")}
+        </button>
+      </div>
+    {/if}
   </SettingsCard>
 {:else}
   <p class="mt-4 px-1 text-xs text-[var(--text-muted)]" style="text-wrap: pretty;">

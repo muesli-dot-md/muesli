@@ -12,10 +12,25 @@
   import { httpBase } from "./identity";
   import { gotoDoc, route } from "./route.svelte";
   import { slugify } from "@muesli/editor-core/render";
+  import { inWorkspace } from "./homeWorkspace";
 
   // embedded: rendered inside the home screen's content pane instead of as a modal.
-  let { onclose = () => {}, embedded = false }: { onclose?: () => void; embedded?: boolean } =
-    $props();
+  // selectedWorkspaceId/personalWorkspaceId: scope the graph to the sidebar's current
+  // workspace (Home.svelte owns the selection), same inWorkspace() semantics as the
+  // document browser — otherwise every workspace the caller can see gets drawn as one
+  // "universe" graph. Both null (the non-embedded per-document modal, opened from
+  // inside a doc with no workspace picker in scope) means "don't filter".
+  let {
+    onclose = () => {},
+    embedded = false,
+    selectedWorkspaceId = null,
+    personalWorkspaceId = null,
+  }: {
+    onclose?: () => void;
+    embedded?: boolean;
+    selectedWorkspaceId?: string | null;
+    personalWorkspaceId?: string | null;
+  } = $props();
 
   // Captured at mount: the view remounts on navigation (DocApp is keyed per doc,
   // the home embeds a fresh instance), so a snapshot is always current.
@@ -134,9 +149,14 @@
       const api = createGraphApi({ httpBase, shareToken });
       const graph = await api.getGraph();
 
+      // Scope to the current workspace: edges/ghosts naturally follow since the
+      // lookups below (byId.get(...)) skip anything not built into `sim`.
+      const scopedNodes = graph.nodes.filter((n) =>
+        inWorkspace(n.workspace_id, selectedWorkspaceId, personalWorkspaceId),
+      );
       const sim: SimNode[] = [];
       const byId = new Map<string, number>();
-      for (const node of graph.nodes) {
+      for (const node of scopedNodes) {
         byId.set(node.document_id, sim.length);
         sim.push({
           id: node.document_id,
