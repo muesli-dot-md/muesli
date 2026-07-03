@@ -204,7 +204,7 @@ importers:
         version: link:../../packages/workspace-setup
       dompurify:
         specifier: ^3.2.0
-        version: 3.4.9
+        version: 3.4.11
       katex:
         specifier: ^0.17.0
         version: 0.17.0
@@ -1567,9 +1567,6 @@ packages:
 
   dompurify@3.4.11:
     resolution: {integrity: sha512-zhlUV12GsaRzMsf9q5M254YhA4+VuF0fG+QFqu6aYpoGlKtz+w8//jBcGVYBgQkR5GHjUomejY84AV+/uPbWdw==}
-
-  dompurify@3.4.9:
-    resolution: {integrity: sha512-4dPSRMRDqHvs0V4YDFCsaIZo4if5u0xM+llyxiM2fwuZFdKArUBAF3VtI2+n8NKg9P870WMdYk0UhqQNoWXbfQ==}
 
   encoding-down@6.3.0:
     resolution: {integrity: sha512-QKrV0iKR6MZVJV08QY0wp1e7vF6QbhnbQhb07bwpEyuz4uZiZgPlEGdkCROuFkUwdxlFaiPIhjyarH1ee/3vhw==}
@@ -3415,10 +3412,6 @@ snapshots:
   devalue@5.8.1: {}
 
   dompurify@3.4.11:
-    optionalDependencies:
-      '@types/trusted-types': 2.0.7
-
-  dompurify@3.4.9:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
