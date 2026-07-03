@@ -16,9 +16,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::Json;
 use axum_extra::extract::cookie::CookieJar;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot};
@@ -41,7 +42,7 @@ const DOC_UNAVAILABLE: &str = "document not found or access denied";
 /// O(document size) — so unbounded requests could pin the actor for all collaborators.
 const MAX_LIST_ITEMS: usize = 200;
 const MAX_EDITS: usize = 500;
-const POLICY_DISABLED: &str = "policy-disabled: agent accept/resolve is disabled on this server (MUESLI_AGENT_GATED_ACTIONS)";
+const POLICY_DISABLED: &str = "policy-disabled: agent gated actions (accept/resolve/purge/delete-workspace) are disabled on this server (MUESLI_AGENT_GATED_ACTIONS)";
 
 // ---------------------------------------------------------------------------
 // Transport: one JSON-RPC request per POST
@@ -288,6 +289,287 @@ fn tool_definitions() -> Vec<Value> {
             "Reject every pending suggestion in a change set (gated: requires MUESLI_AGENT_GATED_ACTIONS=true on the server).",
             id_only("change_set_id", "Change set UUID"),
         ),
+        // --- Full-surface parity tools (bridged onto the REST handlers) ---
+        tool(
+            "update_document",
+            "Rename (display title), move between folders, and/or star a document. title: null/\"\" clears back to the slug; folder_id: null moves to the root. Editor on the document.",
+            schema(
+                json!({
+                    "title": { "type": ["string", "null"], "description": "New display title; null or \"\" clears it" },
+                    "folder_id": { "type": ["string", "null"], "description": "Destination folder UUID; null = workspace root" },
+                    "starred": { "type": "boolean" }
+                }),
+                &[],
+            ),
+        ),
+        tool(
+            "trash_document",
+            "Move a document to the trash (soft delete; restorable). Editor on the document.",
+            schema(json!({}), &[]),
+        ),
+        tool(
+            "restore_document",
+            "Restore a trashed document. Editor on the document.",
+            schema(json!({}), &[]),
+        ),
+        tool(
+            "purge_document",
+            "PERMANENTLY delete a trashed or live document and all its comments/suggestions/history (gated: requires MUESLI_AGENT_GATED_ACTIONS=true on the server). Editor on the document.",
+            schema(json!({}), &[]),
+        ),
+        tool(
+            "search",
+            "Full-text search over documents visible to you (title and content, ranked). Returns snippets.",
+            json!({ "type": "object",
+                    "properties": {
+                        "q": { "type": "string", "description": "Search query" },
+                        "limit": { "type": "integer", "description": "Max results (default 20, max 100)" }
+                    },
+                    "required": ["q"] }),
+        ),
+        tool(
+            "reopen_comment",
+            "Reopen a resolved comment thread (the inverse of resolve_comment).",
+            schema(json!({ "thread_id": { "type": "string", "description": "Comment thread UUID" } }), &["thread_id"]),
+        ),
+        tool(
+            "create_folder",
+            "Create a folder. The default workspace is the parent's, else your primary workspace.",
+            json!({ "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "parent_id": { "type": "string", "description": "Parent folder UUID (absent = workspace root)" },
+                        "workspace_id": { "type": "string", "description": "Workspace UUID (defaults to the parent's, else your primary workspace)" }
+                    },
+                    "required": ["name"] }),
+        ),
+        tool(
+            "update_folder",
+            "Rename a folder and/or move it (parent_id: null = to the root). Moving under a descendant is rejected.",
+            json!({ "type": "object",
+                    "properties": {
+                        "folder_id": { "type": "string" },
+                        "name": { "type": "string" },
+                        "parent_id": { "type": ["string", "null"], "description": "New parent folder UUID; null = workspace root" }
+                    },
+                    "required": ["folder_id"] }),
+        ),
+        tool(
+            "trash_folder",
+            "Move a folder (and its contents) to the trash (soft delete; restorable).",
+            id_only("folder_id", "Folder UUID"),
+        ),
+        tool(
+            "restore_folder",
+            "Restore a trashed folder and its contents.",
+            id_only("folder_id", "Folder UUID"),
+        ),
+        tool(
+            "create_share_link",
+            "Create a share link for a document at a role (viewer | commenter | editor). Editor on the document.",
+            schema(
+                json!({
+                    "role": { "type": "string", "enum": ["viewer", "commenter", "editor"] },
+                    "expires_in_secs": { "type": "integer", "description": "Link lifetime in seconds (absent = no expiry)" }
+                }),
+                &["role"],
+            ),
+        ),
+        tool(
+            "list_document_members",
+            "List who can access a document (workspace members and per-document grants).",
+            schema(json!({}), &[]),
+        ),
+        tool(
+            "list_notifications",
+            "Your notification inbox (newest first): mentions addressed to this principal. For a delegated agent token this is the AGENT's own inbox.",
+            json!({ "type": "object",
+                    "properties": {
+                        "unread_only": { "type": "boolean" },
+                        "before": { "type": "string", "description": "Timestamp cursor for paging (from a previous page's oldest created_at)" }
+                    },
+                    "required": [] }),
+        ),
+        tool(
+            "mark_notification_read",
+            "Mark one notification read.",
+            id_only("notification_id", "Notification UUID"),
+        ),
+        tool(
+            "mark_all_notifications_read",
+            "Mark every unread notification read.",
+            json!({ "type": "object", "properties": {}, "required": [] }),
+        ),
+        tool(
+            "get_graph",
+            "The cross-document link graph visible to you: nodes (documents), edges (wikilinks), unresolved link targets.",
+            json!({ "type": "object", "properties": {}, "required": [] }),
+        ),
+        tool(
+            "get_document_links",
+            "One document's outgoing links and incoming backlinks.",
+            schema(json!({}), &[]),
+        ),
+        tool(
+            "list_workspaces",
+            "List workspaces you belong to, with your role in each.",
+            json!({ "type": "object", "properties": {}, "required": [] }),
+        ),
+        tool(
+            "create_workspace",
+            "Create a new workspace (you become its admin). It starts pending_storage until a storage connection is bound.",
+            json!({ "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }),
+        ),
+        tool(
+            "get_workspace",
+            "One workspace's detail: members, invites, storage binding.",
+            id_only("workspace_id", "Workspace UUID"),
+        ),
+        tool(
+            "rename_workspace",
+            "Rename a workspace. Admin.",
+            json!({ "type": "object",
+                    "properties": { "workspace_id": { "type": "string" }, "name": { "type": "string" } },
+                    "required": ["workspace_id", "name"] }),
+        ),
+        tool(
+            "delete_workspace",
+            "PERMANENTLY delete a workspace and every document in it, for all members (gated: requires MUESLI_AGENT_GATED_ACTIONS=true on the server). Admin.",
+            id_only("workspace_id", "Workspace UUID"),
+        ),
+        tool(
+            "create_workspace_invite",
+            "Invite an email to a workspace at a role (admin | member). Admin.",
+            json!({ "type": "object",
+                    "properties": {
+                        "workspace_id": { "type": "string" },
+                        "email": { "type": "string" },
+                        "role": { "type": "string", "enum": ["admin", "member"] }
+                    },
+                    "required": ["workspace_id", "email", "role"] }),
+        ),
+        tool(
+            "revoke_workspace_invite",
+            "Revoke a pending workspace invite. Admin.",
+            json!({ "type": "object",
+                    "properties": { "workspace_id": { "type": "string" }, "invite_id": { "type": "string" } },
+                    "required": ["workspace_id", "invite_id"] }),
+        ),
+        tool(
+            "set_workspace_member_role",
+            "Change a member's role (admin | member). Demoting the last admin is rejected. Admin.",
+            json!({ "type": "object",
+                    "properties": {
+                        "workspace_id": { "type": "string" },
+                        "user_id": { "type": "string" },
+                        "role": { "type": "string", "enum": ["admin", "member"] }
+                    },
+                    "required": ["workspace_id", "user_id", "role"] }),
+        ),
+        tool(
+            "remove_workspace_member",
+            "Remove a member from a workspace (or yourself, to leave). Removing the last admin is rejected.",
+            json!({ "type": "object",
+                    "properties": { "workspace_id": { "type": "string" }, "user_id": { "type": "string" } },
+                    "required": ["workspace_id", "user_id"] }),
+        ),
+        tool(
+            "list_workspace_audit",
+            "The workspace's security audit trail (newest first). Admin.",
+            json!({ "type": "object",
+                    "properties": {
+                        "workspace_id": { "type": "string" },
+                        "limit": { "type": "integer" },
+                        "before_id": { "type": "integer", "description": "Paging cursor (an audit row id)" }
+                    },
+                    "required": ["workspace_id"] }),
+        ),
+        tool(
+            "list_storage_connections",
+            "List a workspace's storage connections (S3 / GitHub / Google Drive / SharePoint). Admin.",
+            id_only("workspace_id", "Workspace UUID"),
+        ),
+        tool(
+            "create_storage_connection",
+            "Create a storage connection on a workspace. kind: \"s3\" (endpoint, bucket, region, access_key_id, secret_key, prefix?) or \"github\" (api_base, owner, repo, branch?, token, prefix?). The connection is probed before it is stored. Admin. (Google Drive / SharePoint bind via browser OAuth, not this tool.)",
+            json!({ "type": "object",
+                    "properties": {
+                        "workspace_id": { "type": "string" },
+                        "kind": { "type": "string", "enum": ["s3", "github"] },
+                        "endpoint": { "type": "string" }, "bucket": { "type": "string" },
+                        "region": { "type": "string" }, "access_key_id": { "type": "string" },
+                        "secret_key": { "type": "string" }, "api_base": { "type": "string" },
+                        "owner": { "type": "string" }, "repo": { "type": "string" },
+                        "branch": { "type": "string" }, "token": { "type": "string" },
+                        "prefix": { "type": "string" }
+                    },
+                    "required": ["workspace_id", "kind"] }),
+        ),
+        tool(
+            "delete_storage_connection",
+            "Delete a workspace storage connection. Admin.",
+            json!({ "type": "object",
+                    "properties": { "workspace_id": { "type": "string" }, "connection_id": { "type": "string" } },
+                    "required": ["workspace_id", "connection_id"] }),
+        ),
+        tool(
+            "get_storage_status",
+            "Per-document materialization status for a workspace's storage (attached, pending, errors). Admin.",
+            id_only("workspace_id", "Workspace UUID"),
+        ),
+        tool(
+            "attach_document_storage",
+            "Attach one document to a storage connection (writes the canonical file). Editor on the document; the connection must belong to its workspace.",
+            schema(
+                json!({
+                    "storage_conn_id": { "type": "string" },
+                    "rel_path": { "type": "string", "description": "Path inside the backend (defaults to the computed folder path + title)" }
+                }),
+                &["storage_conn_id"],
+            ),
+        ),
+        tool(
+            "get_me",
+            "Who am I: the server's auth mode and the signed-in user (the token OWNER's identity for delegated tokens).",
+            json!({ "type": "object", "properties": {}, "required": [] }),
+        ),
+        tool(
+            "update_profile",
+            "Update the caller's profile (display_name, avatar_url). Requires a human session — delegated agent tokens are refused by the server (they may only stamp onboarded).",
+            json!({ "type": "object",
+                    "properties": {
+                        "display_name": { "type": ["string", "null"] },
+                        "avatar_url": { "type": ["string", "null"] },
+                        "onboarded": { "type": "boolean" }
+                    },
+                    "required": [] }),
+        ),
+        tool(
+            "list_api_tokens",
+            "List the caller's delegated agent tokens. Requires a human session — agent tokens are refused (an agent cannot inspect its owner's keys).",
+            json!({ "type": "object", "properties": {}, "required": [] }),
+        ),
+        tool(
+            "mint_api_token",
+            "Mint a delegated agent token. Requires a human session — agent tokens are refused (an agent cannot mint itself new keys).",
+            json!({ "type": "object",
+                    "properties": {
+                        "label": { "type": "string" },
+                        "scopes": { "type": "array", "items": { "type": "string" }, "description": "[\"read\"] or [\"read\",\"write\"]" },
+                        "expires_in_days": { "type": "integer" }
+                    },
+                    "required": ["label", "scopes"] }),
+        ),
+        tool(
+            "revoke_api_token",
+            "Revoke one of the caller's tokens. Requires a human session — agent tokens are refused.",
+            id_only("token_id", "Token UUID"),
+        ),
+        tool(
+            "get_storage_usage",
+            "The caller's per-workspace storage usage. Requires a human session.",
+            json!({ "type": "object", "properties": {}, "required": [] }),
+        ),
     ]
 }
 
@@ -330,6 +612,45 @@ async fn call_tool(c: &Caller<'_>, name: &str, args: &Value) -> Result<Value, To
         "reject_suggestion" => reject_suggestion(c, args).await?,
         "accept_change_set" => accept_change_set(c, args).await?,
         "reject_change_set" => reject_change_set(c, args).await?,
+        // --- REST-bridged parity tools (see "Full-surface parity" below) ---
+        "update_document" => update_document(c, args).await?,
+        "trash_document" => trash_document(c, args).await?,
+        "restore_document" => restore_document(c, args).await?,
+        "purge_document" => purge_document(c, args).await?,
+        "search" => search_docs(c, args).await?,
+        "reopen_comment" => reopen_comment(c, args).await?,
+        "create_folder" => create_folder(c, args).await?,
+        "update_folder" => update_folder(c, args).await?,
+        "trash_folder" => trash_folder(c, args).await?,
+        "restore_folder" => restore_folder(c, args).await?,
+        "create_share_link" => create_share_link(c, args).await?,
+        "list_document_members" => list_document_members(c, args).await?,
+        "list_notifications" => notif_list(c, args).await?,
+        "mark_notification_read" => notif_mark_read(c, args).await?,
+        "mark_all_notifications_read" => notif_read_all(c).await?,
+        "get_graph" => get_graph(c).await?,
+        "get_document_links" => get_document_links(c, args).await?,
+        "list_workspaces" => ws_list(c).await?,
+        "create_workspace" => ws_create(c, args).await?,
+        "get_workspace" => ws_get(c, args).await?,
+        "rename_workspace" => ws_rename(c, args).await?,
+        "delete_workspace" => ws_delete(c, args).await?,
+        "create_workspace_invite" => ws_invite(c, args).await?,
+        "revoke_workspace_invite" => ws_revoke_invite(c, args).await?,
+        "set_workspace_member_role" => ws_set_role(c, args).await?,
+        "remove_workspace_member" => ws_remove_member(c, args).await?,
+        "list_workspace_audit" => ws_audit(c, args).await?,
+        "list_storage_connections" => storage_list(c, args).await?,
+        "create_storage_connection" => storage_create(c, args).await?,
+        "delete_storage_connection" => storage_delete(c, args).await?,
+        "get_storage_status" => storage_status_tool(c, args).await?,
+        "attach_document_storage" => attach_storage(c, args).await?,
+        "get_me" => me_tool(c).await?,
+        "update_profile" => update_profile(c, args).await?,
+        "list_api_tokens" => tokens_list(c).await?,
+        "mint_api_token" => tokens_mint(c, args).await?,
+        "revoke_api_token" => tokens_revoke(c, args).await?,
+        "get_storage_usage" => storage_usage_tool(c).await?,
         _ => return Err(ToolError::Unknown),
     })
 }
@@ -1259,6 +1580,438 @@ async fn reject_change_set(c: &Caller<'_>, args: &Value) -> Result<Value, String
         json!({ "change_set_id": change_set_id, "rejected_count": rejected.len() }),
     );
     Ok(json!({ "change_set_id": change_set_id, "rejected": rejected }))
+}
+
+// ---------------------------------------------------------------------------
+// Full-surface parity (MCP-parity audit 2026-07-02): the remaining user
+// capabilities, BRIDGED onto the real REST handlers rather than re-implemented.
+// Each tool builds the handler's extractors from the SAME state/jar/headers this
+// request carried and invokes the handler function directly — so authentication,
+// role checks, token scopes, audit entries, workspace SSE events, and storage
+// side effects are the REST ones, by construction, and can never drift.
+// ---------------------------------------------------------------------------
+
+/// Convert a bridged handler's Response into an MCP tool result. Success bodies
+/// parse as JSON (every bridged endpoint answers JSON); failures carry the
+/// handler's plain-text error verbatim.
+async fn rest_result(resp: Response) -> Result<Value, String> {
+    let status = resp.status();
+    let bytes = axum::body::to_bytes(resp.into_body(), 8 * 1024 * 1024)
+        .await
+        .map_err(|e| format!("reading internal response failed: {e}"))?;
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    if status.is_success() {
+        Ok(serde_json::from_str(&text).unwrap_or_else(|_| json!({ "ok": true })))
+    } else if text.trim().is_empty() {
+        Err(format!("HTTP {status}"))
+    } else {
+        Err(text)
+    }
+}
+
+/// Document-scoped variant: 403/404/410 collapse into the one generic message
+/// (the same existence-oracle rule as doc_by_slug — slugs are globally unique).
+async fn rest_doc_result(resp: Response) -> Result<Value, String> {
+    let status = resp.status();
+    if matches!(
+        status,
+        StatusCode::FORBIDDEN | StatusCode::NOT_FOUND | StatusCode::GONE
+    ) {
+        // Drain the body (drop the distinguishing text) before answering generically.
+        let _ = axum::body::to_bytes(resp.into_body(), 64 * 1024).await;
+        return Err(DOC_UNAVAILABLE.to_string());
+    }
+    rest_result(resp).await
+}
+
+/// Deserialize the tool arguments into a REST request body (unknown fields —
+/// document_id/slug and friends — are ignored by serde's defaults).
+fn body_from_args<T: serde::de::DeserializeOwned>(args: &Value) -> Result<T, String> {
+    serde_json::from_value(args.clone()).map_err(|e| format!("invalid arguments: {e}"))
+}
+
+/// Copy selected args into a REST query map (numbers/bools stringified).
+fn query_of(args: &Value, keys: &[&str]) -> Query<HashMap<String, String>> {
+    let mut map = HashMap::new();
+    for key in keys {
+        match args.get(*key) {
+            Some(Value::String(s)) => {
+                map.insert((*key).to_string(), s.clone());
+            }
+            Some(v) if v.is_number() || v.is_boolean() => {
+                map.insert((*key).to_string(), v.to_string());
+            }
+            _ => {}
+        }
+    }
+    Query(map)
+}
+
+impl Caller<'_> {
+    fn app(&self) -> State<AppState> {
+        State(self.state.clone())
+    }
+    fn jar(&self) -> CookieJar {
+        self.jar.clone()
+    }
+    fn headers(&self) -> HeaderMap {
+        self.headers.clone()
+    }
+}
+
+// --- documents: rename / move / star / trash / restore / purge ----------------
+
+async fn update_document(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let slug = c.slug_from_args(args).await?;
+    let req: crate::folders::UpdateDocumentReq = body_from_args(args)?;
+    rest_doc_result(
+        crate::folders::update_document(c.app(), Path(slug), c.jar(), c.headers(), Json(req))
+            .await,
+    )
+    .await
+}
+
+async fn trash_document(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let slug = c.slug_from_args(args).await?;
+    rest_doc_result(crate::folders::delete_document(c.app(), Path(slug), c.jar(), c.headers()).await)
+        .await
+}
+
+async fn restore_document(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let slug = c.slug_from_args(args).await?;
+    rest_doc_result(
+        crate::folders::restore_document(c.app(), Path(slug), c.jar(), c.headers()).await,
+    )
+    .await
+}
+
+async fn purge_document(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    gate(c, "purge_document")?;
+    let slug = c.slug_from_args(args).await?;
+    rest_doc_result(crate::folders::purge_document(c.app(), Path(slug), c.jar(), c.headers()).await)
+        .await
+}
+
+// --- search & graph ------------------------------------------------------------
+
+async fn search_docs(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    if args.get("q").and_then(Value::as_str).map(str::trim).unwrap_or("").is_empty() {
+        return Err("pass a non-empty q".into());
+    }
+    rest_result(
+        crate::search::search(c.app(), query_of(args, &["q", "limit"]), c.jar(), c.headers())
+            .await,
+    )
+    .await
+}
+
+async fn get_graph(c: &Caller<'_>) -> Result<Value, String> {
+    rest_result(crate::links::graph(c.app(), c.jar(), c.headers()).await).await
+}
+
+async fn get_document_links(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let slug = c.slug_from_args(args).await?;
+    rest_doc_result(
+        crate::links::document_links(
+            c.app(),
+            Path(slug),
+            Query(HashMap::new()),
+            c.jar(),
+            c.headers(),
+        )
+        .await,
+    )
+    .await
+}
+
+// --- comments: reopen (the inverse resolve_comment lacked) ----------------------
+
+async fn reopen_comment(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let slug = c.slug_from_args(args).await?;
+    let thread_id = uuid_arg(args, "thread_id")?;
+    rest_doc_result(
+        crate::api::reopen_thread(
+            c.app(),
+            Path((slug, thread_id)),
+            Query(HashMap::new()),
+            c.jar(),
+            c.headers(),
+        )
+        .await,
+    )
+    .await
+}
+
+// --- folders ---------------------------------------------------------------------
+
+async fn create_folder(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let req: crate::folders::CreateFolderReq = body_from_args(args)?;
+    rest_result(crate::folders::create_folder(c.app(), c.jar(), c.headers(), Json(req)).await).await
+}
+
+async fn update_folder(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "folder_id")?;
+    let req: crate::folders::UpdateFolderReq = body_from_args(args)?;
+    rest_result(
+        crate::folders::update_folder(c.app(), Path(id), c.jar(), c.headers(), Json(req)).await,
+    )
+    .await
+}
+
+async fn trash_folder(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "folder_id")?;
+    rest_result(crate::folders::delete_folder(c.app(), Path(id), c.jar(), c.headers()).await).await
+}
+
+async fn restore_folder(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "folder_id")?;
+    rest_result(crate::folders::restore_folder(c.app(), Path(id), c.jar(), c.headers()).await).await
+}
+
+// --- sharing & members -------------------------------------------------------------
+
+async fn create_share_link(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let slug = c.slug_from_args(args).await?;
+    let req: crate::auth::ShareRequest = body_from_args(args)?;
+    rest_doc_result(
+        crate::auth::create_share(c.app(), Path(slug), c.jar(), c.headers(), Json(req)).await,
+    )
+    .await
+}
+
+async fn list_document_members(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let slug = c.slug_from_args(args).await?;
+    rest_doc_result(
+        crate::api::list_members(c.app(), Path(slug), Query(HashMap::new()), c.jar(), c.headers())
+            .await,
+    )
+    .await
+}
+
+// --- notifications (NOT bridged: the REST inbox is session-only, and an agent
+// must read ITS OWN inbox — recipient = the agent identity — never its owner's) ---
+
+fn inbox_user(c: &Caller<'_>) -> Result<Uuid, String> {
+    match &c.principal {
+        Some(p) if p.is_agent => Ok(p.author),
+        Some(p) => Ok(p.role_user),
+        None => Err("notifications require identity — the server runs in open mode".into()),
+    }
+}
+
+async fn notif_list(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let db = c.persistence()?;
+    let user = inbox_user(c)?;
+    let unread_only = args.get("unread_only").and_then(Value::as_bool).unwrap_or(false);
+    let before = args.get("before").and_then(Value::as_str);
+    if let Some(raw) = before {
+        match db.is_valid_timestamptz(raw).await {
+            Ok(true) => {}
+            Ok(false) => return Err("malformed before cursor".into()),
+            Err(e) => return Err(internal(e)),
+        }
+    }
+    let rows = db
+        .list_notifications(user, unread_only, before, crate::notifications_api::INBOX_LIMIT)
+        .await
+        .map_err(internal)?;
+    Ok(json!({ "notifications": rows }))
+}
+
+async fn notif_mark_read(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let db = c.persistence()?;
+    let user = inbox_user(c)?;
+    let id = uuid_arg(args, "notification_id")?;
+    match db.mark_notification_read(id, user).await.map_err(internal)? {
+        true => Ok(json!({ "ok": true })),
+        false => Err("no such notification".into()),
+    }
+}
+
+async fn notif_read_all(c: &Caller<'_>) -> Result<Value, String> {
+    let db = c.persistence()?;
+    let user = inbox_user(c)?;
+    let n = db.mark_all_notifications_read(user).await.map_err(internal)?;
+    Ok(json!({ "marked": n }))
+}
+
+// --- workspaces ----------------------------------------------------------------------
+
+async fn ws_list(c: &Caller<'_>) -> Result<Value, String> {
+    rest_result(crate::workspace::list_workspaces(c.app(), c.jar(), c.headers()).await).await
+}
+
+async fn ws_create(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let req: crate::workspace::CreateWorkspaceReq = body_from_args(args)?;
+    rest_result(crate::workspace::create_workspace(c.app(), c.jar(), c.headers(), Json(req)).await)
+        .await
+}
+
+async fn ws_get(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "workspace_id")?;
+    rest_result(crate::workspace::get_workspace(c.app(), Path(id), c.jar(), c.headers()).await)
+        .await
+}
+
+async fn ws_rename(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "workspace_id")?;
+    let req: crate::workspace::RenameReq = body_from_args(args)?;
+    rest_result(
+        crate::workspace::rename_workspace(c.app(), Path(id), c.jar(), c.headers(), Json(req))
+            .await,
+    )
+    .await
+}
+
+async fn ws_delete(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    gate(c, "delete_workspace")?;
+    let id = uuid_arg(args, "workspace_id")?;
+    rest_result(crate::workspace::delete_workspace(c.app(), Path(id), c.jar(), c.headers()).await)
+        .await
+}
+
+async fn ws_invite(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "workspace_id")?;
+    let req: crate::workspace::InviteReq = body_from_args(args)?;
+    rest_result(
+        crate::workspace::create_invite(c.app(), Path(id), c.jar(), c.headers(), Json(req)).await,
+    )
+    .await
+}
+
+async fn ws_revoke_invite(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let ws = uuid_arg(args, "workspace_id")?;
+    let invite = uuid_arg(args, "invite_id")?;
+    rest_result(
+        crate::workspace::delete_invite(c.app(), Path((ws, invite)), c.jar(), c.headers()).await,
+    )
+    .await
+}
+
+async fn ws_set_role(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let ws = uuid_arg(args, "workspace_id")?;
+    let user = uuid_arg(args, "user_id")?;
+    let req: crate::workspace::MemberRoleReq = body_from_args(args)?;
+    rest_result(
+        crate::workspace::set_member_role(c.app(), Path((ws, user)), c.jar(), c.headers(), Json(req))
+            .await,
+    )
+    .await
+}
+
+async fn ws_remove_member(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let ws = uuid_arg(args, "workspace_id")?;
+    let user = uuid_arg(args, "user_id")?;
+    rest_result(
+        crate::workspace::remove_member(c.app(), Path((ws, user)), c.jar(), c.headers()).await,
+    )
+    .await
+}
+
+async fn ws_audit(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "workspace_id")?;
+    rest_result(
+        crate::audit::list_workspace_audit(
+            c.app(),
+            Path(id),
+            query_of(args, &["limit", "before_id"]),
+            c.jar(),
+            c.headers(),
+        )
+        .await,
+    )
+    .await
+}
+
+// --- storage connections ---------------------------------------------------------------
+
+async fn storage_list(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "workspace_id")?;
+    rest_result(
+        crate::workspace::list_storage_connections(c.app(), Path(id), c.jar(), c.headers()).await,
+    )
+    .await
+}
+
+async fn storage_create(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "workspace_id")?;
+    let req: crate::workspace::CreateStorageReq = body_from_args(args)?;
+    rest_result(
+        crate::workspace::create_storage_connection(
+            c.app(),
+            Path(id),
+            c.jar(),
+            c.headers(),
+            Json(req),
+        )
+        .await,
+    )
+    .await
+}
+
+async fn storage_delete(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let ws = uuid_arg(args, "workspace_id")?;
+    let conn = uuid_arg(args, "connection_id")?;
+    rest_result(
+        crate::workspace::delete_storage_connection(c.app(), Path((ws, conn)), c.jar(), c.headers())
+            .await,
+    )
+    .await
+}
+
+async fn storage_status_tool(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "workspace_id")?;
+    rest_result(crate::workspace::storage_status(c.app(), Path(id), c.jar(), c.headers()).await)
+        .await
+}
+
+async fn attach_storage(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let slug = c.slug_from_args(args).await?;
+    let req: crate::workspace::AttachReq = body_from_args(args)?;
+    rest_doc_result(
+        crate::workspace::attach_document_storage(
+            c.app(),
+            Path(slug),
+            Query(HashMap::new()),
+            c.jar(),
+            c.headers(),
+            Json(req),
+        )
+        .await,
+    )
+    .await
+}
+
+// --- account: identity, profile, tokens, usage ------------------------------------------
+// list/mint/revoke tokens, profile fields, and usage go through account.rs's
+// session_ctx, which REFUSES agent principals (AGENTS_REJECTED) — deliberately
+// inherited here: an agent must never mint itself keys or inspect its owner's.
+
+async fn me_tool(c: &Caller<'_>) -> Result<Value, String> {
+    rest_result(crate::auth::me(c.app(), c.jar(), c.headers()).await).await
+}
+
+async fn update_profile(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let req: crate::account::UpdateMeReq = body_from_args(args)?;
+    rest_result(crate::account::update_me(c.app(), c.jar(), c.headers(), Json(req)).await).await
+}
+
+async fn tokens_list(c: &Caller<'_>) -> Result<Value, String> {
+    rest_result(crate::account::list_tokens(c.app(), c.jar(), c.headers()).await).await
+}
+
+async fn tokens_mint(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let req: crate::account::MintTokenReq = body_from_args(args)?;
+    rest_result(crate::account::mint_token(c.app(), c.jar(), c.headers(), Json(req)).await).await
+}
+
+async fn tokens_revoke(c: &Caller<'_>, args: &Value) -> Result<Value, String> {
+    let id = uuid_arg(args, "token_id")?;
+    rest_result(crate::account::revoke_token(c.app(), Path(id), c.jar(), c.headers()).await).await
+}
+
+async fn storage_usage_tool(c: &Caller<'_>) -> Result<Value, String> {
+    rest_result(crate::account::storage_usage(c.app(), c.jar(), c.headers()).await).await
 }
 
 // ---------------------------------------------------------------------------

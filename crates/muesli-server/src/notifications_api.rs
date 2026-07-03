@@ -27,8 +27,9 @@ use crate::AppState;
 /// (and a `default_enabled` arm) surfaces it in the settings matrix automatically.
 const KNOWN_EVENT_TYPES: &[&str] = &[EVENT_MENTION];
 
-/// Inbox page size (newest-first). Generous — the inbox is small in v1; pagination via `before`.
-const INBOX_LIMIT: i64 = 100;
+/// Inbox page size (newest-first). Generous — the inbox is small in v1; pagination via
+/// `before`. Crate-visible: the MCP notification tools page identically (mcp.rs).
+pub(crate) const INBOX_LIMIT: i64 = 100;
 
 fn err(status: StatusCode, msg: impl Into<String>) -> Response {
     (status, msg.into()).into_response()
