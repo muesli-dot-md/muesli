@@ -7,12 +7,20 @@ WORKDIR /src
 RUN corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
-RUN pnpm install --frozen-lockfile --filter @muesli/web
+COPY packages/editor-core/package.json packages/editor-core/
+COPY packages/workspace-setup/package.json packages/workspace-setup/
+# `...` includes the web app's workspace dependencies (editor-core,
+# workspace-setup) in the install.
+RUN pnpm install --frozen-lockfile --filter "@muesli/web..."
 COPY apps/web apps/web
+COPY packages/editor-core packages/editor-core
+COPY packages/workspace-setup packages/workspace-setup
+# Cross-app design tokens imported by apps/web/src/app.css.
+COPY shared shared
 RUN pnpm --filter @muesli/web exec vite build
 
 # --- server ----------------------------------------------------------------
-FROM rust:1.86-bookworm AS build
+FROM rust:1.95-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
