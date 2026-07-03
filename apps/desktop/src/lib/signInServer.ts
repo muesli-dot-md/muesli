@@ -60,7 +60,7 @@ export function normalizeServerInput(raw: string): string | null {
 
 /**
  * The friendly label for a stored wsBase: scheme and the trailing "/ws"
- * stripped (`wss://muesli.md/ws` → `muesli.md`, `ws://localhost:8787/ws` →
+ * stripped (`wss://app.muesli.md/ws` → `app.muesli.md`, `ws://localhost:8787/ws` →
  * `localhost:8787`). Purely cosmetic — never written back to settings.
  */
 export function displayHost(wsBase: string): string {
@@ -73,8 +73,8 @@ export function displayHost(wsBase: string): string {
 
 /**
  * The EDITABLE form of a stored wsBase — what URL inputs prefill with, so
- * users only ever see and type a plain address (`wss://muesli.md/ws` →
- * `https://muesli.md`). Inverse of normalizeServerInput on canonical values:
+ * users only ever see and type a plain address (`wss://app.muesli.md/ws` →
+ * `https://app.muesli.md`). Inverse of normalizeServerInput on canonical values:
  * normalizeServerInput(displayUrl(x)) === x. Tolerant of legacy
  * un-normalized values (trailing slashes, an already-https string).
  */

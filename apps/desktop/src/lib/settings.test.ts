@@ -17,10 +17,10 @@ describe("settings.autoUpdate (spec 2026-07-02 Decision 2)", () => {
 });
 
 describe("settings.wsBase default (sign-in server picker spec 2026-07-02, Decision 3)", () => {
-  it("fresh installs point at the public muesli.md server", () => {
+  it("fresh installs point at the public app.muesli.md server", () => {
     // Node test env has no localStorage, so the singleton constructed from
     // DEFAULTS — exactly the fresh-install / cleared-storage case. Persisted
     // values win via load(); only the default flips.
-    expect(settings.wsBase).toBe("wss://muesli.md/ws");
+    expect(settings.wsBase).toBe("wss://app.muesli.md/ws");
   });
 });

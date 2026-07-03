@@ -10,11 +10,11 @@ describe("normalizeServerInput", () => {
     ["https://muesli.example.com", "wss://muesli.example.com/ws"],
     ["http://localhost:8787", "ws://localhost:8787/ws"],
     // already-websocket inputs pass through; an existing /ws is not doubled
-    ["wss://muesli.md/ws", "wss://muesli.md/ws"],
+    ["wss://app.muesli.md/ws", "wss://app.muesli.md/ws"],
     ["ws://localhost:8787", "ws://localhost:8787/ws"],
     ["ws://localhost:8787/ws", "ws://localhost:8787/ws"],
     // bare host[:port] → wss (self-hosters get TLS by default)
-    ["muesli.md", "wss://muesli.md/ws"],
+    ["app.muesli.md", "wss://app.muesli.md/ws"],
     ["muesli.example.com:9443", "wss://muesli.example.com:9443/ws"],
     // trailing slashes stripped, before and after the /ws suffix
     ["https://muesli.example.com/", "wss://muesli.example.com/ws"],
@@ -52,7 +52,7 @@ describe("normalizeServerInput", () => {
 // The friendly label for the dialog's Server row: scheme + /ws suffix stripped.
 describe("displayHost", () => {
   it.each([
-    ["wss://muesli.md/ws", "muesli.md"],
+    ["wss://app.muesli.md/ws", "app.muesli.md"],
     ["ws://localhost:8787/ws", "localhost:8787"],
     ["wss://muesli.example.com:9443/ws", "muesli.example.com:9443"],
     ["wss://muesli.example.com/team/ws", "muesli.example.com/team"],
@@ -75,19 +75,19 @@ describe("displayHost", () => {
 // users only ever see/type a plain https:// address — never the ws parts.
 describe("displayUrl", () => {
   it.each([
-    ["wss://muesli.md/ws", "https://muesli.md"],
+    ["wss://app.muesli.md/ws", "https://app.muesli.md"],
     ["ws://localhost:8787/ws", "http://localhost:8787"],
     ["wss://muesli.example.com:9443/ws", "https://muesli.example.com:9443"],
     ["wss://muesli.example.com/team/ws", "https://muesli.example.com/team"],
     // tolerant of legacy un-normalized persisted values
-    ["wss://muesli.md/ws/", "https://muesli.md"],
+    ["wss://app.muesli.md/ws/", "https://app.muesli.md"],
     ["https://muesli.example.com", "https://muesli.example.com"],
   ])("renders %s as %s", (wsBase, expected) => {
     expect(displayUrl(wsBase)).toBe(expected);
   });
 
   it.each([
-    ["wss://muesli.md/ws"],
+    ["wss://app.muesli.md/ws"],
     ["ws://localhost:8787/ws"],
     ["wss://muesli.example.com/team/ws"],
   ])("round-trips %s through normalizeServerInput unchanged", (wsBase) => {

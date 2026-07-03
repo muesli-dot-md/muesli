@@ -9,9 +9,9 @@ const DEFAULTS = {
   // 2026-07-02, Decision 3). Persisted values always win (load() prefers a
   // stored string), so existing installs are untouched; self-hosters change
   // it in the sign-in dialog's Change… flow or Settings → Sync. Sign-in
-  // against a not-yet-live muesli.md fails gracefully via the existing
+  // against a not-yet-live app.muesli.md fails gracefully via the existing
   // workspaces.error surface; local-only use never touches it.
-  wsBase: "wss://muesli.md/ws",
+  wsBase: "wss://app.muesli.md/ws",
   // Local-first by default: with no collab server running (Phase 2 not built
   // yet), the sync open-path mounts an empty CRDT doc and blocks on the
   // seed-fallback timer before showing the file. The local path mounts the

@@ -39,7 +39,7 @@ localStorage key and remove the app's Keychain entry via Keychain Access):
 Sign-in always shows WHICH server it will run against, with a Change…
 affordance (spec
 `internal/superpowers/specs/2026-07-02-desktop-signin-server-picker-design.md`).
-Fresh installs default to `wss://muesli.md/ws`; persisted values win. Verify
+Fresh installs default to `wss://app.muesli.md/ws`; persisted values win. Verify
 after clearing the `muesli:settings` localStorage key:
 
 - [ ] Workspace menu → Sign in… shows the dialog with the current server

@@ -20,11 +20,18 @@ pub struct AuthConfig {
 }
 
 pub async fn auth_config(server: &str) -> Result<AuthConfig> {
-    let url = format!("{}/api/cli/auth-config", http_base(server));
-    reqwest::get(&url)
+    let base = http_base(server);
+    let url = format!("{base}/api/cli/auth-config");
+    let resp = reqwest::get(&url)
         .await
-        .with_context(|| format!("reaching {url}"))?
-        .error_for_status()?
+        .with_context(|| format!("reaching {url}"))?;
+    // A 404 here almost always means the address serves something else entirely
+    // (a website, a proxy's default page) — surface that instead of the raw
+    // reqwest status error, which reads like a bug rather than a wrong address.
+    if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        bail!("{base} doesn't answer like a Muesli server (404 on /api/cli/auth-config). Check the server address.");
+    }
+    resp.error_for_status()?
         .json()
         .await
         .context("parsing auth-config")
