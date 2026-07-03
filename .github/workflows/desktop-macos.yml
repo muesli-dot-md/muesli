@@ -7,13 +7,10 @@
 # Sequoia runner (label below). To use a GitHub-hosted runner instead, swap
 # `runs-on` for the `macos-15` line shown in the comment.
 #
-# Apple signing/notarization are intentionally DEFERRED here: this workflow
-# builds UNSIGNED (Apple-wise) for build verification only, with updater
-# artifacts disabled (see the step below) so no signing secret is needed.
-# Signed updater artifacts are produced separately by desktop-release.yml.
-# Adding real Apple signing later means adding the relevant secrets
-# (APPLE_CERTIFICATE, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD,
-# APPLE_TEAM_ID, etc.) and the tauri.conf.json signing config.
+# This workflow builds UNSIGNED (Apple-wise) for build verification only, with
+# updater artifacts disabled (see the step below) so no signing secret is
+# needed. Apple signing + notarization happen in desktop-release.yml, which
+# holds the APPLE_* and TAURI_SIGNING_* secrets.
 #
 # Kept in its own workflow so a missing/offline macOS runner does not block the
 # Linux/Windows CI in ci.yml.

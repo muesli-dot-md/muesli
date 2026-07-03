@@ -11,10 +11,18 @@
 # Required repo secrets (uploaded by a human; see apps/desktop/README.md):
 #   TAURI_SIGNING_PRIVATE_KEY           — contents of apps/desktop/.updater-key
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  — contents of apps/desktop/.updater-key.pass
-# CI must never print either value.
+#   APPLE_CERTIFICATE                   — base64 of the Developer ID Application .p12
+#   APPLE_CERTIFICATE_PASSWORD          — password chosen at .p12 export
+#   APPLE_SIGNING_IDENTITY              — e.g. "Developer ID Application: Julian Beaulieu (TEAMID)"
+#   APPLE_API_ISSUER                    — App Store Connect API issuer ID (UUID)
+#   APPLE_API_KEY                       — App Store Connect API key ID
+#   APPLE_API_KEY_CONTENT               — contents of the AuthKey_<KEYID>.p8 file
+# CI must never print any of these values.
 #
-# Apple signing/notarization stay DEFERRED (see desktop-macos.yml): the bundle
-# is unsigned Apple-wise; the minisign updater signature is independent and is
+# Tauri's bundler picks the APPLE_* vars up automatically: it imports the
+# certificate into a temporary keychain, signs with the hardened runtime and
+# src-tauri/Entitlements.plist, submits to Apple notarization via the API key,
+# and staples the ticket. The minisign updater signature is independent and is
 # what tauri-plugin-updater enforces.
 
 name: Desktop Release (macOS)
@@ -67,12 +75,30 @@ jobs:
             exit 1
           fi
 
-      - name: Build Tauri app (signed updater artifacts)
+      - name: Write App Store Connect API key
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$APPLE_API_KEY_CONTENT" > "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+        env:
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+
+      - name: Build Tauri app (Apple-signed, notarized, updater artifacts)
         working-directory: apps/desktop
         run: pnpm tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          # APPLE_API_KEY_PATH is exported by the previous step.
+
+      - name: Clean up App Store Connect API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
 
       - name: Generate latest.json
         run: |
