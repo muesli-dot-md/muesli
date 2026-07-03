@@ -91,13 +91,15 @@ jobs:
       - name: clippy (workspace)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - name: Provide ONNX Runtime (pyke CDN blocks Linux runner IPs)
+      # pyke's CDN 403s GitHub's Linux runner IPs, so we mirror pyke's own
+      # ms@1.24.2 static build as a release asset and link against it.
+      - name: Provide ONNX Runtime static lib
         run: |
           curl -fsSL --retry 3 -o /tmp/ort.tgz \
-            https://github.com/microsoft/onnxruntime/releases/download/v1.24.2/onnxruntime-linux-x64-1.24.2.tgz
+            https://github.com/muesli-dot-md/.github/releases/download/ci-assets/onnxruntime-1.24.2-linux-x64-static.tar.gz
           mkdir -p "$HOME/onnxruntime"
-          tar xzf /tmp/ort.tgz -C "$HOME/onnxruntime" --strip-components=1
-          echo "ORT_LIB_LOCATION=$HOME/onnxruntime/lib" >> "$GITHUB_ENV"
+          tar xzf /tmp/ort.tgz -C "$HOME/onnxruntime"
+          echo "ORT_LIB_LOCATION=$HOME/onnxruntime" >> "$GITHUB_ENV"
 
       - name: clippy (src-tauri)
         run: |
@@ -253,14 +255,16 @@ jobs:
       - name: Build desktop frontend
         run: pnpm --filter Muesli build
 
-      - name: Provide ONNX Runtime (pyke CDN blocks Linux runner IPs)
+      # pyke's CDN 403s GitHub's Linux runner IPs, so we mirror pyke's own
+      # ms@1.24.2 static build as a release asset and link against it.
+      - name: Provide ONNX Runtime static lib
         if: matrix.os == 'ubuntu-latest'
         run: |
           curl -fsSL --retry 3 -o /tmp/ort.tgz \
-            https://github.com/microsoft/onnxruntime/releases/download/v1.24.2/onnxruntime-linux-x64-1.24.2.tgz
+            https://github.com/muesli-dot-md/.github/releases/download/ci-assets/onnxruntime-1.24.2-linux-x64-static.tar.gz
           mkdir -p "$HOME/onnxruntime"
-          tar xzf /tmp/ort.tgz -C "$HOME/onnxruntime" --strip-components=1
-          echo "ORT_LIB_LOCATION=$HOME/onnxruntime/lib" >> "$GITHUB_ENV"
+          tar xzf /tmp/ort.tgz -C "$HOME/onnxruntime"
+          echo "ORT_LIB_LOCATION=$HOME/onnxruntime" >> "$GITHUB_ENV"
 
       - name: Compile-verify Tauri app
         # Retries: pyke CDN intermittently 403s runner IPs (Windows path).
