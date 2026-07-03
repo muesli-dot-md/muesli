@@ -44,6 +44,7 @@ Everything below must be green before you consider a change done:
 
 ```sh
 pnpm install
+git config core.hooksPath .githooks   # once per clone: pre-push fmt/lint gate
 pnpm test           # all vitest suites (editor-core, workspace-setup, web, desktop)
 pnpm check          # svelte-check + tsc in every package
 pnpm lint           # eslint (flat config: eslint.config.mjs)
