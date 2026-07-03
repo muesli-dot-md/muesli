@@ -12,6 +12,7 @@
   import GitBranch from "@lucide/svelte/icons/git-branch";
   import HardDrive from "@lucide/svelte/icons/hard-drive";
   import { onMount } from "svelte";
+  import { errMsg } from "../apiError";
   import { t, type MessageKey } from "../i18n/index.svelte";
   import { httpBase, loginUrl, type AuthInfo } from "../identity";
   import { driveDate } from "../time";
@@ -72,8 +73,6 @@
       api.listSharePointLibraries(id, body),
   };
 
-  const errMsg = (e: unknown) =>
-    t("common.errorWithDetail", { detail: e instanceof Error ? e.message : String(e) });
 
   async function loadWorkspaces() {
     loading = true;

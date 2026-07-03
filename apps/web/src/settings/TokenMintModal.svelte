@@ -5,12 +5,8 @@
   // ready-to-paste MCP config snippet pointing at {httpBase}/mcp.
   import Copy from "@lucide/svelte/icons/copy";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
-  import {
-    AccountApiError,
-    type AccountApi,
-    type MintedToken,
-    type TokenScopes,
-  } from "../accountApi";
+  import { type AccountApi, type MintedToken, type TokenScopes } from "../accountApi";
+  import { errMsg } from "../apiError";
   import { t } from "../i18n/index.svelte";
   import { httpBase } from "../identity";
 
@@ -62,10 +58,8 @@
         expires_in_days: expiry === "never" ? null : Number(expiry),
       });
     } catch (e2) {
-      error =
-        e2 instanceof AccountApiError && e2.status === 400
-          ? e2.message
-          : t("common.errorWithDetail", { detail: e2 instanceof Error ? e2.message : String(e2) });
+      // 400 = validation the server words for the user; errMsg passes 4xx through as-is.
+      error = errMsg(e2);
     } finally {
       minting = false;
     }

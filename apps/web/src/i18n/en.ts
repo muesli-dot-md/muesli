@@ -28,7 +28,8 @@ export const en = {
   "common.unknown": "Unknown",
   "common.shared": "Shared",
   "common.signInToDo": "Sign in to do this.",
-  "common.errorWithDetail": "Something went wrong: {detail}",
+  "common.errorFriendly":
+    "Looks like we spilled some muesli — that didn't work. Please try again.",
   "common.folderCount.one": "{count} folder",
   "common.folderCount.other": "{count} folders",
   "common.documentCount.one": "{count} document",

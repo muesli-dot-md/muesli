@@ -26,7 +26,8 @@ export const es: Record<keyof Messages, string> = {
   "common.unknown": "Desconocido",
   "common.shared": "Compartido",
   "common.signInToDo": "Inicia sesión para hacer esto.",
-  "common.errorWithDetail": "Algo salió mal: {detail}",
+  "common.errorFriendly":
+    "Parece que derramamos un poco de muesli — eso no funcionó. Inténtalo de nuevo, por favor.",
   "common.folderCount.one": "{count} carpeta",
   "common.folderCount.other": "{count} carpetas",
   "common.documentCount.one": "{count} documento",

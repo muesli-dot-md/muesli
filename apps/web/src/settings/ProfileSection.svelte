@@ -5,7 +5,8 @@
   // stubs. The avatar never touches blob storage: it is cover-cropped and
   // resized to 128px on a canvas and sent as a ≤64 KB data URL.
   import Copy from "@lucide/svelte/icons/copy";
-  import { createAccountApi, AccountApiError, type AccountUser } from "../accountApi";
+  import { createAccountApi, type AccountUser } from "../accountApi";
+  import { errMsg } from "../apiError";
   import { t } from "../i18n/index.svelte";
   import { httpBase, loginUrl, type AuthInfo } from "../identity";
   import SettingRow from "./SettingRow.svelte";
@@ -40,8 +41,6 @@
   let pendingAvatar: string | null = $state(null);
   let fileInput: HTMLInputElement | undefined = $state();
 
-  const errMsg = (e: unknown) =>
-    t("common.errorWithDetail", { detail: e instanceof Error ? e.message : String(e) });
 
   async function patch(body: { display_name?: string | null; avatar_url?: string | null }) {
     const user = await api.patchMe(body);
@@ -135,7 +134,7 @@
       pendingAvatar = null;
       toast(t("settings.profile.saved"));
     } catch (e) {
-      toast(e instanceof AccountApiError && e.status === 400 ? e.message : errMsg(e), "warning");
+      toast(errMsg(e), "warning");
     } finally {
       savingAvatar = false;
     }

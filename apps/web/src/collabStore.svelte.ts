@@ -18,6 +18,7 @@ import {
   type Suggestion,
   type Thread,
 } from "./collabApi";
+import { errMsg } from "./apiError";
 import { t } from "./i18n/index.svelte";
 import { byteRangeToUtf16, utf16RangeToByte } from "@muesli/editor-core/offsets";
 import {
@@ -353,9 +354,7 @@ export class CollabStore {
     } else if (e instanceof ApiError && e.status === 503) {
       this.availability = "volatile";
     } else {
-      this.showToast(
-        t("common.errorWithDetail", { detail: e instanceof Error ? e.message : String(e) }),
-      );
+      this.showToast(errMsg(e));
     }
   }
 

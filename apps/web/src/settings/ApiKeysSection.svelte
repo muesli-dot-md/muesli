@@ -7,6 +7,7 @@
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import { onMount } from "svelte";
   import { createAccountApi, AccountApiError, type ApiTokenSummary } from "../accountApi";
+  import { errMsg } from "../apiError";
   import { t } from "../i18n/index.svelte";
   import { httpBase, loginUrl, type AuthInfo } from "../identity";
   import { driveDate, fullDateTime } from "../time";
@@ -30,8 +31,6 @@
   let mintOpen = $state(false);
   let revoking: string | null = $state(null);
 
-  const errMsg = (e: unknown) =>
-    t("common.errorWithDetail", { detail: e instanceof Error ? e.message : String(e) });
 
   async function load() {
     loading = true;

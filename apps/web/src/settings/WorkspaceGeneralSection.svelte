@@ -7,6 +7,7 @@
   // not when you're the last admin) and Delete workspace (admin-only, DELETE
   // /api/workspaces/{id} — purges every document; guarded by a typed-name
   // confirmation).
+  import { errMsg } from "../apiError";
   import { t } from "../i18n/index.svelte";
   import { httpBase, type Me } from "../identity";
   import {
@@ -55,8 +56,6 @@
   );
   const dirty = $derived(nameDraft.trim() !== "" && nameDraft.trim() !== workspace.name);
 
-  const errMsg = (e: unknown) =>
-    t("common.errorWithDetail", { detail: e instanceof Error ? e.message : String(e) });
 
   async function save() {
     if (!dirty) return;

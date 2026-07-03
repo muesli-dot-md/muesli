@@ -14,6 +14,7 @@
   import Star from "@lucide/svelte/icons/star";
   import X from "@lucide/svelte/icons/x";
   import { createGraphApi, type DocumentLinks } from "./graphApi";
+  import { errMsg } from "./apiError";
   import { t } from "./i18n/index.svelte";
   import { httpBase, type AuthInfo } from "./identity";
   import { gotoDoc, gotoFolder, gotoHome } from "./route.svelte";
@@ -116,10 +117,7 @@
           words: (text.match(/\S+/g) ?? []).length,
         };
       } catch (e) {
-        if (!stale)
-          extrasError = t("common.errorWithDetail", {
-            detail: e instanceof Error ? e.message : String(e),
-          });
+        if (!stale) extrasError = errMsg(e);
       }
       try {
         const l = await graphApi.getDocumentLinks(slug);
@@ -154,9 +152,7 @@
       shareError =
         e instanceof WorkspaceApiError && e.status === 403
           ? t("info.onlyEditorsShare")
-          : t("common.errorWithDetail", {
-              detail: e instanceof Error ? e.message : String(e),
-            });
+          : errMsg(e);
     }
   }
 

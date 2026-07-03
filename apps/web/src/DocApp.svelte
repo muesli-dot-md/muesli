@@ -11,6 +11,7 @@
   import NotFound from "./NotFound.svelte";
   import { relativeTime, authorName } from "./collabStore.svelte";
   import { classifyDocError, type ErrorKind } from "./errorKind";
+  import { errMsg } from "./apiError";
   import { t } from "./i18n/index.svelte";
   import { renderMarkdown } from "@muesli/editor-core/render";
   import { fetchMe, httpBase, logout, me, setMeIdentity, type AuthInfo } from "./identity";
@@ -147,9 +148,7 @@
       if (e instanceof WorkspaceApiError && e.status === 401) {
         collab.showToast(t("common.signInToDo"));
       } else {
-        collab.showToast(
-          t("common.errorWithDetail", { detail: e instanceof Error ? e.message : String(e) }),
-        );
+        collab.showToast(errMsg(e));
       }
     }
   }
@@ -197,9 +196,7 @@
       shareUrl = link.url;
       await navigator.clipboard.writeText(link.url).catch(() => {});
     } catch (e) {
-      shareError = t("common.errorWithDetail", {
-        detail: e instanceof Error ? e.message : String(e),
-      });
+      shareError = errMsg(e);
     }
   }
 

@@ -6,6 +6,7 @@
   import X from "@lucide/svelte/icons/x";
   import { onMount } from "svelte";
   import { createGraphApi, GraphApiError } from "./graphApi";
+  import { errMsg } from "./apiError";
   import { t } from "./i18n/index.svelte";
   // identity/route, not session: the home screen embeds this view and must not
   // pull in yjs / open a doc room as a side effect.
@@ -216,9 +217,7 @@
           ? t("graph.volatile")
           : e instanceof GraphApiError && (e.status === 401 || e.status === 403)
             ? t("graph.signInToSee")
-            : t("common.errorWithDetail", {
-                detail: e instanceof Error ? e.message : String(e),
-              });
+            : errMsg(e);
     } finally {
       loading = false;
     }

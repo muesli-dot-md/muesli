@@ -17,3 +17,29 @@ export function classifyDocError(status: number): ErrorKind {
   if (status === 401 || status === 403) return "no-access";
   return "generic";
 }
+
+// --- generic API failures (toasts / inline errors) --------------------------------
+
+export type ApiErrorPresentation =
+  | { kind: "actionable"; message: string }
+  | { kind: "unexpected"; detail: string };
+
+/** Split a failed API call into "show the server's words" vs "hide the guts".
+ *
+ *  4xx bodies are messages the server wrote FOR the user ("name already taken",
+ *  "endpoint and bucket are required") — user-actionable, shown as-is. Everything
+ *  else — 5xx (config/internal, e.g. "google drive is not configured on the
+ *  server (set MUESLI_GOOGLE_CLIENT_ID …)"), network failures, parse errors — is
+ *  not the user's fault and not theirs to fix: those get the friendly catch-all,
+ *  with the technical detail kept for the console only.
+ *
+ *  Every API error class (WorkspaceApiError, AccountApiError, GraphApiError, the
+ *  collab/notifications ApiErrors) is an Error carrying a numeric `status`. */
+export function presentApiError(e: unknown): ApiErrorPresentation {
+  const status = e !== null && typeof e === "object" ? (e as { status?: unknown }).status : null;
+  const message = e instanceof Error ? e.message : String(e);
+  if (typeof status === "number" && status >= 400 && status < 500 && message.trim()) {
+    return { kind: "actionable", message };
+  }
+  return { kind: "unexpected", detail: message };
+}

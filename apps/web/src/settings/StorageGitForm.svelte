@@ -3,6 +3,7 @@
   // backend serves all three; only the api_base differs. The token lives in
   // the server's MUESLI_GITHUB_TOKEN env; the repo is probed before the row
   // is created (502 = unreachable, inline).
+  import { errMsg } from "../apiError";
   import { t } from "../i18n/index.svelte";
   import { WorkspaceApiError, type WorkspaceApi } from "../workspaceApi";
 
@@ -45,7 +46,7 @@
       } else if (e2 instanceof WorkspaceApiError && e2.status === 503) {
         error = t("settings.conn.serverMissingEnv", { detail: e2.message });
       } else {
-        error = e2 instanceof Error ? e2.message : String(e2);
+        error = errMsg(e2);
       }
     } finally {
       busy = false;

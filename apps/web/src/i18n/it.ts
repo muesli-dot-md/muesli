@@ -25,7 +25,8 @@ export const it: Record<keyof Messages, string> = {
   "common.unknown": "Sconosciuto",
   "common.shared": "Condiviso",
   "common.signInToDo": "Accedi per eseguire questa operazione.",
-  "common.errorWithDetail": "Si è verificato un errore: {detail}",
+  "common.errorFriendly":
+    "Sembra che abbiamo rovesciato un po' di muesli — non ha funzionato. Riprova, per favore.",
   "common.folderCount.one": "{count} cartella",
   "common.folderCount.other": "{count} cartelle",
   "common.documentCount.one": "{count} documento",

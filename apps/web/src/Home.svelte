@@ -28,6 +28,7 @@
   import InfoPanel, { type InfoTarget } from "./InfoPanel.svelte";
   import { openSearchPalette, searchPaletteOpen, searchShortcutHint } from "./SearchPalette.svelte";
   import WorkspaceMenu from "./WorkspaceMenu.svelte";
+  import { errMsg } from "./apiError";
   import { t } from "./i18n/index.svelte";
   import { compareBy, homeMainPanel, inWorkspace } from "./homeWorkspace";
   import { avatarLetter } from "./workspaceMenu";
@@ -130,9 +131,6 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => (toast = ""), 4000);
   }
-  // Server/network errors aren't translated; wrap the detail in a generic message.
-  const errMsg = (e: unknown) =>
-    t("common.errorWithDetail", { detail: e instanceof Error ? e.message : String(e) });
   const docCount = (n: number) =>
     t(n === 1 ? "common.documentCount.one" : "common.documentCount.other", { count: n });
 

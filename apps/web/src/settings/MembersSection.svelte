@@ -5,6 +5,7 @@
   // the admin audit log. All against the live workspace API (roles, invites,
   // members, audit). The shell passes the loaded `detail`; mutations call back to
   // reload it. Personal workspaces have only you, so the invite form is hidden.
+  import { errMsg } from "../apiError";
   import { t } from "../i18n/index.svelte";
   import { httpBase, type Me } from "../identity";
   import { relativeTime } from "../time";
@@ -68,10 +69,7 @@
     else if (e instanceof WorkspaceApiError && e.status === 403)
       toast(t("ws.notAllowed"), "warning");
     else
-      toast(
-        t("common.errorWithDetail", { detail: e instanceof Error ? e.message : String(e) }),
-        "warning",
-      );
+      toast(errMsg(e), "warning");
   }
 
   async function loadAudit(reset: boolean) {

@@ -3,6 +3,7 @@
   // must not pull in yjs / open a doc room as a side effect.
   import Pencil from "@lucide/svelte/icons/pencil";
   import X from "@lucide/svelte/icons/x";
+  import { errMsg } from "./apiError";
   import { t } from "./i18n/index.svelte";
   import { httpBase, type Me } from "./identity";
   import { relativeTime } from "./time";
@@ -130,7 +131,7 @@
     } else if (e instanceof WorkspaceApiError && e.status === 401) {
       toast(t("common.signInToDo"));
     } else {
-      toast(t("common.errorWithDetail", { detail: e instanceof Error ? e.message : String(e) }));
+      toast(errMsg(e));
     }
   }
 

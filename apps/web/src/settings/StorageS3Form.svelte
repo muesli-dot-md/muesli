@@ -7,6 +7,7 @@
   // this form always collects them so a fresh connection is never silently dependent
   // on server env vars the admin may not control. The server probes the bucket before
   // creating the row, so 502 = "couldn't reach it" inline.
+  import { errMsg } from "../apiError";
   import { t } from "../i18n/index.svelte";
   import { WorkspaceApiError, type WorkspaceApi } from "../workspaceApi";
 
@@ -70,7 +71,7 @@
       } else if (e2 instanceof WorkspaceApiError && e2.status === 503) {
         error = t("settings.conn.serverMissingEnv", { detail: e2.message });
       } else {
-        error = e2 instanceof Error ? e2.message : String(e2);
+        error = errMsg(e2);
       }
     } finally {
       busy = false;
