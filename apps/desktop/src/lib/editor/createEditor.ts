@@ -1,4 +1,4 @@
-import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
+import { EditorView, keymap, placeholder, type ViewUpdate } from "@codemirror/view";
 import { EditorState, type Extension } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
@@ -48,6 +48,9 @@ export function createEditor(opts: CreateEditorOpts): EditorView {
   } = opts;
 
   const extensions: Extension[] = [
+    // A blank file would otherwise render as pure nothing (the caret only
+    // draws once focused) — give the empty doc a hint that this is the editor.
+    placeholder("Start writing…"),
     markdown({ base: markdownLanguage, codeLanguages: fenceLanguage }),
     EditorView.lineWrapping,
     history(),
@@ -89,5 +92,10 @@ export function createEditor(opts: CreateEditorOpts): EditorView {
   }
 
   const state = EditorState.create({ doc, extensions });
-  return new EditorView({ state, parent });
+  const view = new EditorView({ state, parent });
+  // Clicking a file means "let me type": focus immediately so the caret is
+  // visible (CodeMirror draws no cursor while unfocused, which on an empty
+  // file looks like a dead pane).
+  view.focus();
+  return view;
 }

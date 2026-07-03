@@ -31,6 +31,9 @@ export const muesliTheme = EditorView.theme(
     ".cm-line": {
       padding: "0",
     },
+    ".cm-placeholder": {
+      color: "var(--text-muted)",
+    },
     "&.cm-focused .cm-cursor": {
       borderLeftColor: "var(--color-primary)",
     },
