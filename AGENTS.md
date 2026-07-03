@@ -4,8 +4,8 @@ Guidance for AI coding agents working in this repository.
 
 ## What this is
 
-Muesli is "Google Docs for Markdown files": a Rust sync server + Svelte web app +
-Tauri desktop app + CLI. The live document is a text CRDT (yrs/Yjs) over raw
+Muesli is the real-time editor for teams and their AI agents: a Rust sync server +
+Svelte web app + Tauri desktop app + CLI. The live document is a text CRDT (yrs/Yjs) over raw
 markdown; it is continuously materialized to a plain `.md` in a storage backend,
 and external edits to that file are ingested back as text diffs. The `.md` file
 stays canonical — nothing is ever converted.

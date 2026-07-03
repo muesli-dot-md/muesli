@@ -165,7 +165,7 @@ export const fr: Record<keyof Messages, string> = {
 
   // --- dedicated auth page (signed-out shell, Commit 1) ----------------------------------
   "auth.tagline":
-    "Google Docs pour les fichiers Markdown. Connecte-toi pour reprendre là où tu t'es arrêté.",
+    "L'éditeur en temps réel pour les équipes et leurs agents IA. Connecte-toi pour reprendre là où tu t'es arrêté.",
   "auth.signInWithSso": "Utiliser le SSO de l'organisation",
   "auth.backToSignIn": "Retour",
   "auth.ssoIntro":
@@ -615,7 +615,7 @@ export const fr: Record<keyof Messages, string> = {
   "settings.shortcuts.redo": "Rétablir",
   "settings.shortcuts.indent": "Indenter (listes, code)",
   "settings.shortcuts.submitComment": "Soumettre le commentaire",
-  "settings.about.tagline": "Google Docs pour les fichiers Markdown.",
+  "settings.about.tagline": "L'éditeur en temps réel pour les équipes et leurs agents IA.",
   "settings.about.metaFailed":
     "Impossible d'atteindre le serveur pour les informations de version.",
   "settings.about.version": "Version du serveur",

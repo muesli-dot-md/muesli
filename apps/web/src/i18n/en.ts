@@ -505,7 +505,7 @@ export const en = {
   "settings.shortcuts.submitComment": "Submit comment",
 
   // --- settings → about ----------------------------------------------------------------------------
-  "settings.about.tagline": "Google Docs for Markdown files.",
+  "settings.about.tagline": "The real-time editor for teams and their AI agents.",
   "settings.about.metaFailed": "Couldn't reach the server for version info.",
   "settings.about.version": "Server version",
   "settings.about.commit": "Commit",
@@ -541,7 +541,8 @@ export const en = {
   "account.userId": "User ID",
 
   // --- dedicated auth page (signed-out shell, Commit 1) ----------------------------------
-  "auth.tagline": "Google Docs for Markdown files. Sign in to pick up where you left off.",
+  "auth.tagline":
+    "The real-time editor for teams and their AI agents. Sign in to pick up where you left off.",
   "auth.signInWithSso": "Use organization SSO",
   "auth.backToSignIn": "Back",
   "auth.ssoIntro": "Enter your work email and we'll route you to your organization's sign-in.",

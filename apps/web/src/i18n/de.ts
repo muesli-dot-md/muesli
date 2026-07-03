@@ -166,7 +166,7 @@ export const de: Record<keyof Messages, string> = {
 
   // --- dedicated auth page (signed-out shell, Commit 1) ----------------------------------
   "auth.tagline":
-    "Google Docs für Markdown-Dateien. Melde dich an, um dort weiterzumachen, wo du aufgehört hast.",
+    "Der Echtzeit-Editor für Teams und ihre KI-Agenten. Melde dich an, um dort weiterzumachen, wo du aufgehört hast.",
   "auth.signInWithSso": "Organisation-SSO verwenden",
   "auth.backToSignIn": "Zurück",
   "auth.ssoIntro":
@@ -619,7 +619,7 @@ export const de: Record<keyof Messages, string> = {
   "settings.shortcuts.redo": "Wiederholen",
   "settings.shortcuts.indent": "Einrücken (Listen, Code)",
   "settings.shortcuts.submitComment": "Kommentar absenden",
-  "settings.about.tagline": "Google Docs für Markdown-Dateien.",
+  "settings.about.tagline": "Der Echtzeit-Editor für Teams und ihre KI-Agenten.",
   "settings.about.metaFailed": "Der Server war für Versionsinformationen nicht erreichbar.",
   "settings.about.version": "Serverversion",
   "settings.about.commit": "Commit",

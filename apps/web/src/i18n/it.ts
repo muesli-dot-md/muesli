@@ -166,7 +166,8 @@ export const it: Record<keyof Messages, string> = {
   "account.userId": "ID utente",
 
   // --- dedicated auth page (signed-out shell, Commit 1) ----------------------------------
-  "auth.tagline": "Google Docs per i file Markdown. Accedi per riprendere da dove eri rimasto.",
+  "auth.tagline":
+    "L'editor in tempo reale per i team e i loro agenti IA. Accedi per riprendere da dove eri rimasto.",
   "auth.signInWithSso": "Usa SSO organizzazione",
   "auth.backToSignIn": "Indietro",
   "auth.ssoIntro":
@@ -611,7 +612,7 @@ export const it: Record<keyof Messages, string> = {
   "settings.shortcuts.redo": "Ripristina",
   "settings.shortcuts.indent": "Rientra (liste, codice)",
   "settings.shortcuts.submitComment": "Invia commento",
-  "settings.about.tagline": "Google Docs per i file Markdown.",
+  "settings.about.tagline": "L'editor in tempo reale per i team e i loro agenti IA.",
   "settings.about.metaFailed":
     "Impossibile raggiungere il server per le informazioni sulla versione.",
   "settings.about.version": "Versione server",
