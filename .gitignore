@@ -1,6 +1,9 @@
 # ── Internal planning/design notes — not for publication ────────────────────
 internal/
 
+# ── Docs live in the muesli-dot-md/docs repo (docs.muesli.md), not here ──────
+docs/
+
 # ── Rust ─────────────────────────────────────────────────────────────────────
 target/
 *.rs.bk
