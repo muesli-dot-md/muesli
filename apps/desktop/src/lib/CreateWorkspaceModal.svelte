@@ -10,6 +10,10 @@
     SharePointLibraries,
     SharePointCredentials,
   } from "@muesli/workspace-setup/host";
+  import {
+    ALL_STORAGE_AVAILABLE,
+    parseStorageCapabilities,
+  } from "@muesli/workspace-setup/capabilities";
   import { apiRequest } from "$lib/collab/apiRequest";
   import { httpBaseOf } from "$lib/httpBase";
   import { pickFolder } from "$lib/tauri";
@@ -60,16 +64,16 @@
         `${httpBaseOf(server)}/api/workspaces/${encodeURIComponent(id)}/storage/google/start?wizard=1`,
       );
     },
-    driveConfigured: async () => {
-      const first = workspaces.list.find((w) => w.server)?.id;
-      if (!first) return true;
+    storageCapabilities: async () => {
+      // /api/me reports which backends the server can serve; older servers omit
+      // the field and any failure keeps everything offered (fail open, as before).
       try {
-        const res = await apiRequest<{ google: { configured: boolean } }>(server, {
-          path: `/api/workspaces/${encodeURIComponent(first)}/storage`,
+        const res = await apiRequest<{ storage?: Record<string, boolean> }>(server, {
+          path: "/api/me",
         });
-        return res.google.configured;
+        return parseStorageCapabilities(res.storage);
       } catch {
-        return true;
+        return { ...ALL_STORAGE_AVAILABLE };
       }
     },
     onDone: async (workspaceId: string) => {

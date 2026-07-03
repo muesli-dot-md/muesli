@@ -1,6 +1,8 @@
 // The adapter each app injects. Web: fetch-based (workspaceApi). Desktop: Tauri
 // api_request. The wizard components ONLY talk to this interface.
 
+import type { StorageCapabilities } from "./capabilities";
+
 export type CreateStorageBody =
   | {
       kind: "s3";
@@ -85,8 +87,10 @@ export type WizardHost = {
   /** Kick off the Drive OAuth dance for a pending workspace.
    *  Web: full-page navigation (never returns). Desktop: opens the system browser. */
   startDriveOAuth(workspaceId: string): void;
-  /** Whether the server has a Google OAuth client (google.configured). */
-  driveConfigured(): Promise<boolean>;
+  /** Which storage backends the server can actually connect (GET /api/me
+   *  `storage`, parse with parseStorageCapabilities). The picker disables the
+   *  rest. Resolve to ALL_STORAGE_AVAILABLE when the answer isn't knowable. */
+  storageCapabilities(): Promise<StorageCapabilities>;
   /** Called when the wizard finishes; the host takes over (select ws / pick folder). */
   onDone(workspaceId: string): void;
   /** Called when the user cancels/closes the wizard. */

@@ -46,6 +46,7 @@
   } from "./workspaceApi";
   import WorkspaceWizard from "@muesli/workspace-setup/WorkspaceWizard.svelte";
   import type { WizardHost } from "@muesli/workspace-setup/host";
+  import { parseStorageCapabilities } from "@muesli/workspace-setup/capabilities";
   import OnboardingFlow from "@muesli/workspace-setup/OnboardingFlow.svelte";
   import type {
     OnboardingAction,
@@ -626,17 +627,11 @@
       // (fetch can't follow it) — same rule as ConnectionsSection.connectDrive.
       window.location.href = `${httpBase}/api/workspaces/${encodeURIComponent(id)}/storage/google/start?wizard=1`;
     },
-    driveConfigured: async () => {
-      // google.configured comes from any workspace's storage listing; before a
-      // workspace exists we can't call it — treat "no workspaces yet" as configured
-      // and let the connect step surface the server's 503 message honestly.
-      const first = workspaces[0]?.id;
-      if (!first) return true;
-      try {
-        return (await api.listStorageConnections(first)).google.configured;
-      } catch {
-        return true;
-      }
+    storageCapabilities: async () => {
+      // /api/me reports which backends this server can serve (works before any
+      // workspace exists — the first-workspace onboarding case). `auth` already
+      // holds the boot probe's answer; missing/older-server data fails open.
+      return parseStorageCapabilities(auth.storage);
     },
     onDone: async (workspaceId) => {
       modal = null;

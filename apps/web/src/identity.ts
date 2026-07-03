@@ -75,6 +75,11 @@ export type Me = {
 export type AuthInfo = {
   mode: "open" | "oidc";
   user: Me | null;
+  /** Which storage backends the server can actually connect (env-derived flags,
+   *  e.g. {s3, github, gdrive, sharepoint}) — the workspace wizard's picker
+   *  disables the rest. Absent on older servers and on the unreachable fallback;
+   *  consumers parse it defensively (parseStorageCapabilities fails open). */
+  storage?: Record<string, boolean>;
   /** True when /api/me was UNREACHABLE (network/CORS) rather than a real
    *  open-mode answer — fail-quiet consumers (onboarding) then do nothing. */
   unreachable?: boolean;

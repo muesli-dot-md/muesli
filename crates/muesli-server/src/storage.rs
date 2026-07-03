@@ -721,6 +721,50 @@ pub fn github_token_configured() -> bool {
     github_env_token().is_ok()
 }
 
+/// Which storage kinds a connect attempt can actually succeed for on this server.
+/// GET /api/me exposes this so pickers (the creation wizard's storage step) never
+/// offer a backend the server cannot serve — instead of bouncing the user off the
+/// connect endpoint's raw config error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct StorageCapabilities {
+    pub s3: bool,
+    pub github: bool,
+    pub gdrive: bool,
+    pub sharepoint: bool,
+}
+
+/// Derive the capability flags from the environment. The rule mirrors the gating in
+/// `workspace::create_storage_connection` (and the Drive OAuth start): a kind is
+/// usable when the server holds shared credentials for it, OR when MUESLI_SECRET_KEY
+/// lets a workspace store its own (BYO credentials, plan 1a task 4). Google Drive
+/// has no BYO path — it strictly needs the server's OAuth client.
+pub fn storage_capabilities() -> StorageCapabilities {
+    capabilities_from(
+        crate::secrets::secret_key_configured(),
+        s3_creds_configured(),
+        github_token_configured(),
+        crate::gdrive::configured(),
+        crate::msgraph::configured(),
+    )
+}
+
+/// The pure capability rule, split from [`storage_capabilities`] so tests don't have
+/// to mutate process-global env vars.
+fn capabilities_from(
+    byo_secret_key: bool,
+    s3_env_creds: bool,
+    github_env_token: bool,
+    gdrive_client: bool,
+    ms_env_app: bool,
+) -> StorageCapabilities {
+    StorageCapabilities {
+        s3: s3_env_creds || byo_secret_key,
+        github: github_env_token || byo_secret_key,
+        gdrive: gdrive_client,
+        sharepoint: ms_env_app || byo_secret_key,
+    }
+}
+
 /// Per-workspace token (token_enc, plan 1a) with the env fallback for grandfathered rows.
 fn github_conn_token(config: &Value) -> Result<String> {
     match config
@@ -1803,6 +1847,73 @@ mod tests {
     // tokio (not std) Mutex: minio_probe_and_round_trip must hold it across its
     // awaits, which an async-aware lock supports without clippy::await_holding_lock.
     static S3_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    /// The capability rule matches the connect-time gating in
+    /// workspace::create_storage_connection: shared env creds unlock a kind, the
+    /// secret key unlocks every BYO-credential kind, and gdrive is exactly the
+    /// Google OAuth client.
+    #[test]
+    fn storage_capabilities_follow_the_connect_gating() {
+        // Bare server: nothing can connect.
+        assert_eq!(
+            capabilities_from(false, false, false, false, false),
+            StorageCapabilities {
+                s3: false,
+                github: false,
+                gdrive: false,
+                sharepoint: false,
+            }
+        );
+        // MUESLI_SECRET_KEY alone unlocks the BYO-credential kinds — never gdrive.
+        assert_eq!(
+            capabilities_from(true, false, false, false, false),
+            StorageCapabilities {
+                s3: true,
+                github: true,
+                gdrive: false,
+                sharepoint: true,
+            }
+        );
+        // Shared env credentials unlock exactly their kind, no secret key needed.
+        assert_eq!(
+            capabilities_from(false, true, false, false, false),
+            StorageCapabilities {
+                s3: true,
+                github: false,
+                gdrive: false,
+                sharepoint: false,
+            }
+        );
+        assert_eq!(
+            capabilities_from(false, false, true, false, true),
+            StorageCapabilities {
+                s3: false,
+                github: true,
+                gdrive: false,
+                sharepoint: true,
+            }
+        );
+        // The Google OAuth client is the only thing that turns gdrive on.
+        assert_eq!(
+            capabilities_from(false, false, false, true, false),
+            StorageCapabilities {
+                s3: false,
+                github: false,
+                gdrive: true,
+                sharepoint: false,
+            }
+        );
+    }
+
+    /// The wire shape the web app parses from GET /api/me `storage`.
+    #[test]
+    fn storage_capabilities_serialize_flat() {
+        let caps = capabilities_from(true, false, false, true, false);
+        assert_eq!(
+            serde_json::to_value(caps).unwrap(),
+            serde_json::json!({"s3": true, "github": true, "gdrive": true, "sharepoint": true})
+        );
+    }
 
     #[test]
     fn sigv4_matches_the_aws_reference_vector() {

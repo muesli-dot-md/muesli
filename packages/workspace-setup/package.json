@@ -33,6 +33,10 @@
       "types": "./src/host.ts",
       "default": "./src/host.ts"
     },
+    "./capabilities": {
+      "types": "./src/capabilities.ts",
+      "default": "./src/capabilities.ts"
+    },
     "./machine": {
       "types": "./src/machine.ts",
       "default": "./src/machine.ts"

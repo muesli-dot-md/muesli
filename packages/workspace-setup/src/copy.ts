@@ -24,7 +24,8 @@ export const EN = {
   "wizard.sharepointCard": "SharePoint",
   "wizard.sharepointCardBody":
     "A SharePoint document library. Your tenant admin grants the app access to one site — nothing else.",
-  "wizard.comingSoon": "COMING SOON",
+  "wizard.notEnabled": "NOT ENABLED",
+  "wizard.backendUnavailable": "Not enabled on this server — ask whoever runs it.",
   "wizard.s3ConnectTitle": "Connect your bucket",
   "wizard.s3PolicyLead":
     "First, create an access key that can only touch this bucket and prefix. Here's the exact policy:",

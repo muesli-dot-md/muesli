@@ -2,6 +2,7 @@
   // The create-workspace wizard: name → storage → connect → done (spec §6).
   // Pure orchestration: all IO goes through the injected WizardHost.
   import { createWizardMachine, type BackendKind } from "./machine";
+  import { ALL_STORAGE_AVAILABLE, type StorageCapabilities } from "./capabilities";
   import { makeT } from "./copy";
   import type { WizardHost } from "./host";
   import StepHeader from "./StepHeader.svelte";
@@ -31,11 +32,13 @@
 
   let name = $state("");
   let chosen: BackendKind | null = $state(null);
-  let driveConfigured = $state(true);
+  // Optimistic until the host answers: a stale "everything available" only means
+  // the pre-capabilities behavior (the connect step reports honest errors).
+  let caps: StorageCapabilities = $state({ ...ALL_STORAGE_AVAILABLE });
   let driveResumeError = $state(false);
 
   $effect(() => {
-    void host.driveConfigured().then((ok) => (driveConfigured = ok));
+    void host.storageCapabilities().then((c) => (caps = c));
   });
 
   // OAuth return (web): jump straight to done, or back to the Drive step with
@@ -78,6 +81,7 @@
     if (machine.next({ name })) sync();
   }
   function pickBackend(kind: BackendKind) {
+    if (!caps[kind]) return; // disabled cards don't fire, but belt-and-braces
     chosen = kind;
     if (machine.next({ backend: kind })) sync();
   }
@@ -118,31 +122,39 @@
       body={t("wizard.storageBody")}
       {t}
     />
+    <!-- Backends the server can't serve (GET /api/me `storage`) render disabled with
+         an honest note, instead of letting the connect step fail on a config error. -->
     <div class="flex flex-col gap-2">
       <ChoiceCard
         title={t("wizard.s3Card")}
-        body={t("wizard.s3CardBody")}
+        body={caps.s3 ? t("wizard.s3CardBody") : t("wizard.backendUnavailable")}
         selected={chosen === "s3"}
+        disabled={!caps.s3}
+        badge={caps.s3 ? undefined : t("wizard.notEnabled")}
         onclick={() => pickBackend("s3")}
       />
       <ChoiceCard
         title={t("wizard.gdriveCard")}
-        body={driveConfigured ? t("wizard.gdriveCardBody") : t("wizard.gdriveUnavailable")}
+        body={caps.gdrive ? t("wizard.gdriveCardBody") : t("wizard.gdriveUnavailable")}
         selected={chosen === "gdrive"}
-        disabled={!driveConfigured}
-        badge={driveConfigured ? undefined : t("wizard.comingSoon")}
+        disabled={!caps.gdrive}
+        badge={caps.gdrive ? undefined : t("wizard.notEnabled")}
         onclick={() => pickBackend("gdrive")}
       />
       <ChoiceCard
         title={t("wizard.githubCard")}
-        body={t("wizard.githubCardBody")}
+        body={caps.github ? t("wizard.githubCardBody") : t("wizard.backendUnavailable")}
         selected={chosen === "github"}
+        disabled={!caps.github}
+        badge={caps.github ? undefined : t("wizard.notEnabled")}
         onclick={() => pickBackend("github")}
       />
       <ChoiceCard
         title={t("wizard.sharepointCard")}
-        body={t("wizard.sharepointCardBody")}
+        body={caps.sharepoint ? t("wizard.sharepointCardBody") : t("wizard.backendUnavailable")}
         selected={chosen === "sharepoint"}
+        disabled={!caps.sharepoint}
+        badge={caps.sharepoint ? undefined : t("wizard.notEnabled")}
         onclick={() => pickBackend("sharepoint")}
       />
     </div>

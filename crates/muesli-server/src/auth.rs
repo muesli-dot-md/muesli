@@ -1110,6 +1110,11 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> Response {
 struct MeResponse {
     mode: &'static str,
     user: Option<UserJson>,
+    /// Which storage backends a connect attempt can actually succeed for on this
+    /// server (env-derived at boot). The workspace wizard's storage picker disables
+    /// the kinds this server cannot serve instead of surfacing the connect
+    /// endpoint's raw config error.
+    storage: crate::storage::StorageCapabilities,
 }
 
 #[derive(Serialize)]
@@ -1133,6 +1138,7 @@ pub async fn me(
         return Json(MeResponse {
             mode: "open",
             user: None,
+            storage: crate::storage::storage_capabilities(),
         })
         .into_response();
     };
@@ -1146,7 +1152,12 @@ pub async fn me(
         },
         None => None,
     };
-    Json(MeResponse { mode: "oidc", user }).into_response()
+    Json(MeResponse {
+        mode: "oidc",
+        user,
+        storage: crate::storage::storage_capabilities(),
+    })
+    .into_response()
 }
 
 #[derive(Serialize)]
@@ -1565,6 +1576,24 @@ pub async fn resolve_access(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// GET /api/me carries the storage capability flags (flat booleans under
+    /// "storage") the web wizard's picker consumes — in open mode too, where
+    /// `user` is null but storage still works.
+    #[test]
+    fn me_response_exposes_storage_capabilities() {
+        let v = serde_json::to_value(MeResponse {
+            mode: "open",
+            user: None,
+            storage: crate::storage::storage_capabilities(),
+        })
+        .unwrap();
+        assert_eq!(v["mode"], "open");
+        let storage = v["storage"].as_object().expect("storage object");
+        for kind in ["s3", "github", "gdrive", "sharepoint"] {
+            assert!(storage[kind].is_boolean(), "storage.{kind} is a boolean");
+        }
+    }
 
     #[test]
     fn next_redirect_guard() {

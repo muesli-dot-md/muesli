@@ -680,7 +680,8 @@ export const it: Record<keyof Messages, string> = {
   "wizard.githubCard": "Repository Git",
   "wizard.githubCardBody": "GitHub, Gitea o Forgejo. Ogni modifica diventa un commit.",
   "wizard.sharepointCard": "SharePoint",
-  "wizard.comingSoon": "IN ARRIVO",
+  "wizard.notEnabled": "NON ABILITATO",
+  "wizard.backendUnavailable": "Non abilitato su questo server — chiedi a chi lo gestisce.",
   "wizard.s3ConnectTitle": "Collega il tuo bucket",
   "wizard.s3PolicyLead":
     "Per prima cosa crea una chiave di accesso che possa toccare solo questo bucket e prefisso. Ecco la policy esatta:",
