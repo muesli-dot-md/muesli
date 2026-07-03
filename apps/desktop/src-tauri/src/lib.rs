@@ -99,6 +99,7 @@ pub fn run() {
             workspaces_cmd::create_remote_workspace,
             workspaces_cmd::promote_workspace,
             sync_cmd::clone_workspace,
+            sync_cmd::prepare_clone_dir,
             sync_cmd::start_workspace_sync,
             sync_cmd::stop_workspace_sync,
             sync_cmd::workspace_sync_status,

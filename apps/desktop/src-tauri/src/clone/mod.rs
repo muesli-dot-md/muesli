@@ -27,6 +27,37 @@ pub(crate) fn filter_workspace(
     (docs, folders)
 }
 
+/// Create `<parent>/<workspace name>` for a fresh clone: the folder picker chooses
+/// the PARENT and the workspace gets its own folder (git-clone semantics), so
+/// picking ~/Documents never turns all of Documents into the workspace. The name
+/// is sanitized like document filenames; an existing EMPTY folder of that name is
+/// reused (pre-created by the user), a non-empty one gets a -2/-3… suffix so an
+/// unrelated folder is never merged into.
+pub fn prepare_clone_dir(parent: &Path, name: &str) -> Result<std::path::PathBuf> {
+    let base = paths::sanitize_segment(name);
+    let base = if base.is_empty() { "workspace".to_string() } else { base };
+    for i in 1..=100u32 {
+        let candidate = if i == 1 { base.clone() } else { format!("{base}-{i}") };
+        let dir = parent.join(&candidate);
+        match std::fs::create_dir(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let empty = std::fs::read_dir(&dir)
+                    .with_context(|| format!("reading {}", dir.display()))?
+                    .next()
+                    .is_none();
+                if empty {
+                    return Ok(dir);
+                }
+            }
+            Err(e) => {
+                return Err(e).with_context(|| format!("creating {}", dir.display()));
+            }
+        }
+    }
+    anyhow::bail!("no free folder name for {base:?} under {}", parent.display())
+}
+
 /// Eager full pull of a workspace into `root` (which must already exist). Rebuilds the folder
 /// tree, pulls each document's current text, writes the `.md` files atomically, and records
 /// each file↔slug link in the shared index the daemon reads. Resumable: documents already
@@ -81,6 +112,38 @@ pub async fn clone_workspace(server: &str, workspace_id: &str, root: &Path) -> R
 mod tests {
     use super::*;
     use muesli_cli::api::{DocInfo, FolderInfo};
+
+    #[test]
+    fn prepare_clone_dir_creates_named_subfolder() {
+        let parent = tempfile::tempdir().unwrap();
+        let dir = prepare_clone_dir(parent.path(), "Team Notes").unwrap();
+        assert_eq!(dir, parent.path().join("Team-Notes"));
+        assert!(dir.is_dir());
+    }
+
+    #[test]
+    fn prepare_clone_dir_reuses_an_empty_existing_folder() {
+        let parent = tempfile::tempdir().unwrap();
+        std::fs::create_dir(parent.path().join("Notes")).unwrap();
+        let dir = prepare_clone_dir(parent.path(), "Notes").unwrap();
+        assert_eq!(dir, parent.path().join("Notes"));
+    }
+
+    #[test]
+    fn prepare_clone_dir_suffixes_past_a_non_empty_folder() {
+        let parent = tempfile::tempdir().unwrap();
+        std::fs::create_dir(parent.path().join("Notes")).unwrap();
+        std::fs::write(parent.path().join("Notes/keep.md"), b"x").unwrap();
+        let dir = prepare_clone_dir(parent.path(), "Notes").unwrap();
+        assert_eq!(dir, parent.path().join("Notes-2"));
+    }
+
+    #[test]
+    fn prepare_clone_dir_survives_a_hostile_name() {
+        let parent = tempfile::tempdir().unwrap();
+        let dir = prepare_clone_dir(parent.path(), "../..//:*?").unwrap();
+        assert_eq!(dir, parent.path().join("workspace"));
+    }
 
     fn doc(slug: &str, ws: Option<&str>) -> DocInfo {
         DocInfo {

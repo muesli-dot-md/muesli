@@ -16,7 +16,7 @@
   } from "@muesli/workspace-setup/capabilities";
   import { apiRequest } from "$lib/collab/apiRequest";
   import { httpBaseOf } from "$lib/httpBase";
-  import { pickFolder } from "$lib/tauri";
+  import { pickFolder, prepareCloneDir } from "$lib/tauri";
   import { workspaces } from "$lib/workspaces.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -77,8 +77,9 @@
       }
     },
     onDone: async (workspaceId: string) => {
-      const path = await pickFolder();
-      if (!path) return; // stay on the done screen; the user can retry
+      const parent = await pickFolder();
+      if (!parent) return; // stay on the done screen; the user can retry
+      const path = await prepareCloneDir(parent, pendingName);
       onclose();
       await workspaces.finishRemoteWorkspace(workspaceId, pendingName, path);
     },

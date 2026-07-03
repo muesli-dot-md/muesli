@@ -21,6 +21,15 @@ pub async fn clone_workspace(
         .map_err(|e| format!("{e:#}"))
 }
 
+/// Create the workspace's own subfolder under `parent` (the directory the user
+/// picked) and return its path — the clone target. See clone::prepare_clone_dir.
+#[tauri::command]
+pub fn prepare_clone_dir(parent: String, name: String) -> Result<String, String> {
+    crate::clone::prepare_clone_dir(&PathBuf::from(parent), &name)
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| format!("{e:#}"))
+}
+
 /// Start (or switch to) the Tier-1 content-sync daemon over `path` for `workspace_id`
 /// (None = legacy / personal-default; the daemon then targets the personal workspace).
 #[tauri::command]

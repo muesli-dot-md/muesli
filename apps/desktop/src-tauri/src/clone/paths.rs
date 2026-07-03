@@ -74,7 +74,7 @@ fn dir_segments<'a>(
 
 /// Fold path separators, control chars, reserved filename characters, and whitespace runs
 /// to single dashes; trim leading/trailing dashes and dots.
-fn sanitize_segment(name: &str) -> String {
+pub(crate) fn sanitize_segment(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut pending_dash = false;
     for ch in name.chars() {

@@ -2,7 +2,7 @@
   import { Check, Cloud, FolderOpen, HardDrive } from "lucide-svelte";
   import { workspaces } from "$lib/workspaces.svelte";
   import { workspace } from "$lib/workspace.svelte";
-  import { pickFolder } from "$lib/tauri";
+  import { pickFolder, prepareCloneDir } from "$lib/tauri";
   import type { WorkspaceView } from "$lib/tauri";
   import CreateWorkspaceModal from "$lib/CreateWorkspaceModal.svelte";
 
@@ -19,9 +19,12 @@
 
   async function choose(view: WorkspaceView) {
     if (view.state === "cloud-only") {
-      const path = await pickFolder();
-      if (!path) return;
+      // The picker chooses where the workspace's folder goes; the folder itself
+      // is created for it, named after the workspace.
+      const parent = await pickFolder();
+      if (!parent) return;
       open = false;
+      const path = await prepareCloneDir(parent, view.name);
       // openWorkspaceView flips workspaces.cloning while the pull runs.
       await workspaces.openWorkspaceView(view, path);
     } else {

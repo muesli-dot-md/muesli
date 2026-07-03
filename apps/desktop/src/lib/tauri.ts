@@ -209,6 +209,11 @@ export const cloneWorkspace = (
   path: string,
 ): Promise<number> => invoke("clone_workspace", { server, workspaceId, path });
 
+/** Create `<parent>/<workspace name>` (sanitized, collision-suffixed) and return it —
+ *  the folder picker chooses the parent; the workspace always gets its own folder. */
+export const prepareCloneDir = (parent: string, name: string): Promise<string> =>
+  invoke("prepare_clone_dir", { parent, name });
+
 export const startWorkspaceSync = (
   server: string,
   path: string,
