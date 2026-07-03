@@ -35,7 +35,7 @@ jobs:
   build-macos:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The apple-metal crate's Swift bridge uses newer Metal APIs
       # (MTLSamplerDescriptor.reductionMode/lodBias) than the image's default
@@ -46,10 +46,10 @@ jobs:
           xcode-version: latest-stable
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
