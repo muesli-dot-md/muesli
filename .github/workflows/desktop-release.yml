@@ -1,0 +1,120 @@
+# Desktop release: signed updater artifacts + latest.json on a GitHub Release.
+#
+# Triggered by pushing a `desktop-vX.Y.Z` tag (or manually via
+# workflow_dispatch, which releases whatever version tauri.conf.json declares).
+# Runs on the same self-hosted macOS 15 (Sequoia) runner as desktop-macos.yml —
+# see that file for why (screencapturekit macos_15_0 + Swift rpath).
+#
+# Version source of truth: apps/desktop/src-tauri/tauri.conf.json `version`.
+# Tag pushes FAIL FAST if the tag doesn't match it.
+#
+# Required repo secrets (uploaded by a human; see apps/desktop/README.md):
+#   TAURI_SIGNING_PRIVATE_KEY           — contents of apps/desktop/.updater-key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  — contents of apps/desktop/.updater-key.pass
+# CI must never print either value.
+#
+# Apple signing/notarization stay DEFERRED (see desktop-macos.yml): the bundle
+# is unsigned Apple-wise; the minisign updater signature is independent and is
+# what tauri-plugin-updater enforces.
+
+name: Desktop Release (macOS)
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release-macos:
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build (desktop)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Resolve version and verify the tag matches tauri.conf.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "desktop-v$VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match tauri.conf.json version $VERSION (expected desktop-v$VERSION)"
+            exit 1
+          fi
+
+      - name: Build Tauri app (signed updater artifacts)
+        working-directory: apps/desktop
+        run: pnpm tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Generate latest.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BUNDLE_DIR="apps/desktop/src-tauri/target/release/bundle/macos"
+          TARBALL=$(ls "$BUNDLE_DIR"/*.app.tar.gz | head -n1)
+          ASSET_NAME=$(basename "$TARBALL")
+          URL="https://github.com/muesli-dot-md/muesli/releases/download/desktop-v${VERSION}/${ASSET_NAME}"
+          node -e '
+            const fs = require("fs");
+            const [version, url, sigPath] = process.argv.slice(1);
+            const signature = fs.readFileSync(sigPath, "utf8").trim();
+            fs.writeFileSync(
+              "latest.json",
+              JSON.stringify(
+                {
+                  version,
+                  pub_date: new Date().toISOString(),
+                  // aarch64-only for now; add darwin-x86_64 if/when an Intel
+                  // build lands (spec: out of scope).
+                  platforms: { "darwin-aarch64": { url, signature } },
+                },
+                null,
+                2,
+              ) + "\n",
+            );
+          ' "$VERSION" "$URL" "${TARBALL}.sig"
+          cat latest.json
+
+      - name: Create GitHub Release with artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BUNDLE_DIR="apps/desktop/src-tauri/target/release/bundle"
+          # --latest: the desktop updater reads releases/latest/download/latest.json,
+          # so a future non-desktop release in this monorepo must never steal the pointer.
+          gh release create "desktop-v${VERSION}" \
+            --title "Muesli Desktop v${VERSION}" \
+            --generate-notes \
+            --latest \
+            "$BUNDLE_DIR"/macos/*.app.tar.gz \
+            "$BUNDLE_DIR"/macos/*.app.tar.gz.sig \
+            "$BUNDLE_DIR"/dmg/*.dmg \
+            latest.json

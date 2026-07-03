@@ -1,0 +1,90 @@
+/* packages/workspace-setup/src/wizard.css — Multica-flavored tokens for the wizard.
+   Scoped by .mws- prefix; colors lean on the host app's daisyUI vars where possible,
+   with the Multica brand blue + serif headline stack as the two deliberate imports. */
+.mws-root {
+  --mws-brand: oklch(0.55 0.16 255);
+  --mws-radius: 0.625rem;
+  --mws-serif: ui-serif, "Iowan Old Style", "Apple Garamond", Baskerville,
+    "Times New Roman", serif;
+}
+.mws-headline {
+  font-family: var(--mws-serif);
+  font-size: 1.5rem;
+  line-height: 1.25;
+  font-weight: 600;
+  text-wrap: balance;
+}
+.mws-headline em {
+  font-style: italic; /* Multica: italic serif emphasis spans */
+}
+.mws-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+}
+.mws-card {
+  border-radius: var(--mws-radius);
+  text-align: left;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.mws-card[data-selected="true"] {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+/* Concept cards (onboarding screen 2): icon tile + text column. Hover shifts the
+   border toward the brand blue and lifts the card slightly — a quiet nod to the
+   brand accent without turning four static facts into something that feels
+   clickable (they aren't). */
+.mws-concept-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 0.375rem;
+  background: color-mix(in oklch, var(--mws-brand) 14%, transparent);
+  color: var(--mws-brand);
+}
+.mws-concept {
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+.mws-concept:hover {
+  border-color: color-mix(in oklch, var(--mws-brand) 45%, var(--color-base-300, transparent));
+  box-shadow: 0 4px 14px -8px color-mix(in oklch, var(--mws-brand) 45%, transparent);
+  transform: translateY(-1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mws-concept:hover {
+    transform: none;
+  }
+}
+/* Skip is a plain text link, NOT a .btn: host apps re-skin .btn globally
+   (borders, shadows, press scale), which turned Skip into a bordered chip. */
+.mws-skip {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0.25rem 0;
+  font-size: 0.875rem;
+  color: color-mix(in oklch, currentColor 55%, transparent);
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+.mws-skip:hover {
+  color: color-mix(in oklch, currentColor 80%, transparent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.mws-skip:focus-visible {
+  outline: 2px solid var(--mws-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.mws-pulse {
+  animation: mws-pulse 1.6s ease-in-out infinite;
+}
+@keyframes mws-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:menu:default",
+    "core:menu:allow-popup",
+    "opener:default",
+    "dialog:default",
+    "updater:default",
+    "process:default"
+  ]
+}

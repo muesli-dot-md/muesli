@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs for the same ref so a rapid push series doesn't queue up.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Fast frontend gate: editor-core + web + desktop frontend.
+  # vitest across all three packages, svelte-check on the desktop app, and the
+  # web production build (its `build` script runs svelte-check itself, so this
+  # also type-checks the web app).
+  # --------------------------------------------------------------------------
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        # Version comes from the root package.json `packageManager` field (pnpm@10.30.3).
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: editor-core tests
+        run: pnpm --filter @muesli/editor-core test
+
+      - name: web tests
+        run: pnpm --filter @muesli/web test
+
+      - name: desktop frontend tests
+        run: pnpm --filter Muesli test
+
+      - name: desktop type-check (svelte-check)
+        run: pnpm --filter Muesli check
+
+      - name: web build (runs svelte-check + vite build)
+        run: pnpm --filter @muesli/web build
+
+  # --------------------------------------------------------------------------
+  # Server tests against a real Postgres, INCLUDING the TEST_DATABASE_URL-gated
+  # DB-integration tests (mention idempotency, per-recipient notification
+  # isolation, timestamptz validation) that skip locally without a database.
+  #
+  # The test harness (crates/muesli-server/src/persistence.rs `test_db()`) calls
+  # Persistence::connect(url), which runs `sqlx::migrate!("./migrations")` on
+  # connect -- so migrations are applied automatically by the tests themselves.
+  # CI does NOT need to run migrations manually. The crate uses runtime
+  # `sqlx::query(...)` (no compile-time query! macros), so there is no `.sqlx`
+  # offline metadata and no DATABASE_URL needed at compile time; SQLX_OFFLINE is
+  # irrelevant. The whole workspace is tested so muesli-core and muesli-cli unit
+  # tests run too.
+  # --------------------------------------------------------------------------
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Mirrors docker-compose.yml (postgres:17-alpine, user/pass/db all "muesli").
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: muesli
+          POSTGRES_PASSWORD: muesli
+          POSTGRES_DB: muesli
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U muesli"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    env:
+      # The gated tests read TEST_DATABASE_URL and run their own migrations on connect.
+      TEST_DATABASE_URL: postgres://muesli:muesli@localhost:5432/muesli
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo test (workspace, with live Postgres)
+        run: cargo test --workspace --locked
+
+  # --------------------------------------------------------------------------
+  # Cross-platform desktop COMPILE verification (Linux + Windows). Proves the
+  # Tauri desktop app -- including the cross-platform transcription gating --
+  # compiles on each OS. The src-tauri crate is excluded from the root cargo
+  # workspace and has its own Cargo.lock, so it is built via --manifest-path.
+  # We build (not bundle): a successful `cargo build` is the compile proof; the
+  # full installer bundle is exercised by the macOS job. The frontend is built
+  # first because tauri.conf.json points frontendDist at ../build.
+  # --------------------------------------------------------------------------
+  desktop-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Tauri v2 Linux system prerequisites (webkit2gtk 4.1 + gtk + appindicator +
+      # build tooling). Windows needs no extra system deps beyond the toolchain.
+      - name: Install Tauri Linux system deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libxdo-dev \
+            patchelf
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build (desktop)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Build desktop frontend
+        run: pnpm --filter Muesli build
+
+      - name: Compile-verify Tauri app
+        run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked

@@ -1,0 +1,75 @@
+# macOS / Apple desktop app build.
+#
+# This job requires a SELF-HOSTED macOS runner running macOS 15 (Sequoia): the
+# desktop crate uses `screencapturekit` with the `macos_15_0` feature, and
+# src-tauri/build.rs adds a `/usr/lib/swift` rpath for the Swift runtime the
+# screencapturekit/apple-* crates link against. Build it on the user's own
+# Sequoia runner (label below). To use a GitHub-hosted runner instead, swap
+# `runs-on` for the `macos-15` line shown in the comment.
+#
+# Apple signing/notarization are intentionally DEFERRED here: this workflow
+# builds UNSIGNED (Apple-wise) for build verification only, with updater
+# artifacts disabled (see the step below) so no signing secret is needed.
+# Signed updater artifacts are produced separately by desktop-release.yml.
+# Adding real Apple signing later means adding the relevant secrets
+# (APPLE_CERTIFICATE, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD,
+# APPLE_TEAM_ID, etc.) and the tauri.conf.json signing config.
+#
+# Kept in its own workflow so a missing/offline macOS runner does not block the
+# Linux/Windows CI in ci.yml.
+
+name: Desktop (macOS)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-macos:
+    # Self-hosted macOS 15 (Sequoia) runner -- this is the job that needs the
+    # user's runner.
+    runs-on: [self-hosted, macOS]
+    # GitHub-hosted alternative (Sequoia image): uncomment the next line and
+    # comment out the `runs-on` above.
+    # runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build (desktop)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Build desktop frontend
+        run: pnpm --filter Muesli build
+
+      # Full app build (unsigned, updater artifacts disabled). This workflow only
+      # verifies the production build path; signed updater artifacts (.app.tar.gz
+      # + .sig) are produced by desktop-release.yml, which holds the
+      # TAURI_SIGNING_* secrets. Disabling createUpdaterArtifacts here means no
+      # private key is needed on ordinary CI runs.
+      - name: Build Tauri app (unsigned)
+        working-directory: apps/desktop
+        run: pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'

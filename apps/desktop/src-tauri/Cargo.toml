@@ -1,0 +1,72 @@
+[package]
+name = "demo-muesli"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "Muesli_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+trash = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+crossbeam-channel = "0.5"
+rubato = "0.16"
+cpal = "0.15"
+voice_activity_detector = "0.2"
+transcribe-rs = { version = "=0.3.8", features = ["onnx"] }
+ureq = "2"
+tar = "0.4"
+flate2 = "1"
+chrono = "0.4"
+muesli-core = { path = "../../../crates/muesli-core" }
+muesli-cli = { path = "../../../crates/muesli-cli" }
+tokio = { version = "1", features = ["sync"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+dirs = "5"
+
+# macOS Voice Processing I/O (AEC + noise suppression + AGC) for the mic
+# ("You" lane). AVAudioEngine's input node exposes setVoiceProcessingEnabled,
+# which routes mic capture through the OS VoiceProcessingIO unit using system
+# playback as the echo reference. Same OS feature Zoom/FaceTime use.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-avf-audio = "0.3"
+# AppKit: needed to set the native NSWindow's NSAppearance so window vibrancy
+# (NSVisualEffectView) follows the in-app theme rather than the system one.
+objc2-app-kit = "0.3"
+block2 = "0.6"
+window-vibrancy = "0.7.1"
+# System-audio ("Them" lane) capture. macOS-only: `macos_15_0` enables system
+# audio + current-process-audio exclusion APIs; target is macOS 15.7 (Sequoia).
+screencapturekit = { version = "8", features = ["macos_15_0"] }
+
+[dev-dependencies]
+tempfile = "3"
+hound = "3"
+
+# transcribe-rs (Parakeet) hard-pins ort to =2.0.0-rc.12, but the published
+# voice_activity_detector crate pins ort to =2.0.0-rc.10 and its 0.2.x source
+# uses the pre-rc.12 Tensor API. We vendor the crate's `main` branch (which
+# already uses the rc.12-compatible ort API) with its ort pin bumped to rc.12 so
+# both ONNX consumers share one ort build.
+[patch.crates-io]
+voice_activity_detector = { path = "../vendor/voice_activity_detector" }

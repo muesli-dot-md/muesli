@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = ["crates/muesli-core", "crates/muesli-server", "crates/muesli-cli"]
+# The desktop (Tauri) app keeps its own Cargo.lock and builds standalone against the
+# in-repo crates via path deps; excluded so `cargo build` at the workspace root doesn't
+# pull in its Tauri/audio/onnx dependency tree.
+exclude = ["apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "FSL-1.1-Apache-2.0"
+
+[workspace.dependencies]
+muesli-core = { path = "crates/muesli-core" }
+yrs = "0.21"
+similar = "2"
+anyhow = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# MSRV note: rusqlite 0.32 builds on rustc 1.86 (newer releases raise the MSRV) AND shares
+# libsqlite3-sys 0.30 with sqlx (only one `links = "sqlite3"` package may exist per graph).
+rusqlite = { version = "0.32", features = ["bundled"] }

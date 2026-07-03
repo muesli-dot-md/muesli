@@ -1,0 +1,45 @@
+# Planning docs — not for publication yet
+docs/
+
+# Rust
+/target/
+**/target/
+*.rs.bk
+
+# Node / web
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local dev OIDC issuer configs — kept local so you can tweak for testing without
+# git noise. Copy from the tracked dev/dex*/config.example.yaml templates.
+dev/*
+
+# Google OAuth client (Drive connector) — never commit
+muesli.json
+# Gitea test instance token — never commit
+gitea.json
+test_google_creds.json
+
+.claude/*
+.impeccable/*
+.superpowers/*
+
+# Tauri updater signing key + password — NEVER commit. The public key's
+# canonical home is apps/desktop/src-tauri/tauri.conf.json; the human uploads
+# the private key/password as GitHub Actions secrets (see apps/desktop/README.md).
+apps/desktop/.updater-key
+apps/desktop/.updater-key.pass
+apps/desktop/.updater-key.pub

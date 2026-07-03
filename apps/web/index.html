@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Muesli</title>
+    <script>
+      // Resolve the persisted theme mode ("muesli:theme" ∈ light|dark|system,
+      // default system) and set data-theme BEFORE first paint so a hard refresh
+      // never flashes the wrong colors. theme.svelte.ts mirrors this logic and
+      // takes over once the app boots.
+      (() => {
+        let mode = null;
+        try {
+          mode = localStorage.getItem("muesli:theme");
+        } catch {}
+        const dark =
+          mode === "dark" ||
+          (mode !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "muesli-dark" : "muesli";
+      })();
+    </script>
+    <style>
+      /* First paint before the JS/CSS bundles load: pin the background to the
+         theme's base-200 (both screens render on bg-base-200) so a hard refresh
+         never flashes white. Values mirror --arc-base-200 in shared/palette.css
+         (light/dark) — keep them in sync. Once app.css loads, html follows
+         var(--color-base-200) instead. */
+      html {
+        background-color: oklch(90.5% 0.028 285);
+      }
+      html[data-theme="muesli-dark"] {
+        background-color: oklch(16.5% 0.006 285);
+      }
+      /* no-JS fallback (the script above didn't set data-theme) */
+      @media (prefers-color-scheme: dark) {
+        html:not([data-theme]) {
+          background-color: oklch(16.5% 0.006 285);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

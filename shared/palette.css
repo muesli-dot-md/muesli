@@ -1,0 +1,94 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   ║  SHARED ARC PALETTE — the single source of truth for Muesli's colors.    ║
+   ║                                                                          ║
+   ║  Both apps import this file and point their daisyUI theme blocks at the   ║
+   ║  vars below:                                                              ║
+   ║    · apps/desktop/src/app.css → themes "arc-light" / "arc-dark"           ║
+   ║    · apps/web/src/app.css     → themes "muesli"    / "muesli-dark"        ║
+   ║                                                                          ║
+   ║  The theme NAMES stay in each app; only the VALUES live here, so one      ║
+   ║  edit reskins both apps. The light values are :root defaults; the dark    ║
+   ║  values override under [data-theme$="-dark"] (matches both -dark themes). ║
+   ║                                                                          ║
+   ║  "arc" look: periwinkle/lavender accent (hue ~277) on lavender neutrals,  ║
+   ║  with a layered-depth system (--lift / --overlay / --shadow-*). The       ║
+   ║  macOS-only window-vibrancy --floor-tint is intentionally NOT here — it   ║
+   ║  is desktop-only and stays in apps/desktop/src/app.css.                   ║
+   ════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── daisyUI color tokens (light) ──────────────────────────────────────── */
+  --arc-base-100: oklch(1 0 0);           /* L1 floating card = pure white (measured) */
+  --arc-base-200: oklch(0.905 0.028 285); /* L0 floor / window bg = #E1DEEE lavender */
+  --arc-base-300: oklch(0.86 0.025 285);  /* borders / recessed tab track */
+  --arc-base-content: oklch(0.25 0.035 285);
+  --arc-primary: oklch(0.585 0.22 277);   /* #686CF4 periwinkle (measured) */
+  --arc-primary-content: oklch(0.98 0.01 285);
+  /* secondary/accent: arc has no dedicated tokens in the desktop theme blocks;
+     define quiet periwinkle-family values so both apps share one accent for
+     wikilinks and secondary actions. */
+  --arc-secondary: oklch(0.46 0.05 285);
+  --arc-secondary-content: oklch(0.98 0.01 285);
+  --arc-accent: oklch(0.6 0.14 250);
+  --arc-accent-content: oklch(0.98 0.01 285);
+  --arc-neutral: oklch(0.31 0.035 285);
+  --arc-neutral-content: oklch(0.98 0.01 285);
+  --arc-info: oklch(0.70 0.14 235);
+  --arc-info-content: oklch(0.98 0.02 235);
+  --arc-success: oklch(0.70 0.15 150);
+  --arc-success-content: oklch(0.98 0.02 150);
+  --arc-warning: oklch(0.82 0.17 80);
+  --arc-warning-content: oklch(0.28 0.07 80);
+  --arc-error: oklch(0.62 0.21 25);
+  --arc-error-content: oklch(0.98 0.02 25);
+
+  /* ── depth system (light) ──────────────────────────────────────────────── */
+  --lift: oklch(0.986 0.004 295);            /* #FBFAFE — Arc near-white active pill */
+  --overlay: oklch(1 0 0);
+  --arc-border: oklch(0.86 0.025 285);
+  --text-muted: oklch(0.53 0.03 285);
+  --code-bg: oklch(0.955 0.002 285);         /* near-neutral gray code surface */
+  --row-hover: rgba(255, 255, 255, 0.55);    /* translucent white veil on the lavender floor */
+  --shadow-card: 0 1px 2px rgba(30,27,46,.04), 0 8px 24px rgba(30,27,46,.08), 0 0 0 1px rgba(30,27,46,.04);
+  --shadow-lift: 0 1px 3px rgba(60,50,90,.10);   /* gentle lift, reserved for active pill */
+  --shadow-hover: 0 1px 3px rgba(30,27,46,.06);
+  --shadow-overlay: 0 12px 48px rgba(30,27,46,.22), 0 0 0 1px rgba(30,27,46,.06);
+  --radius-overlay: 0.875rem;
+  --inset-card: 8px;
+}
+
+[data-theme$="-dark"] {
+  /* ── daisyUI color tokens (dark) — neutral graphite ladder ─────────────── */
+  --arc-base-100: oklch(0.215 0.007 285); /* card (deeper, more neutral) */
+  --arc-base-200: oklch(0.165 0.006 285); /* floor / near-black */
+  --arc-base-300: oklch(0.30 0.010 285);  /* borders / recessed */
+  --arc-base-content: oklch(0.92 0.007 285);
+  --arc-primary: oklch(0.70 0.15 280);
+  --arc-primary-content: oklch(0.16 0.02 285);
+  --arc-secondary: oklch(0.72 0.04 285);
+  --arc-secondary-content: oklch(0.20 0.02 285);
+  --arc-accent: oklch(0.72 0.12 250);
+  --arc-accent-content: oklch(0.18 0.04 250);
+  --arc-neutral: oklch(0.34 0.012 285);
+  --arc-neutral-content: oklch(0.95 0.008 285);
+  --arc-info: oklch(0.70 0.14 235);
+  --arc-info-content: oklch(0.16 0.03 235);
+  --arc-success: oklch(0.70 0.15 150);
+  --arc-success-content: oklch(0.16 0.03 150);
+  --arc-warning: oklch(0.80 0.16 80);
+  --arc-warning-content: oklch(0.22 0.06 80);
+  --arc-error: oklch(0.63 0.20 25);
+  --arc-error-content: oklch(0.98 0.02 25);
+
+  /* ── depth system (dark) ───────────────────────────────────────────────── */
+  --lift: oklch(0.315 0.009 285);            /* active pill — lightest in the ladder */
+  --overlay: oklch(0.25 0.009 285);
+  --arc-border: oklch(0.30 0.010 285);
+  --text-muted: oklch(0.64 0.010 285);
+  --code-bg: oklch(0.25 0.005 285);          /* near-neutral gray code surface */
+  --row-hover: rgba(255, 255, 255, 0.05);    /* faint light veil over the dark floor */
+  --shadow-card: 0 1px 2px rgba(0,0,0,.30), 0 10px 28px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.03);
+  --shadow-lift: 0 1px 3px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
+  --shadow-hover: inset 0 1px 0 rgba(255,255,255,.04);
+  --shadow-overlay: 0 16px 56px rgba(0,0,0,.60), inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px rgba(255,255,255,.08);
+}

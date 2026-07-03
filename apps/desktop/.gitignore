@@ -1,0 +1,23 @@
+target/
+node_modules/
+dist/
+.DS_Store
+*.onnx
+models/
+
+# SvelteKit
+/build
+/.svelte-kit
+/package
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Vite temp files
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Agent worktrees (scratch)
+.claude/worktrees/

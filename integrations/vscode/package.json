@@ -1,0 +1,63 @@
+{
+  "name": "muesli-vscode",
+  "displayName": "Muesli Presence",
+  "description": "Live presence (cursors + participants) inside VS Code for muesli-linked markdown files. Presence only — content syncs via `muesli open` (ADR 0014).",
+  "version": "0.1.0",
+  "publisher": "muesli",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "muesli.showParticipants",
+        "title": "Muesli: Show Participants"
+      }
+    ],
+    "configuration": {
+      "title": "Muesli",
+      "properties": {
+        "muesli.webOrigin": {
+          "type": "string",
+          "default": "http://localhost:5173",
+          "description": "Web app origin used for \"Open in browser\" when the linked server is on localhost (dev: vite serves the app on :5173 while the server is on :8787). Non-local servers open at the server's own origin."
+        },
+        "muesli.serverOverride": {
+          "type": "string",
+          "default": "",
+          "description": "Connect to this server instead of the one recorded in links.json (ws://, wss://, http:// or https:// forms all accepted)."
+        },
+        "muesli.displayName": {
+          "type": "string",
+          "default": "",
+          "description": "Name shown to other participants. Defaults to your OS username."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --platform=node --target=node18 --format=cjs --sourcemap",
+    "typecheck": "tsc --noEmit",
+    "package": "pnpm run build && pnpm dlx @vscode/vsce package --no-dependencies --allow-missing-repository"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "y-websocket": "^2.1.0",
+    "yjs": "^13.6.20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "@types/ws": "^8.5.0",
+    "esbuild": "^0.25.0",
+    "typescript": "~5.7.0"
+  }
+}
