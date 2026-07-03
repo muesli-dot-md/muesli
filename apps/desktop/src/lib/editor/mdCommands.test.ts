@@ -23,6 +23,24 @@ describe("mdCommands", () => {
     expect(next.doc.toString().startsWith("- ")).toBe(true);
     expect(currentListKind(next)).toBe("bullet");
   });
+  it("toggleList on an empty line puts the caret after the fresh marker", () => {
+    const s = stateWith("", 0);
+    const next = s.update(toggleList(s, "ordered")).state;
+    expect(next.doc.toString()).toBe("1. ");
+    expect(next.selection.main.head).toBe(3); // typing continues after "1. "
+  });
+  it("toggleList keeps the caret's offset within the line content", () => {
+    const s = stateWith("item", 4); // caret at end of "item"
+    const next = s.update(toggleList(s, "ordered")).state;
+    expect(next.doc.toString()).toBe("1. item");
+    expect(next.selection.main.head).toBe(7); // still at end of "item"
+  });
+  it("toggleList off shifts the caret back with the removed marker", () => {
+    const s = stateWith("- item", 6); // caret at end
+    const next = s.update(toggleList(s, "bullet")).state;
+    expect(next.doc.toString()).toBe("item");
+    expect(next.selection.main.head).toBe(4);
+  });
   it("isProbablyUrl recognises a url", () => {
     expect(isProbablyUrl("https://x.com")).toBe(true);
     expect(isProbablyUrl("just text")).toBe(false);

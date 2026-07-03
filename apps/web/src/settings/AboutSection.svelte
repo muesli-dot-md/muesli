@@ -58,9 +58,6 @@
 <SettingsCard>
   <!-- identity header -->
   <SettingRow>
-    {#snippet leading()}
-      <span class="text-3xl" aria-hidden="true">🥣</span>
-    {/snippet}
     {#snippet children()}
       <div class="min-w-0 flex-1">
         <p class="text-base font-semibold">

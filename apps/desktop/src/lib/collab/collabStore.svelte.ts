@@ -51,8 +51,6 @@ export class CollabStore {
   members: Member[] = $state([]);
   /** Set of member ids, for MentionText to render unknown/removed users muted. */
   mentionableIds: Set<string> = $derived(new Set(this.members.map((m) => m.id)));
-  /** "Mentions you" filter toggle for the comments tab. */
-  mentionsMe = $state(false);
   history: HistoryEntry[] = $state([]);
   historyDone = $state(false);
   historyLoading = $state(false);
@@ -135,7 +133,7 @@ export class CollabStore {
     this.refreshing = true;
     try {
       const [comments, suggestions] = await Promise.all([
-        this.api.getComments({ mentionsMe: this.mentionsMe }),
+        this.api.getComments(),
         this.api.getSuggestions("pending"),
       ]);
       this.threads = comments.threads;
@@ -162,12 +160,6 @@ export class CollabStore {
     } catch {
       // signed-out / volatile / network — the composer simply offers no suggestions.
     }
-  }
-
-  /** Toggle the "mentions you" comments filter and refresh immediately. */
-  async setMentionsMe(on: boolean): Promise<void> {
-    this.mentionsMe = on;
-    await this.refresh();
   }
 
   // --- decorations -------------------------------------------------------------

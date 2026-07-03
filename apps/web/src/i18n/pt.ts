@@ -113,6 +113,8 @@ export const pt: Record<keyof Messages, string> = {
   // --- confirms -----------------------------------------------------------------
   "confirm.deleteForever": "Eliminar ”{name}” definitivamente? Esta ação não pode ser desfeita.",
   "confirm.leaveWorkspace": "Sair de ”{name}”? Perderás o acesso aos seus documentos.",
+  "confirm.deleteWorkspace":
+    "Isto elimina permanentemente ”{name}” e todos os seus documentos, para todos os membros. Escreve o nome do espaço para confirmar:",
   "confirm.removeMember": "Remover {member} de ”{name}”?",
 
   // --- modals (Home) ------------------------------------------------------------
@@ -296,10 +298,10 @@ export const pt: Record<keyof Messages, string> = {
 
   // --- suggestions panel --------------------------------------------------------
   "suggest.signInToSuggest": "Inicia sessão para sugerir alterações.",
-  "suggest.mode": "Modo de sugestão",
   "suggest.pausedPre": "A edição está pausada. Seleciona texto no editor e usa",
   "suggest.pausedPost": "para colocar edições em fila e submetê-las juntas para revisão.",
-  "suggest.offHint": "Ativa para propor edições para revisão em vez de editar diretamente.",
+  "suggest.switchHint":
+    "Muda o modo da barra de ferramentas para Sugestões para propor edições para revisão em vez de editar diretamente.",
   "suggest.queued": "Edições em fila ({count})",
   "suggest.replace": "Substituir",
   "suggest.insert": "Inserir",
@@ -434,6 +436,11 @@ export const pt: Record<keyof Messages, string> = {
     "És o único administrador — nomeia outra pessoa antes de poderes sair.",
   "settings.general.personalNote":
     "Este é o teu espaço pessoal. Não pode ser renomeado nem abandonado.",
+  "settings.general.delete": "Eliminar espaço de trabalho",
+  "settings.general.deleteNote":
+    "Elimina permanentemente este espaço e todos os seus documentos, para todos os membros. Não pode ser desfeito.",
+  "settings.general.deleted": "{name} eliminado.",
+  "settings.general.deleteNameMismatch": "O nome não correspondeu — nada foi eliminado.",
   "settings.members.intro":
     "Faz a gestão de quem pode aceder a este espaço de trabalho e do que pode fazer.",
   "settings.notifications": "Notificações",

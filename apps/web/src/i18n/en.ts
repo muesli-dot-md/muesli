@@ -259,6 +259,8 @@ export const en = {
   // --- confirms -------------------------------------------------------------------
   "confirm.deleteForever": "Delete “{name}” forever? This cannot be undone.",
   "confirm.leaveWorkspace": "Leave “{name}”? You'll lose access to its documents.",
+  "confirm.deleteWorkspace":
+    "This permanently deletes “{name}” and every document in it, for all members. Type the workspace name to confirm:",
   "confirm.removeMember": "Remove {member} from “{name}”?",
 
   // --- modals (Home) -----------------------------------------------------------------
@@ -327,6 +329,11 @@ export const en = {
   "settings.general.leaveLastAdmin":
     "You're the only admin — promote someone else before you can leave.",
   "settings.general.personalNote": "This is your personal workspace. It can't be renamed or left.",
+  "settings.general.delete": "Delete workspace",
+  "settings.general.deleteNote":
+    "Permanently deletes this workspace and every document in it, for all members. This cannot be undone.",
+  "settings.general.deleted": "{name} deleted.",
+  "settings.general.deleteNameMismatch": "The name didn't match — nothing was deleted.",
   // Workspace → Members.
   "settings.members.intro": "Manage who can access this workspace and what they can do.",
   // --- settings → notifications (sub-project ④c) -----------------------------------------
@@ -653,10 +660,10 @@ export const en = {
 
   // --- suggestions panel ------------------------------------------------------------------------------------
   "suggest.signInToSuggest": "Sign in to suggest changes.",
-  "suggest.mode": "Suggest mode",
   "suggest.pausedPre": "Editing is paused. Select text in the editor and use",
   "suggest.pausedPost": "to queue edits, then submit them together for review.",
-  "suggest.offHint": "Turn on to propose edits for review instead of editing directly.",
+  "suggest.switchHint":
+    "Switch the toolbar mode to Suggesting to propose edits for review instead of editing directly.",
   "suggest.queued": "Queued edits ({count})",
   "suggest.replace": "Replace",
   "suggest.insert": "Insert",

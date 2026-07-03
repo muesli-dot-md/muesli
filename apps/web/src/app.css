@@ -21,6 +21,25 @@
   themes: false; /* only the custom muesli pair below */
 }
 
+/* Sentient — the brand's display serif, same file the marketing site ships
+   (website/public/fonts). Used ONLY for the wordmark (.wordmark below);
+   `swap` is fine since a tiny logo swap has no CLS worth fighting. */
+@font-face {
+  font-family: "Sentient";
+  font-style: normal;
+  font-weight: 200 700;
+  font-display: swap;
+  src: url("/fonts/sentient-latin.woff2") format("woff2");
+}
+
+/* The wordmark: lowercase "muesli" in Sentient at regular weight, matching the
+   site's nav (.wordmark-serif there). Sized by the usual text-* utilities. */
+.wordmark {
+  font-family: "Sentient", "Iowan Old Style", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
 /* ════════════════════════════════════════════════════════════════════════════
    ║  MUESLI COLOR THEME — the color VALUES now live in shared/palette.css.   ║
    ║                                                                          ║

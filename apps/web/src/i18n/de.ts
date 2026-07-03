@@ -120,6 +120,8 @@ export const de: Record<keyof Messages, string> = {
     "„{name}” endgültig löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
   "confirm.leaveWorkspace":
     "„{name}” verlassen? Du verlierst den Zugriff auf die darin enthaltenen Dokumente.",
+  "confirm.deleteWorkspace":
+    "Dies löscht „{name}” und alle darin enthaltenen Dokumente endgültig — für alle Mitglieder. Gib zur Bestätigung den Namen des Arbeitsbereichs ein:",
   "confirm.removeMember": "{member} aus „{name}” entfernen?",
 
   // --- modals (Home) ------------------------------------------------------------
@@ -312,13 +314,12 @@ export const de: Record<keyof Messages, string> = {
 
   // --- suggestions panel --------------------------------------------------------
   "suggest.signInToSuggest": "Melde dich an, um Änderungen vorzuschlagen.",
-  "suggest.mode": "Vorschlagsmodus",
   "suggest.pausedPre":
     "Die Bearbeitung ist pausiert. Wähle Text im Editor aus und verwende",
   "suggest.pausedPost":
     "um Bearbeitungen in die Warteschlange zu stellen und sie dann gemeinsam zur Überprüfung einzureichen.",
-  "suggest.offHint":
-    "Aktivieren, um Änderungen zur Überprüfung vorzuschlagen, anstatt direkt zu bearbeiten.",
+  "suggest.switchHint":
+    "Stelle den Modus in der Symbolleiste auf Vorschlagen, um Änderungen zur Überprüfung vorzuschlagen, anstatt direkt zu bearbeiten.",
   "suggest.queued": "Wartende Bearbeitungen ({count})",
   "suggest.replace": "Ersetzen",
   "suggest.insert": "Einfügen",
@@ -454,6 +455,11 @@ export const de: Record<keyof Messages, string> = {
     "Du bist der einzige Admin — ernenne zuerst jemand anderen, bevor du gehen kannst.",
   "settings.general.personalNote":
     "Dies ist dein persönlicher Arbeitsbereich. Er kann nicht umbenannt oder verlassen werden.",
+  "settings.general.delete": "Arbeitsbereich löschen",
+  "settings.general.deleteNote":
+    "Löscht diesen Arbeitsbereich und alle darin enthaltenen Dokumente endgültig — für alle Mitglieder. Das kann nicht rückgängig gemacht werden.",
+  "settings.general.deleted": "{name} gelöscht.",
+  "settings.general.deleteNameMismatch": "Der Name stimmte nicht überein — nichts wurde gelöscht.",
   "settings.members.intro":
     "Verwalte, wer auf diesen Arbeitsbereich zugreifen darf und was er tun kann.",
   "settings.notifications": "Benachrichtigungen",

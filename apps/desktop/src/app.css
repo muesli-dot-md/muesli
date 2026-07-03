@@ -699,3 +699,60 @@ input.cm-live-task { vertical-align: -0.15em; margin-right: 0.15rem; cursor: poi
   border: 1px solid color-mix(in oklch, var(--color-base-content) 22%, transparent);
   background-color: color-mix(in oklch, var(--color-base-content) 10%, transparent);
 }
+
+/* --- Collaboration decorations (ADR 0019; ported from apps/web/src/app.css) ---
+   The cm-* classes are ALSO styled by editor-core's collabTheme (EditorPane
+   opts into it); duplicating them here removes that single point of failure.
+   The plain DOM classes (.muesli-thread-flash, .suggest-old/.suggest-new) are
+   NOT cm-* classes, so the CM theme can never style them — without these rules
+   the sidebar thread flash and the suggestion diff text render unstyled. */
+
+/* Comment anchors: subtle highlight, like a faint marker pen. Clickable —
+   routes to the thread card in the sidebar (annotations.ts). */
+.cm-comment-anchor {
+  background: oklch(0.85 0.12 90 / 0.35);
+  border-bottom: 2px solid oklch(0.75 0.15 85 / 0.7);
+  cursor: pointer;
+}
+
+/* Sidebar thread card flash after clicking its highlight in the editor */
+.muesli-thread-flash {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -1px;
+  transition: outline-color 0.3s ease;
+}
+
+/* Pending suggestion: deleted range struck through with a red tint */
+.cm-suggest-deletion {
+  background: oklch(0.6 0.2 25 / 0.12);
+  text-decoration: line-through;
+  text-decoration-color: oklch(0.55 0.2 25 / 0.7);
+}
+
+/* Pending suggestion: proposed insertion as an inline green widget */
+.cm-suggest-insertion {
+  background: oklch(0.6 0.17 150 / 0.15);
+  color: oklch(0.45 0.15 150);
+  border-radius: 3px;
+  padding: 0 2px;
+  margin: 0 1px;
+}
+
+/* Flash when a sidebar card is clicked */
+.cm-collab-flash {
+  background: color-mix(in oklch, var(--color-primary) 30%, transparent);
+  transition: background 0.3s ease;
+}
+
+/* Sidebar suggestion diff text */
+.suggest-old {
+  color: oklch(0.5 0.18 25);
+  text-decoration: line-through;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-word;
+}
+.suggest-new {
+  color: oklch(0.45 0.15 150);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-word;
+}

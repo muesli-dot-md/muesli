@@ -116,6 +116,8 @@ export const fr: Record<keyof Messages, string> = {
   // --- confirms -------------------------------------------------------------------
   "confirm.deleteForever": "Supprimer « {name} » définitivement ? Cette action est irréversible.",
   "confirm.leaveWorkspace": "Quitter « {name} » ? Tu perdras l'accès à ses documents.",
+  "confirm.deleteWorkspace":
+    "Cette action supprime définitivement « {name} » et tous ses documents, pour tous les membres. Saisis le nom de l'espace pour confirmer :",
   "confirm.removeMember": "Retirer {member} de « {name} » ?",
 
   // --- modals (Home) -----------------------------------------------------------------
@@ -304,12 +306,11 @@ export const fr: Record<keyof Messages, string> = {
 
   // --- suggestions panel ------------------------------------------------------------------------------------
   "suggest.signInToSuggest": "Connecte-toi pour proposer des modifications.",
-  "suggest.mode": "Mode suggestion",
   "suggest.pausedPre": "La modification est en pause. Sélectionne du texte dans l'éditeur et utilise",
   "suggest.pausedPost":
     "pour mettre des modifications en file d'attente, puis soumets-les ensemble pour révision.",
-  "suggest.offHint":
-    "Active cette option pour proposer des modifications à la révision plutôt que d'éditer directement.",
+  "suggest.switchHint":
+    "Passe le mode de la barre d'outils sur Suggestion pour proposer des modifications à la révision plutôt que d'éditer directement.",
   "suggest.queued": "Modifications en attente ({count})",
   "suggest.replace": "Remplacer",
   "suggest.insert": "Insérer",
@@ -444,6 +445,11 @@ export const fr: Record<keyof Messages, string> = {
     "Vous êtes le seul administrateur — nommez quelqu'un d'autre avant de pouvoir partir.",
   "settings.general.personalNote":
     "Ceci est votre espace personnel. Il ne peut pas être renommé ni quitté.",
+  "settings.general.delete": "Supprimer l'espace de travail",
+  "settings.general.deleteNote":
+    "Supprime définitivement cet espace et tous ses documents, pour tous les membres. Irréversible.",
+  "settings.general.deleted": "{name} supprimé.",
+  "settings.general.deleteNameMismatch": "Le nom ne correspondait pas — rien n'a été supprimé.",
   "settings.members.intro":
     "Gérez qui peut accéder à cet espace de travail et ce qu'il peut faire.",
   "settings.notifications": "Notifications",

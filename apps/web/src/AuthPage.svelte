@@ -49,10 +49,9 @@
   class="flex min-h-screen flex-col items-center justify-center bg-base-200 px-6 text-base-content antialiased"
 >
   <div class="flex w-full max-w-sm flex-col items-center gap-6">
-    <!-- mark + wordmark -->
+    <!-- wordmark IS the mark: lowercase Sentient, like the marketing site -->
     <div class="flex flex-col items-center gap-3">
-      <span class="text-5xl leading-none" aria-hidden="true">🥣</span>
-      <h1 class="text-2xl font-semibold tracking-tight">Muesli</h1>
+      <h1 class="wordmark text-6xl leading-none">muesli</h1>
       <p class="max-w-xs text-center text-sm opacity-60" style="text-wrap: balance;">
         {t("auth.tagline")}
       </p>

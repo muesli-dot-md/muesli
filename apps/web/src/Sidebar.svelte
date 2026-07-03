@@ -68,15 +68,24 @@
   </aside>
 {:else}
   <aside class="flex w-80 shrink-0 flex-col border-l border-base-300 bg-base-100">
-    <div class="flex items-center gap-1 border-b border-base-300 px-2 py-1.5">
-      <div role="tablist" class="tabs tabs-border tabs-sm flex-1">
+    <!-- Compact icon tabs, label shown only on the active tab (mirrors the
+         desktop app's RightSidebar). -->
+    <div class="flex items-center gap-1 px-2 py-2">
+      <div role="tablist" class="flex flex-1 items-center gap-1">
         {#each tabs as tb (tb.id)}
+          {@const Icon = tb.icon}
           <button
             role="tab"
-            class="tab gap-1 {collab.tab === tb.id ? 'tab-active' : ''}"
+            aria-selected={collab.tab === tb.id}
+            class="flex items-center gap-1 whitespace-nowrap rounded-field px-2 py-1 text-xs font-medium transition-colors"
+            style={collab.tab === tb.id
+              ? "background: var(--lift); color: var(--color-base-content); box-shadow: var(--shadow-lift);"
+              : "color: var(--text-muted);"}
             onclick={() => (collab.tab = tb.id)}
+            title={t(tb.labelKey)}
           >
-            {t(tb.labelKey)}
+            <Icon class="h-[15px] w-[15px] shrink-0" aria-hidden="true" />
+            {#if collab.tab === tb.id}<span>{t(tb.labelKey)}</span>{/if}
             {#if badge(tb.id) > 0}
               <span class="badge badge-ghost badge-xs">{badge(tb.id)}</span>
             {/if}

@@ -111,6 +111,8 @@ export const it: Record<keyof Messages, string> = {
   // --- confirms -------------------------------------------------------------
   "confirm.deleteForever": "Eliminare definitivamente ”{name}”? L’operazione non può essere annullata.",
   "confirm.leaveWorkspace": "Abbandonare ”{name}”? Perderai l’accesso ai suoi documenti.",
+  "confirm.deleteWorkspace":
+    "Questa azione elimina definitivamente ”{name}” e tutti i suoi documenti, per tutti i membri. Digita il nome dello spazio per confermare:",
   "confirm.removeMember": "Rimuovere {member} da ”{name}”?",
 
   // --- modals ---------------------------------------------------------------
@@ -292,10 +294,10 @@ export const it: Record<keyof Messages, string> = {
 
   // --- suggestions panel ----------------------------------------------------
   "suggest.signInToSuggest": "Accedi per proporre modifiche.",
-  "suggest.mode": "Modalità suggerimento",
   "suggest.pausedPre": "La modifica è in pausa. Seleziona del testo nell’editor e usa",
   "suggest.pausedPost": "per accodare modifiche, poi inviale insieme per la revisione.",
-  "suggest.offHint": "Attiva per proporre modifiche da revisionare invece di modificare direttamente.",
+  "suggest.switchHint":
+    "Imposta la modalità della barra degli strumenti su Suggerimenti per proporre modifiche da revisionare invece di modificare direttamente.",
   "suggest.queued": "Modifiche in coda ({count})",
   "suggest.replace": "Sostituisci",
   "suggest.insert": "Inserisci",
@@ -430,6 +432,11 @@ export const it: Record<keyof Messages, string> = {
     "Sei l'unico amministratore — nomina qualcun altro prima di poter uscire.",
   "settings.general.personalNote":
     "Questo è il tuo spazio personale. Non può essere rinominato né lasciato.",
+  "settings.general.delete": "Elimina spazio di lavoro",
+  "settings.general.deleteNote":
+    "Elimina definitivamente questo spazio e tutti i suoi documenti, per tutti i membri. Non può essere annullato.",
+  "settings.general.deleted": "{name} eliminato.",
+  "settings.general.deleteNameMismatch": "Il nome non corrispondeva — non è stato eliminato nulla.",
   "settings.members.intro":
     "Gestisci chi può accedere a questo spazio di lavoro e cosa può fare.",
   "settings.notifications": "Notifiche",

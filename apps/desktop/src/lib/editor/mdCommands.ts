@@ -247,6 +247,11 @@ export function toggleList(state: EditorState, kind: ListKind): TransactionSpec 
   const targets = lines.filter((l) => l.text.trim() !== "" || lines.length === 1);
   const allKind = targets.length > 0 && targets.every((l) => lineListKind(l.text) === kind);
   const changes: ChangeSpec[] = [];
+  // A bare {changes} spec maps a caret inside a replaced line to the change
+  // START — i.e. BEFORE the fresh "1. " marker, so typing lands ahead of it.
+  // For an empty selection (necessarily a single line) place the caret
+  // explicitly: same offset within the line content, right after the marker.
+  let newHead: number | null = null;
   let n = 1;
   for (const line of targets) {
     const { indent, rest } = stripListPrefix(line.text);
@@ -258,9 +263,17 @@ export function toggleList(state: EditorState, kind: ListKind): TransactionSpec 
           ? "- [ ] "
           : `${n++}. `;
     const replacement = indent + prefix + rest;
-    if (replacement !== line.text) changes.push({ from: line.from, to: line.to, insert: replacement });
+    if (replacement === line.text) continue;
+    changes.push({ from: line.from, to: line.to, insert: replacement });
+    if (main.empty) {
+      const restStart = line.length - rest.length; // old indent + old marker
+      const offsetInRest = Math.max(0, Math.min(main.head - line.from - restStart, rest.length));
+      newHead = line.from + indent.length + prefix.length + offsetInRest;
+    }
   }
-  return { changes };
+  return newHead === null
+    ? { changes }
+    : { changes, selection: EditorSelection.cursor(newHead) };
 }
 
 /** The list kind of the main selection head's line (toolbar active state). */

@@ -1,9 +1,10 @@
 <script lang="ts">
   // Docs-style toolbar: every command is a markdown-semantic transform from
   // $lib/editor/mdCommands dispatched on the active editor view from editorState.
-  import { Undo2, Redo2, Bold, Italic, Strikethrough, Code, Link, ListTodo, List, ListOrdered, Plus, Download, FileDown, Printer, ChevronDown, Table, Image, Minus, FileCode, Sigma, Workflow, CircleAlert, Brackets, Mic } from "lucide-svelte";
+  import { Undo2, Redo2, Bold, Italic, Strikethrough, Code, Link, ListTodo, List, ListOrdered, Plus, Download, FileDown, Printer, ChevronDown, Table, Image, Minus, FileCode, Sigma, Workflow, CircleAlert, Brackets, Mic, Pencil, MessageSquareText } from "lucide-svelte";
   import { recorder } from "$lib/recorder.svelte";
   import { platform } from "$lib/platform.svelte";
+  import { docCollab } from "$lib/collab/docCollab.svelte";
   import { undo, redo } from "@codemirror/commands";
   import type { TransactionSpec } from "@codemirror/state";
   import { editorState } from "$lib/editorState.svelte";
@@ -136,6 +137,22 @@
 
   function runTable() {
     if (view) dispatch(insertBlockSnippet(view.state, tableSkeleton()));
+    closeDropdown();
+  }
+
+  // --- editing / suggesting mode (mirrors apps/web Toolbar) ---------------------
+  // Only meaningful on synced docs with a live, reachable collab store; the
+  // sidebar's SuggestionsPanel shows queued drafts, this picker flips the mode.
+  const collab = $derived(docCollab.store);
+  const showModePicker = $derived(
+    docCollab.isRemote &&
+      !!collab &&
+      collab.availability !== "volatile" &&
+      collab.availability !== "auth",
+  );
+
+  function setMode(suggest: boolean) {
+    if (collab) collab.suggestMode = suggest;
     closeDropdown();
   }
 
@@ -451,4 +468,33 @@
   {/if}
 
   <div class="ml-auto"></div>
+
+  {#if showModePicker && collab}
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1.5 font-normal" title="Mode">
+        {#if collab.suggestMode}
+          <MessageSquareText class="h-4 w-4" aria-hidden="true" />
+          Suggesting
+        {:else}
+          <Pencil class="h-4 w-4" aria-hidden="true" />
+          Editing
+        {/if}
+        <ChevronDown class="h-3 w-3 opacity-60" aria-hidden="true" />
+      </div>
+      <ul class="menu dropdown-content z-30 mt-1 w-44 rounded-box border border-base-300 bg-base-100 p-1 shadow">
+        <li>
+          <button class={!collab.suggestMode ? "menu-active" : ""} onclick={() => setMode(false)}>
+            <Pencil class="h-4 w-4" aria-hidden="true" />
+            Editing
+          </button>
+        </li>
+        <li>
+          <button class={collab.suggestMode ? "menu-active" : ""} onclick={() => setMode(true)}>
+            <MessageSquareText class="h-4 w-4" aria-hidden="true" />
+            Suggesting
+          </button>
+        </li>
+      </ul>
+    </div>
+  {/if}
 </div>

@@ -114,6 +114,8 @@ export const es: Record<keyof Messages, string> = {
   // --- confirms -------------------------------------------------------------
   "confirm.deleteForever": "¿Eliminar ”{name}” definitivamente? Esta acción no se puede deshacer.",
   "confirm.leaveWorkspace": "¿Salir de ”{name}”? Perderás el acceso a sus documentos.",
+  "confirm.deleteWorkspace":
+    "Esto elimina permanentemente ”{name}” y todos sus documentos, para todos los miembros. Escribe el nombre del espacio para confirmar:",
   "confirm.removeMember": "¿Eliminar a {member} de ”{name}”?",
 
   // --- modals (Home) --------------------------------------------------------
@@ -297,10 +299,10 @@ export const es: Record<keyof Messages, string> = {
 
   // --- suggestions panel ----------------------------------------------------
   "suggest.signInToSuggest": "Inicia sesión para sugerir cambios.",
-  "suggest.mode": "Modo sugerencia",
   "suggest.pausedPre": "La edición está pausada. Selecciona texto en el editor y usa",
   "suggest.pausedPost": "para poner ediciones en cola y enviarlas juntas para revisión.",
-  "suggest.offHint": "Actívalo para proponer ediciones para revisión en lugar de editar directamente.",
+  "suggest.switchHint":
+    "Cambia el modo de la barra de herramientas a Sugerencias para proponer ediciones para revisión en lugar de editar directamente.",
   "suggest.queued": "Ediciones en cola ({count})",
   "suggest.replace": "Reemplazar",
   "suggest.insert": "Insertar",
@@ -435,6 +437,11 @@ export const es: Record<keyof Messages, string> = {
     "Eres el único administrador — nombra a otra persona antes de poder salir.",
   "settings.general.personalNote":
     "Este es tu espacio personal. No se puede renombrar ni abandonar.",
+  "settings.general.delete": "Eliminar espacio de trabajo",
+  "settings.general.deleteNote":
+    "Elimina permanentemente este espacio y todos sus documentos, para todos los miembros. No se puede deshacer.",
+  "settings.general.deleted": "{name} eliminado.",
+  "settings.general.deleteNameMismatch": "El nombre no coincidió — no se eliminó nada.",
   "settings.members.intro":
     "Gestiona quién puede acceder a este espacio de trabajo y qué puede hacer.",
   "settings.notifications": "Notificaciones",

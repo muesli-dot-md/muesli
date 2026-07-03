@@ -4,6 +4,7 @@
   //   - literal strings instead of t(...)
   //   - the webapp's "linked mentions"/backlinks section (graphApi + SPA route
   //     navigation) is webapp-only and omitted here (out of scope for ④a)
+  import { RotateCcw } from "lucide-svelte";
   import { authorName, relativeTime, type CollabStore } from "./collabStore.svelte";
   import type { Thread } from "./collabApi";
   import MentionText from "./MentionText.svelte";
@@ -57,8 +58,10 @@
               <span class="text-xs opacity-50">{relativeTime(comment.created_at)}</span>
               {#if i === 0}
                 {#if thread.status === "resolved"}
+                  <!-- Reopen, NOT another checkmark: a second ✓ here read as
+                       "this is resolved" and nobody guessed it undoes it. -->
                   <button
-                    class="btn btn-ghost btn-xs btn-circle min-h-0 h-6 w-6 text-success active:scale-[0.96]"
+                    class="btn btn-ghost btn-xs btn-circle min-h-0 h-6 w-6 active:scale-[0.96]"
                     title="Reopen this thread"
                     aria-label="Reopen this thread"
                     onclick={(e) => {
@@ -66,7 +69,7 @@
                       collab.reopenThread(thread.id);
                     }}
                   >
-                    ✓
+                    <RotateCcw class="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 {:else}
                   <button
@@ -110,21 +113,9 @@
   {#if collab.availability === "auth"}
     <p class="px-1 py-6 text-center text-sm opacity-60">Sign in to view comments.</p>
   {:else}
-    <div class="flex items-center justify-between gap-2 px-1">
-      <p class="text-xs opacity-60">
-        Select text and use the <span class="font-medium">Comment</span> action to start a thread.
-      </p>
-      <label class="flex shrink-0 cursor-pointer items-center gap-1 text-xs opacity-70">
-        <input
-          type="checkbox"
-          class="toggle toggle-sm"
-          checked={collab.mentionsMe}
-          onchange={(e) => collab.setMentionsMe(e.currentTarget.checked)}
-          aria-label="Mentions you"
-        />
-        Mentions you
-      </label>
-    </div>
+    <p class="px-1 text-xs opacity-60">
+      Select text and use the <span class="font-medium">Comment</span> action to start a thread.
+    </p>
 
     {#if collab.openThreads.length === 0 && collab.orphanedThreads.length === 0 && collab.resolvedThreads.length === 0}
       <p class="px-1 py-4 text-center text-sm opacity-50">No comments yet.</p>

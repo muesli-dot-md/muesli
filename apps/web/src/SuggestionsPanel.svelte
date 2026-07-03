@@ -24,17 +24,13 @@
   {#if collab.availability === "auth"}
     <p class="px-1 py-6 text-center text-sm opacity-60">{t("suggest.signInToSuggest")}</p>
   {:else}
-    <label class="flex cursor-pointer items-center gap-2 px-1">
-      <input type="checkbox" class="toggle toggle-sm" bind:checked={collab.suggestMode} />
-      <span class="text-sm font-medium">{t("suggest.mode")}</span>
-    </label>
-    <p class="-mt-1 px-1 text-xs opacity-60">
+    <p class="px-1 text-xs opacity-60">
       {#if collab.suggestMode}
         {t("suggest.pausedPre")}
         <span class="font-medium">{t("editor.suggestAction")}</span>
         {t("suggest.pausedPost")}
       {:else}
-        {t("suggest.offHint")}
+        {t("suggest.switchHint")}
       {/if}
     </p>
 

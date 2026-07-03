@@ -429,30 +429,34 @@
 
   /** Sign-in dialog confirm: close it FIRST (so it can never stack with the
    *  keychain explainer login() may raise), then run the login flow — consent
-   *  + device flow live inside workspaces.login(), unchanged. When the dialog
-   *  was opened by onboarding's server fork, finish with the fork's post-login
-   *  logic, verbatim from the pre-dialog connectToServer(): logged in → stamp
+   *  + device flow live inside workspaces.login(), unchanged. Logged in while
+   *  onboarding's server fork opened this dialog → finish with the fork's
+   *  post-login logic, verbatim from the pre-dialog connectToServer(): stamp
    *  the server onboarded flag (finish(false) ran BEFORE login, when no
    *  identity existed yet, so a brand-new user only got the local flag —
    *  re-stamp so their first web login doesn't show onboarding again) and open
-   *  the shared create-workspace wizard; no identity (login failed, or the
-   *  keychain consent was declined = quiet abort) → Settings → Sync, the
-   *  existing surface where the server address, login button, and error
-   *  message live, so the fork is never a dead button. */
+   *  the shared create-workspace wizard. No identity (login failed — wrong
+   *  server, network error — or the keychain consent was declined = quiet
+   *  abort) → Settings → Sync REGARDLESS of entry point, the existing surface
+   *  where the server address, login button, and error message live. Every
+   *  sign-in entry point funnels through here, so this is the only place a
+   *  failure needs handling — without it, non-onboarding sign-ins (the
+   *  sidebar dropdown, Settings → Profile) failed completely silently. */
   async function confirmSignIn() {
     showSignIn = false;
     const fromOnboarding = signInFromOnboarding;
     signInFromOnboarding = false;
     await workspaces.login();
-    if (!fromOnboarding) return;
     if (workspaces.identity) {
-      await stampServerOnboarded();
-      showCreateWorkspace = true;
-    } else {
-      settingsSection = 'sync';
-      showSettings = true;
-      showGraph = false;
+      if (fromOnboarding) {
+        await stampServerOnboarded();
+        showCreateWorkspace = true;
+      }
+      return;
     }
+    settingsSection = 'sync';
+    showSettings = true;
+    showGraph = false;
   }
 
   /** The "Connect to a server" fork: already signed in → straight to the

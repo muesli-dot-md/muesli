@@ -26,16 +26,13 @@
   {#if collab.availability === "auth"}
     <p class="px-1 py-6 text-center text-sm opacity-60">Sign in to suggest edits.</p>
   {:else}
-    <label class="flex cursor-pointer items-center gap-2 px-1">
-      <input type="checkbox" class="toggle toggle-sm" bind:checked={collab.suggestMode} />
-      <span class="text-sm font-medium">Suggest mode</span>
-    </label>
-    <p class="-mt-1 px-1 text-xs opacity-60">
+    <p class="px-1 text-xs opacity-60">
       {#if collab.suggestMode}
         Editing is paused — select text and use the
         <span class="font-medium">Suggest</span> action to queue a change.
       {:else}
-        Turn on suggest mode to propose edits without changing the document directly.
+        Switch the editor mode to Suggesting to propose edits without changing the
+        document directly.
       {/if}
     </p>
 

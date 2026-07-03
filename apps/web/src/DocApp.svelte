@@ -226,8 +226,8 @@
         title={t("doc.allDocuments")}
         onclick={() => gotoHome()}
       >
-        <span class="text-lg" aria-hidden="true">🥣</span>
-        <span class="font-semibold tracking-tight">Muesli</span>
+        <!-- Wordmark matches the marketing site's nav: lowercase, Sentient, 1.4rem -->
+        <span class="wordmark text-[1.4rem] leading-none">muesli</span>
       </button>
       <div class="flex min-w-0 items-baseline gap-2">
         {#if editingTitle}
@@ -262,10 +262,10 @@
       >
         <Search class="h-4 w-4" aria-hidden="true" />
       </button>
-      <div
-        class="status {connected ? 'status-success' : 'status-error'}"
-        title={connected ? t("doc.connected") : t("doc.disconnected")}
-      ></div>
+      <!-- Connected is the web's steady state — only the EXCEPTION gets a dot. -->
+      {#if !connected}
+        <div class="status status-error" title={t("doc.disconnected")}></div>
+      {/if}
       {#if showSignInHint}
         <span class="text-xs opacity-60">{t("doc.signInToOpen")}</span>
       {:else if !connected}
