@@ -1,4 +1,4 @@
-# Muesli 🥣
+# muesli
 
 **Google Docs for Markdown files.** Real-time multiplayer editing where the plain `.md` in your
 storage stays canonical, AI agents are first-class collaborators, and the whole thing is
@@ -22,12 +22,19 @@ ingested back as text diffs. Nothing is ever converted — the file stays a mark
   speech-to-text dictation (Parakeet ONNX, runs locally).
 - `packages/editor-core` — shared TypeScript editor library (markdown render, tables, Mermaid,
   CRDT collaboration decorations) consumed by both `apps/web` and `apps/desktop`.
+- `packages/workspace-setup` — shared first-login onboarding flow machine (unit-tested here,
+  rendered by both apps).
 - `integrations/vscode` — Muesli Presence: live cursors + participants inside VS Code for
   muesli-linked files (presence only; content syncs via `muesli open`).
+- `shared/` — cross-app design tokens (`palette.css`).
+- `dev/` — local dev fixtures: the two Dex OIDC issuer configs for docker compose (copy each
+  `config.example.yaml` to `config.yaml` next to it).
 
 ## Develop
 
 ```sh
+cp dev/dex/config.example.yaml dev/dex/config.yaml     # local OIDC issuer configs
+cp dev/dex2/config.example.yaml dev/dex2/config.yaml   # (compose mounts these; edits stay local)
 docker compose up -d                # postgres, redis, dex, dex2, minio, gitea
 cp .env.example .env                # then uncomment the dev blocks you want (OIDC, Redis, S3…)
 cargo run -p muesli-server          # reads .env; sync server on ws://localhost:8787
@@ -57,7 +64,9 @@ server-side. Sessions live in Redis (`REDIS_URL`) or in-memory without it.
 Workspaces are manageable over REST (ADR 0011): `GET /api/workspaces` lists yours,
 `POST /api/workspaces/{id}/invites {email, role}` adds an existing user immediately or leaves an
 invite that is claimed on their first login, and admins can rename the workspace and manage
-member roles (the last admin can never be demoted or removed).
+member roles (the last admin can never be demoted or removed). Admins can also delete a
+workspace (`DELETE /api/workspaces/{id}`, or Settings → General → Danger Zone with a typed-name
+confirmation) — this permanently removes every document, comment, and suggestion in it.
 
 *First-login onboarding — manual checklist* (the flow machine, trigger matrix, and
 copy keys are unit-tested in `packages/workspace-setup` / `apps/web` / `apps/desktop`;
@@ -137,8 +146,7 @@ OIDC device flow as the CLI (token in the OS keychain, never exposed to the webv
 
 It also ships **on-device speech-to-text dictation** (macOS): a local Parakeet ONNX model
 transcribes your mic (and optionally system audio) into a markdown meeting transcript or straight
-into the current note — fully local, no audio leaves the machine. See
-`docs/design/desktop-app.md`.
+into the current note — fully local, no audio leaves the machine.
 
 ```sh
 cd apps/desktop && pnpm tauri dev           # run the desktop app in dev (needs the Rust/Tauri toolchain)
@@ -346,13 +354,27 @@ and `GET /api/documents/{slug}/links` → `{outgoing, incoming}`.
 
 ## Agents (MCP)
 
-The server exposes an MCP façade at `POST /mcp` (ADR 0008): `list_documents`,
-`read_document`, `get_history`, `create_document`, `edit_document` (mode `direct` |
-`suggest`, anchored by `anchor_text` / byte `range` / `replace_all`, one change set per
-call), `add_comment`, `reply_comment`, `list_comments`, `list_suggestions`, and the gated
-`resolve_comment` / `accept_suggestion` / `reject_suggestion` / `accept_change_set` /
-`reject_change_set`. Auth is `Authorization: Bearer mua_…` (mint one with `muesli login`);
-an open-mode server needs none. Any MCP client connects through the stdio proxy:
+The server exposes an MCP façade at `POST /mcp` (ADR 0008) with **52 tools — full parity with
+the user-facing REST surface**. The core document tools: `list_documents`, `read_document`,
+`get_history`, `create_document`, `edit_document` (mode `direct` | `suggest`, anchored by
+`anchor_text` / byte `range` / `replace_all`, one change set per call), `add_comment`,
+`reply_comment`, `list_comments`, `list_suggestions`, and the gated `resolve_comment` /
+`accept_suggestion` / `reject_suggestion` / `accept_change_set` / `reject_change_set`.
+
+The rest of the surface is **bridged onto the real REST handlers** — each tool invokes the
+handler function with the request's own auth/state, so role checks, token scopes, audit
+entries, and storage side effects are the REST ones by construction and cannot drift:
+document lifecycle (`update_document`, `trash_document`, `restore_document`, the gated
+`purge_document`, `search`), `reopen_comment`, folders, sharing (`create_share_link`,
+`list_document_members`), the link graph (`get_graph`, `get_document_links`), notifications
+(an agent token reads the **agent identity's own** inbox, never its owner's), workspaces
+(list/create/get/rename, the gated `delete_workspace`, invites, member roles, audit), and
+storage connections (s3/github; Drive and SharePoint bind via browser OAuth and stay out of
+MCP). Account tools (`get_me`, `mint_api_token`, …) inherit the session wall: delegated agent
+tokens are refused — an agent can never mint itself keys.
+
+Auth is `Authorization: Bearer mua_…` (mint one with `muesli login`); an open-mode server
+needs none. Any MCP client connects through the stdio proxy:
 
 ```json
 { "mcpServers": { "muesli": { "command": "muesli", "args": ["mcp"] } } }
@@ -361,8 +383,9 @@ an open-mode server needs none. Any MCP client connects through the stdio proxy:
 Two policies (env, ADR 0007/0008): `MUESLI_AGENT_DIRECT` (default `auto`) downgrades agent
 `direct` edits to suggestions while a human is co-present in the document, so live humans
 review agent changes instead of colliding with them. `MUESLI_AGENT_GATED_ACTIONS` (default
-off) keeps agents from accepting suggestions or resolving comments until the operator
-explicitly enables it.
+off) keeps agents from approving work (accepting suggestions, resolving comments) or
+destroying it (`purge_document`, `delete_workspace`) until the operator explicitly enables
+it; every gated attempt is audited.
 
 ## Enterprise
 
