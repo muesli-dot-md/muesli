@@ -207,7 +207,7 @@ pub async fn ensure_model(app: AppHandle) -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "macos")]
@@ -362,7 +362,7 @@ pub fn start_capture(
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, state, workspace_dir);
-        return Err("transcription is only available on macOS".into());
+        Err("transcription is only available on macOS".into())
     }
 
     #[cfg(target_os = "macos")]

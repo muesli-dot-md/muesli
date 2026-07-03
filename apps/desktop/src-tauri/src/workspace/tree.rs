@@ -76,9 +76,9 @@ pub fn build_tree(root: &Path) -> io::Result<WorkspaceNode> {
         }
 
         // Sort folders case-insensitively
-        dirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        dirs.sort_by_key(|d| d.name.to_lowercase());
         // Sort files case-insensitively
-        files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        files.sort_by_key(|f| f.name.to_lowercase());
 
         let mut children = dirs;
         children.extend(files);
