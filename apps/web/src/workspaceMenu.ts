@@ -17,10 +17,11 @@ export type WorkspaceMenuRow = {
 };
 
 /**
- * Build the workspace rows shown in the dropdown. The personal workspace shows
- * the localized "My workspace" label (passed in so it re-translates with the
- * locale); every other workspace uses its own name. The row whose id matches
- * `selectedId` is marked active (it gets the checkmark).
+ * Build the workspace rows shown in the dropdown. Every workspace shows the
+ * name its creator gave it in the wizard; the localized "My workspace" label
+ * (passed in so it re-translates with the locale) is only the fallback for a
+ * personal workspace with no name. The row whose id matches `selectedId` is
+ * marked active (it gets the checkmark).
  */
 export function workspaceMenuRows(
   workspaces: WorkspaceSummary[],
@@ -28,7 +29,7 @@ export function workspaceMenuRows(
   personalLabel: string,
 ): WorkspaceMenuRow[] {
   return workspaces.map((w) => {
-    const label = w.is_personal ? personalLabel : w.name;
+    const label = w.name.trim() || (w.is_personal ? personalLabel : w.name);
     return {
       id: w.id,
       label,
@@ -53,7 +54,7 @@ export function activeWorkspaceLabel(
 ): string {
   const w = workspaces.find((x) => x.id === selectedId);
   if (!w) return fallback;
-  return w.is_personal ? personalLabel : w.name;
+  return w.name.trim() || (w.is_personal ? personalLabel : w.name);
 }
 
 /** The signed-in user's identity, normalized for the dropdown header. Avatar is

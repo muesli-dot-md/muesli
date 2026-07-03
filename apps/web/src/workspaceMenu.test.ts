@@ -33,10 +33,16 @@ describe("avatarLetter", () => {
 });
 
 describe("workspaceMenuRows", () => {
-  it("labels the personal workspace with the localized label, others by name", () => {
+  it("labels every workspace by the name its creator chose", () => {
     const rows = workspaceMenuRows([PERSONAL, TEAM], "ws-personal", "My workspace");
+    expect(rows.map((r) => r.label)).toEqual(["Personal", "Team Alpha"]);
+    expect(rows.map((r) => r.letter)).toEqual(["P", "T"]);
+  });
+
+  it("falls back to the localized label only for an unnamed personal workspace", () => {
+    const unnamed = ws({ id: "ws-unnamed", name: "  ", is_personal: true });
+    const rows = workspaceMenuRows([unnamed, TEAM], null, "My workspace");
     expect(rows.map((r) => r.label)).toEqual(["My workspace", "Team Alpha"]);
-    expect(rows.map((r) => r.letter)).toEqual(["M", "T"]);
   });
 
   it("marks exactly the selected workspace active (the checkmark target)", () => {
@@ -52,9 +58,9 @@ describe("workspaceMenuRows", () => {
 });
 
 describe("activeWorkspaceLabel", () => {
-  it("returns the active workspace label (personal localized)", () => {
+  it("returns the active workspace label (real name, even for personal)", () => {
     expect(activeWorkspaceLabel([PERSONAL, TEAM], "ws-personal", "My workspace", "fallback")).toBe(
-      "My workspace",
+      "Personal",
     );
     expect(activeWorkspaceLabel([PERSONAL, TEAM], "ws-team", "My workspace", "fallback")).toBe(
       "Team Alpha",
