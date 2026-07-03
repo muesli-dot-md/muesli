@@ -1,7 +1,11 @@
-// Top-level view gate (Commit 1). The app boots into one of three shells:
-//   - "loading": auth hasn't resolved yet (avoid flashing the wrong screen)
-//   - "auth":    a signed-out user on the main app → the dedicated AuthPage
-//   - "app":     everything else → the real app (Home / DocApp / Settings)
+// Top-level view gate (Commit 1). The app boots into one of four shells:
+//   - "loading":  auth hasn't resolved yet (avoid flashing the wrong screen)
+//   - "redirect": a signed-out user on the main app → straight to the server's
+//                 /auth/login (which 303s into the IdP). No interstitial, no
+//                 extra click — App.svelte performs the navigation.
+//   - "auth":     the dedicated sign-in fallback page, ONLY on its own route
+//                 (#~login) — kept routable as the organization-SSO chooser.
+//   - "app":      everything else → the real app (Home / DocApp / Settings)
 //
 // The single subtlety is GUEST SHARE ACCESS (ADR 0011): a signed-out visitor
 // who opens a document with a `?share=<token>` link must still reach that doc.
@@ -15,7 +19,7 @@
 import type { AuthInfo } from "./identity";
 import type { Route } from "./route.svelte";
 
-export type AppView = "loading" | "auth" | "app";
+export type AppView = "loading" | "redirect" | "auth" | "app";
 
 /** Decide which top-level shell to render.
  *
@@ -27,11 +31,15 @@ export function decideAppView(route: Route, auth: AuthInfo | null): AppView {
   // auth resolves, so the shared doc opens immediately for an anonymous visitor.
   if (route.kind === "doc" && route.shareToken) return "app";
 
-  // Auth still loading: hold the splash rather than flash Home or the AuthPage.
+  // Auth still loading: hold the splash rather than flash Home or a redirect.
   if (auth === null) return "loading";
 
+  // OIDC mode, signed out: the explicit #~login route renders the SSO-chooser
+  // fallback page; everywhere else goes DIRECTLY into the IdP redirect.
+  if (auth.mode === "oidc" && auth.user === null) {
+    return route.kind === "login" ? "auth" : "redirect";
+  }
+
   // Open mode (no accounts) or an authenticated user → the real app.
-  // OIDC mode with no user → the dedicated sign-in page.
-  if (auth.mode === "oidc" && auth.user === null) return "auth";
   return "app";
 }

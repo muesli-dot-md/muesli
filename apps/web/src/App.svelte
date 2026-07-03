@@ -19,19 +19,28 @@
   import "./accent.svelte";
   import { decideAppView } from "./appGate";
   import { authSession } from "./authSession.svelte";
+  import { loginUrl } from "./identity";
   import { route } from "./route.svelte";
 
   const doc = $derived(route.current.kind === "doc" ? route.current : null);
 
-  // Top-level gate (Commit 1): a signed-out OIDC visitor gets the dedicated
-  // AuthPage instead of the real app chrome — UNLESS they're opening a shared
-  // doc via a ?share=<token> link, which stays a guest-accessible "app" view.
-  // Open mode and signed-in users always see the real app.
+  // Top-level gate (Commit 1): a signed-out OIDC visitor is sent STRAIGHT into
+  // the server's /auth/login redirect (no interstitial, no extra click) — UNLESS
+  // they're opening a shared doc via a ?share=<token> link, which stays a
+  // guest-accessible "app" view, or they explicitly visited #~login, the
+  // routable sign-in fallback / organization-SSO chooser (AuthPage). Open mode
+  // and signed-in users always see the real app.
   const view = $derived(decideAppView(route.current, authSession.current));
+
+  $effect(() => {
+    // "redirect" is a full-page navigation into the IdP; the splash below stays
+    // on screen until the browser leaves.
+    if (view === "redirect") window.location.href = loginUrl();
+  });
 </script>
 
-{#if view === "loading"}
-  <!-- /api/me in flight: a calm blank floor, no flash of Home or AuthPage. -->
+{#if view === "loading" || view === "redirect"}
+  <!-- /api/me in flight, or handing off to the IdP: a calm blank floor. -->
   <div class="flex min-h-screen items-center justify-center bg-base-200">
     <span class="loading loading-spinner loading-lg opacity-40"></span>
   </div>

@@ -1,7 +1,8 @@
 <script lang="ts">
-  // Dedicated signed-out shell (Commit 1). When the server runs in OIDC mode and
-  // no one is signed in, App.svelte renders THIS instead of the real app — no
-  // sidebar, no search header, no document grid. Just the Muesli mark, a short
+  // The sign-in FALLBACK page, routable at #~login. It is no longer the default
+  // gate: a signed-out visitor is sent straight into the server's /auth/login
+  // redirect (appGate "redirect") with no interstitial. This page exists so the
+  // organization-SSO entry point stays reachable — just the Muesli mark, a short
   // tagline, and the sign-in actions on a clean blank floor.
   //
   // Sign-in is OIDC/SSO only — there is no separate sign-up flow (identity comes

@@ -12,6 +12,10 @@
 //   '~trash'       -> home, trash view
 //   '~settings'    -> settings page (also '~settings/<section>'; unknown
 //                     sections fall back to the first one, settings.md §1)
+//   '~login'       -> the sign-in fallback page (organization-SSO chooser). NOT
+//                     the default gate — signed-out visitors are sent straight
+//                     to /auth/login (appGate "redirect"); this route exists so
+//                     the SSO entry point stays reachable by URL.
 //   '~<other>'     -> not-found (an unknown reserved route → the 404 page)
 //   anything else  -> a document slug, optional '?share=<token>' (ADR 0011)
 //
@@ -39,6 +43,7 @@ const SECTION_ALIASES: Record<string, SettingsSection> = { appearance: "preferen
 export type Route =
   | { kind: "home"; view: HomeView; folderId: string | null }
   | { kind: "settings"; section: SettingsSection }
+  | { kind: "login" }
   | { kind: "doc"; docId: string; shareToken: string | null }
   | { kind: "notfound" };
 
@@ -56,6 +61,7 @@ function parseHash(): Route {
       : (SECTION_ALIASES[raw] ?? settingsSections[0]);
     return { kind: "settings", section };
   }
+  if (hash === "~login") return { kind: "login" };
   if (hash.startsWith("f/")) return { kind: "home", view: "folder", folderId: hash.slice(2) };
   // Any other '~'-reserved hash is a dead route, not a document slug (slugify
   // never produces '~'), so it lands on the 404 page rather than minting a doc.

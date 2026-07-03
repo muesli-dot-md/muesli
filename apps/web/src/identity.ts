@@ -98,15 +98,23 @@ export async function fetchMe(): Promise<AuthInfo> {
   }
 }
 
+/** The post-login destination: the current URL — except on the #~login fallback
+ *  page, where a completed sign-in should land on the app, not back on the chooser. */
+function nextAfterLogin(): string {
+  return location.hash.startsWith("#~login")
+    ? location.href.slice(0, location.href.indexOf("#"))
+    : location.href;
+}
+
 export function loginUrl(): string {
-  const next = encodeURIComponent(location.href);
+  const next = encodeURIComponent(nextAfterLogin());
   return `${httpBase}/auth/login?next=${next}`;
 }
 
 /** Organization SSO (Phase 5): the server maps the email's domain to its workspace IdP
  *  and 302s into /auth/login?issuer=… — or answers 404 when no workspace claims it. */
 export function orgLoginUrl(email: string): string {
-  const next = encodeURIComponent(location.href);
+  const next = encodeURIComponent(nextAfterLogin());
   return `${httpBase}/auth/login/select?email=${encodeURIComponent(email)}&next=${next}`;
 }
 

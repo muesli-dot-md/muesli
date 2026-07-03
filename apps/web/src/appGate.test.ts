@@ -5,6 +5,7 @@ import type { Route } from "./route.svelte";
 
 const home: Route = { kind: "home", view: "root", folderId: null };
 const settings: Route = { kind: "settings", section: "profile" };
+const login: Route = { kind: "login" };
 const ownDoc: Route = { kind: "doc", docId: "my-notes", shareToken: null };
 const sharedDoc: Route = { kind: "doc", docId: "my-notes", shareToken: "tok-123" };
 
@@ -22,10 +23,19 @@ describe("decideAppView", () => {
     expect(decideAppView(settings, null)).toBe("loading");
   });
 
-  it("sends a signed-out OIDC user to the auth page on the main app", () => {
-    expect(decideAppView(home, signedOut)).toBe("auth");
-    expect(decideAppView(settings, signedOut)).toBe("auth");
-    expect(decideAppView(ownDoc, signedOut)).toBe("auth");
+  it("sends a signed-out OIDC user STRAIGHT to the IdP redirect — no interstitial", () => {
+    expect(decideAppView(home, signedOut)).toBe("redirect");
+    expect(decideAppView(settings, signedOut)).toBe("redirect");
+    expect(decideAppView(ownDoc, signedOut)).toBe("redirect");
+  });
+
+  it("keeps the sign-in fallback (SSO chooser) routable at #~login only", () => {
+    expect(decideAppView(login, signedOut)).toBe("auth");
+    // resolved auth states never see the fallback page
+    expect(decideAppView(login, signedIn)).toBe("app");
+    expect(decideAppView(login, open)).toBe("app");
+    // and it holds the splash like every other gated surface while auth loads
+    expect(decideAppView(login, null)).toBe("loading");
   });
 
   it("renders the real app for an authenticated user", () => {
@@ -48,6 +58,6 @@ describe("decideAppView", () => {
   });
 
   it("does NOT treat a token-less doc route as guest access", () => {
-    expect(decideAppView(ownDoc, signedOut)).toBe("auth");
+    expect(decideAppView(ownDoc, signedOut)).toBe("redirect");
   });
 });
