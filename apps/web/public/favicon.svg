@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="tilegrad" cx="0.5" cy="0.5" r="0.72">
+      <stop offset="0" stop-color="#1B1E29"/>
+      <stop offset="1" stop-color="#181A25"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="230.4"
+      fill="url(#tilegrad)"/>
+  <g transform="translate(258.05 194.56) scale(0.97674)">
+  <defs>
+    <linearGradient id="markgrad" gradientUnits="userSpaceOnUse"
+        x1="-78.04" y1="167.37" x2="598.04" y2="482.63">
+      <stop offset="0" stop-color="#cfe8ff"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <mask id="markmask">
+      <rect x="159.0" y="7.0" width="354.0" height="491.0"
+          rx="40.0" fill="#fff"/>
+      <rect x="7.0" y="152.0" width="354.0" height="491.0"
+          rx="40.0" fill="#fff"/>
+      <rect x="134.0" y="127.0" width="252.0" height="396.0" rx="65.0" fill="#000"/>
+    </mask>
+  </defs>
+  <rect x="0" y="0" width="520.0" height="650.0"
+      fill="url(#markgrad)" mask="url(#markmask)"/>
+  </g>
+</svg>
