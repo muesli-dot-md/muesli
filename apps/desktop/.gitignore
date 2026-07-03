@@ -3,6 +3,9 @@ node_modules/
 dist/
 .DS_Store
 *.onnx
+# ...except the small Silero VAD model the vendored crate include_bytes!()es at
+# compile time (the large Parakeet STT model is downloaded at runtime).
+!vendor/voice_activity_detector/src/silero_vad.onnx
 models/
 
 # SvelteKit
