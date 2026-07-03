@@ -447,13 +447,10 @@ mod tests {
         record_link_in(&dir, Path::new("/old/root/sub/b.md"), "doc-b", ws, None).unwrap();
         // Sibling that merely shares the string prefix without the separator: untouched.
         record_link_in(&dir, Path::new("/old/rootish/c.md"), "doc-c", ws, None).unwrap();
-        let n =
-            relocate_links_in(&dir, Path::new("/old/root"), Path::new("/new/home")).unwrap();
+        let n = relocate_links_in(&dir, Path::new("/old/root"), Path::new("/new/home")).unwrap();
         assert_eq!(n, 2);
         let links = load_links_in(&dir).unwrap();
-        let path_of = |doc: &str| {
-            links.iter().find(|l| l.doc == doc).unwrap().file.clone()
-        };
+        let path_of = |doc: &str| links.iter().find(|l| l.doc == doc).unwrap().file.clone();
         assert_eq!(path_of("doc-a"), PathBuf::from("/new/home/a.md"));
         assert_eq!(path_of("doc-b"), PathBuf::from("/new/home/sub/b.md"));
         assert_eq!(path_of("doc-c"), PathBuf::from("/old/rootish/c.md"));

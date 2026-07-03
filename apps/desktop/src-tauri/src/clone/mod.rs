@@ -35,9 +35,17 @@ pub(crate) fn filter_workspace(
 /// unrelated folder is never merged into.
 pub fn prepare_clone_dir(parent: &Path, name: &str) -> Result<std::path::PathBuf> {
     let base = paths::sanitize_segment(name);
-    let base = if base.is_empty() { "workspace".to_string() } else { base };
+    let base = if base.is_empty() {
+        "workspace".to_string()
+    } else {
+        base
+    };
     for i in 1..=100u32 {
-        let candidate = if i == 1 { base.clone() } else { format!("{base}-{i}") };
+        let candidate = if i == 1 {
+            base.clone()
+        } else {
+            format!("{base}-{i}")
+        };
         let dir = parent.join(&candidate);
         match std::fs::create_dir(&dir) {
             Ok(()) => return Ok(dir),
@@ -55,7 +63,10 @@ pub fn prepare_clone_dir(parent: &Path, name: &str) -> Result<std::path::PathBuf
             }
         }
     }
-    anyhow::bail!("no free folder name for {base:?} under {}", parent.display())
+    anyhow::bail!(
+        "no free folder name for {base:?} under {}",
+        parent.display()
+    )
 }
 
 /// Eager full pull of a workspace into `root` (which must already exist). Rebuilds the folder
