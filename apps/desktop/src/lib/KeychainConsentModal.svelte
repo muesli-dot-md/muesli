@@ -51,11 +51,10 @@
   >
     <h3 class="text-lg font-semibold">Muesli uses your Mac's Keychain</h3>
     <p class="text-sm text-base-content/70" style="text-wrap: pretty;">
-      To keep you signed in, Muesli saves your login token in the macOS Keychain — the same
-      protected store your passwords live in. macOS will show a permission prompt next; it grants
-      Muesli access only to its own entry, never to your passwords. Muesli stores nothing else
-      there, and your token is only ever sent to your own server. Muesli is open source, so you can
-      verify this yourself.
+      To keep you signed in, Muesli saves your login token in the macOS Keychain, the same protected
+      store as your passwords. macOS may ask you for permission. Muesli can only reach its own
+      entry, never your passwords, and stores nothing else there. Your token goes only to the server
+      you sign in to, and Muesli is open source, so you can verify this yourself.
     </p>
     <div class="mt-2 flex items-center justify-between">
       <button class="consent-skip" type="button" onclick={decline}>Not now</button>
