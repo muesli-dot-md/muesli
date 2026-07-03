@@ -1,4 +1,4 @@
-// Per-note collaboration session, mirroring ~/Code/muesli/apps/web/src/session.svelte.ts:
+// Per-note collaboration session, mirroring apps/web/src/session.svelte.ts:
 // each open note gets its own Y.Doc + WebsocketProvider, and destroy() tears the
 // whole thing down (websocket closed, listeners off) so a note switch leaks nothing.
 //
