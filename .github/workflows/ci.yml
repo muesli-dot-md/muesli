@@ -91,9 +91,15 @@ jobs:
       - name: clippy (workspace)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      - name: Provide ONNX Runtime (pyke CDN blocks Linux runner IPs)
+        run: |
+          curl -fsSL --retry 3 -o /tmp/ort.tgz \
+            https://github.com/microsoft/onnxruntime/releases/download/v1.24.2/onnxruntime-linux-x64-1.24.2.tgz
+          mkdir -p "$HOME/onnxruntime"
+          tar xzf /tmp/ort.tgz -C "$HOME/onnxruntime" --strip-components=1
+          echo "ORT_LIB_LOCATION=$HOME/onnxruntime/lib" >> "$GITHUB_ENV"
+
       - name: clippy (src-tauri)
-        # Retries: ort-sys downloads prebuilt onnxruntime from pyke's CDN,
-        # which intermittently 403s GitHub runner IPs (rate limiting).
         run: |
           for i in 1 2 3; do
             cargo clippy --all-targets --locked --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings && exit 0
@@ -247,8 +253,17 @@ jobs:
       - name: Build desktop frontend
         run: pnpm --filter Muesli build
 
+      - name: Provide ONNX Runtime (pyke CDN blocks Linux runner IPs)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          curl -fsSL --retry 3 -o /tmp/ort.tgz \
+            https://github.com/microsoft/onnxruntime/releases/download/v1.24.2/onnxruntime-linux-x64-1.24.2.tgz
+          mkdir -p "$HOME/onnxruntime"
+          tar xzf /tmp/ort.tgz -C "$HOME/onnxruntime" --strip-components=1
+          echo "ORT_LIB_LOCATION=$HOME/onnxruntime/lib" >> "$GITHUB_ENV"
+
       - name: Compile-verify Tauri app
-        # Retries: see clippy (src-tauri) — pyke CDN rate limiting.
+        # Retries: pyke CDN intermittently 403s runner IPs (Windows path).
         shell: bash
         run: |
           for i in 1 2 3; do
