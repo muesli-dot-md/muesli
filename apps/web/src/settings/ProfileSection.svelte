@@ -41,7 +41,6 @@
   let pendingAvatar: string | null = $state(null);
   let fileInput: HTMLInputElement | undefined = $state();
 
-
   async function patch(body: { display_name?: string | null; avatar_url?: string | null }) {
     const user = await api.patchMe(body);
     onupdated(user);

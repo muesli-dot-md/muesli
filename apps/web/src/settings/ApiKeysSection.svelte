@@ -31,7 +31,6 @@
   let mintOpen = $state(false);
   let revoking: string | null = $state(null);
 
-
   async function load() {
     loading = true;
     try {

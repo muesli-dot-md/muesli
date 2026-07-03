@@ -21,8 +21,7 @@ export function classifyDocError(status: number): ErrorKind {
 // --- generic API failures (toasts / inline errors) --------------------------------
 
 export type ApiErrorPresentation =
-  | { kind: "actionable"; message: string }
-  | { kind: "unexpected"; detail: string };
+  { kind: "actionable"; message: string } | { kind: "unexpected"; detail: string };
 
 /** Split a failed API call into "show the server's words" vs "hide the guts".
  *

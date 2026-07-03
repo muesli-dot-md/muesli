@@ -56,7 +56,6 @@
   );
   const dirty = $derived(nameDraft.trim() !== "" && nameDraft.trim() !== workspace.name);
 
-
   async function save() {
     if (!dirty) return;
     saving = true;

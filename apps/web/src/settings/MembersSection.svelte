@@ -68,8 +68,7 @@
     if (e instanceof WorkspaceApiError && e.status === 409) toast(t("ws.adminNeeded"), "warning");
     else if (e instanceof WorkspaceApiError && e.status === 403)
       toast(t("ws.notAllowed"), "warning");
-    else
-      toast(errMsg(e), "warning");
+    else toast(errMsg(e), "warning");
   }
 
   async function loadAudit(reset: boolean) {

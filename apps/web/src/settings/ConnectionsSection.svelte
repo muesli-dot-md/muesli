@@ -73,7 +73,6 @@
       api.listSharePointLibraries(id, body),
   };
 
-
   async function loadWorkspaces() {
     loading = true;
     try {

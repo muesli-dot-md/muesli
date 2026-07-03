@@ -150,9 +150,7 @@
       await navigator.clipboard.writeText(link.url).catch(() => {});
     } catch (e) {
       shareError =
-        e instanceof WorkspaceApiError && e.status === 403
-          ? t("info.onlyEditorsShare")
-          : errMsg(e);
+        e instanceof WorkspaceApiError && e.status === 403 ? t("info.onlyEditorsShare") : errMsg(e);
     }
   }
 
