@@ -1,0 +1,13 @@
+#!/bin/sh
+# Fast pre-push gate: the checks that keep failing CI when skipped, kept quick
+# enough to never be worth bypassing (~15s). Full clippy/tests stay in CI.
+# Bypass in an emergency with: git push --no-verify
+set -e
+echo "pre-push: rustfmt…"
+cargo fmt --all --check
+cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml
+echo "pre-push: prettier…"
+pnpm format:check >/dev/null
+echo "pre-push: eslint…"
+pnpm lint >/dev/null
+echo "pre-push: clean"
