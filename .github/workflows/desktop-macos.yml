@@ -37,6 +37,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The apple-metal crate's Swift bridge uses newer Metal APIs
+      # (MTLSamplerDescriptor.reductionMode/lodBias) than the image's default
+      # Xcode SDK exposes — select the newest stable Xcode instead.
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
