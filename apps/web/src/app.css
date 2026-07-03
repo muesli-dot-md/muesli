@@ -425,8 +425,8 @@ nav button:focus-visible,
 }
 /* Dropdown menu items: a soft, clearly-visible hover tint (light neutral wash),
    rounded to match the menu radius. Selected rows are marked separately (a
-   solid fill + a primary left-accent, see .menu-item-selected) so hover and
-   selected never look the same — important since the default accent is gray.
+   solid fill + weight + check, see .menu-item-selected) so hover and selected
+   never look the same — important since the default accent is gray.
    Named transition (never `all`). */
 .menu li > button {
   border-radius: var(--radius-field);
@@ -445,11 +445,10 @@ nav button:focus-visible,
 }
 
 /* A selected menu row (e.g. the current sort key/order): solid base-200 fill
-   with a primary left-accent bar so it reads as "chosen" distinctly from a
-   hovered row. Hover deepens it slightly without losing the accent. */
+   plus weight and the row's check icon — background-only, like every other
+   selected surface. Hover deepens it slightly. */
 .menu-item-selected {
   background-color: var(--color-base-200);
-  box-shadow: inset 3px 0 0 var(--color-primary);
   font-weight: 600;
 }
 .menu li > button.menu-item-selected:hover {

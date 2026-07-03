@@ -1062,10 +1062,12 @@
         {:else if mainPanel === "graph"}
           <GraphView embedded {selectedWorkspaceId} {personalWorkspaceId} />
         {:else}
-          <!-- title row: workspace name / breadcrumbs · view toggle + info -->
-          <div class="flex items-center justify-between gap-3 px-6 pt-5 pb-2">
-            <h1 class="flex min-w-0 items-center gap-1 text-xl" style="text-wrap: balance;">
-              {#if view === "folder"}
+          <!-- Breadcrumb row — only inside a folder. At the workspace root the
+               sidebar already names the workspace, so no heading: the toolbar
+               moves up and the files get the vertical space. -->
+          {#if view === "folder"}
+            <div class="flex items-center justify-between gap-3 px-6 pt-5 pb-2">
+              <h1 class="flex min-w-0 items-center gap-1 text-xl" style="text-wrap: balance;">
                 <button
                   class="arc-tap rounded-lg px-2 py-0.5 hover:bg-base-200 {dropKey === 'root'
                     ? 'bg-primary/15 ring-2 ring-primary'
@@ -1096,14 +1098,12 @@
                     </button>
                   {/if}
                 {/each}
-              {:else}
-                {viewLabel}
-              {/if}
-            </h1>
-          </div>
+              </h1>
+            </div>
+          {/if}
 
           <!-- controls toolbar (§4): New file · New folder · Sort · Collapse-all · Search -->
-          <div class="flex items-center gap-2 px-6 pb-3">
+          <div class="flex items-center gap-2 px-6 pb-3 {view === 'folder' ? '' : 'pt-5'}">
             <button class="btn btn-sm gap-1.5" onclick={() => openModal({ kind: "newDoc" })}>
               {@render docIcon("h-4 w-4")}
               <span class="hidden sm:inline">{t("home.newFile")}</span>
