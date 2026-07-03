@@ -68,6 +68,7 @@ jobs:
           workspaces: |
             .
             apps/desktop/src-tauri
+          cache-on-failure: true
 
       - name: Install Tauri Linux system deps
         run: |
@@ -91,7 +92,14 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: clippy (src-tauri)
-        run: cargo clippy --all-targets --locked --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
+        # Retries: ort-sys downloads prebuilt onnxruntime from pyke's CDN,
+        # which intermittently 403s GitHub runner IPs (rate limiting).
+        run: |
+          for i in 1 2 3; do
+            cargo clippy --all-targets --locked --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings && exit 0
+            [ $i -lt 3 ] && { echo "attempt $i failed; retrying in 90s"; sleep 90; }
+          done
+          exit 1
 
   # --------------------------------------------------------------------------
   # Fast frontend gate: editor-core + web + desktop frontend.
@@ -234,9 +242,17 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
+          cache-on-failure: true
 
       - name: Build desktop frontend
         run: pnpm --filter Muesli build
 
       - name: Compile-verify Tauri app
-        run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
+        # Retries: see clippy (src-tauri) — pyke CDN rate limiting.
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --locked && exit 0
+            [ $i -lt 3 ] && { echo "attempt $i failed; retrying in 90s"; sleep 90; }
+          done
+          exit 1
