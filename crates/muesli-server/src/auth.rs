@@ -28,9 +28,9 @@ use openidconnect::core::{
     CoreJsonWebKeySet,
 };
 use openidconnect::{
-    AuthorizationCode, ClaimsVerificationError, ClientId, ClientSecret, CsrfToken,
-    EndSessionUrl, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, JsonWebKeySet,
-    JsonWebKeySetUrl, LogoutRequest, Nonce, NonceVerifier, PkceCodeChallenge, PkceCodeVerifier,
+    AuthorizationCode, ClaimsVerificationError, ClientId, ClientSecret, CsrfToken, EndSessionUrl,
+    EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, JsonWebKeySet, JsonWebKeySetUrl,
+    LogoutRequest, Nonce, NonceVerifier, PkceCodeChallenge, PkceCodeVerifier,
     PostLogoutRedirectUrl, ProviderMetadataWithLogout, RedirectUrl, Scope,
     SignatureVerificationError, TokenResponse,
 };
@@ -1221,10 +1221,7 @@ async fn idp_logout_url(auth: &AuthCtx, record: Option<&SessionRecord>) -> Optio
             return None;
         }
     };
-    issuer.rp_logout_url(
-        &auth.web_origin,
-        record.and_then(|r| r.id_token.as_deref()),
-    )
+    issuer.rp_logout_url(&auth.web_origin, record.and_then(|r| r.id_token.as_deref()))
 }
 
 #[derive(Serialize)]
