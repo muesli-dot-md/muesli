@@ -2,7 +2,7 @@
 //! snapshots. Loading = latest snapshot + replay of the tail. The log is never pruned — it is
 //! the edit history.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -2134,13 +2134,27 @@ impl Persistence {
         kind: &str,
         config: &serde_json::Value,
     ) -> Result<Uuid> {
+        // Stamp the frozen per-workspace container HERE — the single funnel every
+        // creation flow (REST, MCP, gdrive OAuth) passes through — so no backend can be
+        // connected without isolation, and a future backend cannot forget to. A missing
+        // workspace name falls back to the id-only slug; isolation never depends on it.
+        let name = self.workspace_name(workspace_id).await?.unwrap_or_default();
+        let container = crate::storage::workspace_container(&name, workspace_id);
+        let mut config = config.clone();
+        config
+            .as_object_mut()
+            .ok_or_else(|| anyhow!("storage connection config must be a JSON object"))?
+            .insert(
+                "container".to_string(),
+                serde_json::Value::String(container),
+            );
         let row = sqlx::query(
             "insert into storage_connections (workspace_id, kind, config)
              values ($1, $2, $3) returning id",
         )
         .bind(workspace_id)
         .bind(kind)
-        .bind(config)
+        .bind(&config)
         .fetch_one(&self.pool)
         .await?;
         Ok(row.get("id"))
@@ -3134,6 +3148,34 @@ mod tests {
             .unwrap();
         p.activate_workspace_with_storage(ws, conn).await.unwrap();
         ws
+    }
+
+    /// Isolation invariant (plan: per-workspace container): every connection created
+    /// through the funnel carries a non-empty `config["container"]`, derived from the
+    /// workspace's own name, not caller-supplied config. Skips unless TEST_DATABASE_URL
+    /// is set.
+    #[tokio::test]
+    async fn create_storage_connection_stamps_a_container() {
+        let Some(p) = test_db().await else {
+            eprintln!(
+                "skipping: set TEST_DATABASE_URL to run create_storage_connection_stamps_a_container"
+            );
+            return;
+        };
+        let owner = p.create_agent_user("container-owner").await.unwrap();
+        let ws = p.create_workspace("My Notes", owner).await.unwrap();
+        let id = p
+            .create_storage_connection(ws, "memory", &serde_json::json!({}))
+            .await
+            .unwrap();
+        let row = p.get_storage_connection(id, ws).await.unwrap().unwrap();
+        let container = row
+            .config
+            .get("container")
+            .and_then(|v| v.as_str())
+            .unwrap();
+        assert!(container.starts_with("my-notes-"), "got {container}");
+        assert!(!container.contains('/'));
     }
 
     /// Onboarding stamp (migration 0016, spec 2026-07-02 §1): null until stamped,

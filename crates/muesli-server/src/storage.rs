@@ -112,7 +112,6 @@ pub fn rel_path_for_named(chain: &[String], name: &str) -> String {
 /// first 12 hex chars (48 random bits) of the workspace id. Frozen at connection
 /// creation — never recomputed, so a workspace rename never moves already-stored files.
 /// Correctness of isolation rests on the id, not the slug (which is a human hint).
-#[allow(dead_code)]
 pub fn workspace_container(name: &str, id: uuid::Uuid) -> String {
     let mut slug = crate::links::slugify(name);
     if slug.is_empty() {
