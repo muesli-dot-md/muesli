@@ -932,49 +932,73 @@ impl StorageBackend for GdriveBackend {
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<(String, String)>> {
-        let q = format!(
-            "'{}' in parents and trashed=false",
-            escape_q(&self.folder_id)
-        );
-        let url = format!(
-            "{}?q={}&fields=files(id,name,md5Checksum,mimeType)&pageSize=1000",
-            self.files_url(),
-            uri_encode(&q, true),
-        );
-        let res = self.send_authed(reqwest::Method::GET, &url, None).await?;
-        if !res.status().is_success() {
-            let status = res.status();
-            let body = res.text().await.unwrap_or_default();
-            return Err(anyhow!("drive files.list (folder): {status} {body}"));
+        // `prefix` names a folder to walk (possibly "" — the whole subtree); it
+        // is never itself a filename, so only the folder chain matters here.
+        let (dirs, _leaf_name) = split_rel(prefix);
+        // Anchored at the resolved prefix folder, not the app-folder root: a
+        // missing segment stops the walk here (empty result) rather than falling
+        // back to a wider scope that could bleed into a sibling container.
+        let Some(start) = self.resolve_folder_path(&dirs).await? else {
+            return Ok(Vec::new());
+        };
+        let base = if dirs.is_empty() {
+            String::new()
+        } else {
+            format!("{}/", dirs.join("/"))
+        };
+        let mut out = Vec::new();
+        // DFS via an explicit stack (rather than recursion) since this walks
+        // async requests: each folder is one or more paginated list calls.
+        let mut stack = vec![(start, base)];
+        while let Some((folder_id, path_prefix)) = stack.pop() {
+            let mut page_token: Option<String> = None;
+            loop {
+                let q = format!("'{}' in parents and trashed=false", escape_q(&folder_id));
+                let mut url = format!(
+                    "{}?q={}&fields=nextPageToken,files(id,name,md5Checksum,mimeType)&pageSize=1000",
+                    self.files_url(),
+                    uri_encode(&q, true),
+                );
+                if let Some(t) = &page_token {
+                    url.push_str(&format!("&pageToken={}", uri_encode(t, true)));
+                }
+                let res = self.send_authed(reqwest::Method::GET, &url, None).await?;
+                if !res.status().is_success() {
+                    let status = res.status();
+                    let body = res.text().await.unwrap_or_default();
+                    return Err(anyhow!("drive files.list (tree): {status} {body}"));
+                }
+                let v: Value = res.json().await?;
+                for f in v
+                    .get("files")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    let (Some(id), Some(name)) = (
+                        f.get("id").and_then(Value::as_str),
+                        f.get("name").and_then(Value::as_str),
+                    ) else {
+                        continue;
+                    };
+                    if f.get("mimeType").and_then(Value::as_str) == Some(FOLDER_MIME) {
+                        stack.push((id.to_string(), format!("{path_prefix}{name}/")));
+                    } else {
+                        let md5 = f
+                            .get("md5Checksum")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
+                        self.ctx.cache_file_id(&folder_id, name, id);
+                        out.push((format!("{path_prefix}{name}"), md5.to_string()));
+                    }
+                }
+                match v.get("nextPageToken").and_then(Value::as_str) {
+                    Some(t) => page_token = Some(t.to_string()),
+                    None => break,
+                }
+            }
         }
-        let v: Value = res.json().await?;
-        let files = v
-            .get("files")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        Ok(files
-            .iter()
-            .filter(|f| f.get("mimeType").and_then(Value::as_str) != Some(FOLDER_MIME))
-            .filter_map(|f| {
-                // Root-only interim listing: files now live in nested folders, so this
-                // only sees the root's direct children — Task 8 replaces it with the
-                // recursive folder walk.
-                let name = f.get("name").and_then(Value::as_str)?;
-                let rel = name.to_string();
-                if !rel.starts_with(prefix) {
-                    return None;
-                }
-                let md5 = f
-                    .get("md5Checksum")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                if let Some(id) = f.get("id").and_then(Value::as_str) {
-                    self.ctx.cache_file_id(&self.folder_id, name, id);
-                }
-                Some((rel, md5.to_string()))
-            })
-            .collect())
+        Ok(out)
     }
 
     async fn delete(&self, rel_path: &str) -> Result<()> {
@@ -1544,6 +1568,8 @@ mod tests {
     //     folders so the lowest-id tiebreak is observable
     //   - DriveMock::create_chain()             starts empty; folders created
     //     via POST resolve on subsequent lists
+    //   - DriveMock::tree()                      seeds a nested folder/file
+    //     tree so the recursive `list` walk has something to descend into
     //
     // spawn_drive_mock returns (base_url, DriveCalls); DriveCalls counts
     // create POSTs for "no duplicate create" assertions.
@@ -1612,6 +1638,48 @@ mod tests {
         fn empty_with_media() -> Self {
             Self::empty()
         }
+
+        /// A folder tree for the recursive `list` walk: under the connection root,
+        /// `A/` holds `a.md` and a child folder `B/`, which holds `b.md` — deep
+        /// enough that a root-only listing would miss both nested entries.
+        fn tree() -> Self {
+            let mock = Self::empty();
+            mock.state.lock().unwrap().entries.extend([
+                MockEntry {
+                    id: "A-id".into(),
+                    name: "A".into(),
+                    parent: "root-folder".into(),
+                    folder: true,
+                    trashed: false,
+                    content: Vec::new(),
+                },
+                MockEntry {
+                    id: "a-id".into(),
+                    name: "a.md".into(),
+                    parent: "A-id".into(),
+                    folder: false,
+                    trashed: false,
+                    content: Vec::new(),
+                },
+                MockEntry {
+                    id: "B-id".into(),
+                    name: "B".into(),
+                    parent: "A-id".into(),
+                    folder: true,
+                    trashed: false,
+                    content: Vec::new(),
+                },
+                MockEntry {
+                    id: "b-id".into(),
+                    name: "b.md".into(),
+                    parent: "B-id".into(),
+                    folder: false,
+                    trashed: false,
+                    content: Vec::new(),
+                },
+            ]);
+            mock
+        }
     }
 
     #[derive(Clone)]
@@ -1676,6 +1744,16 @@ mod tests {
         Some((name, parent))
     }
 
+    /// Extract the parent id from the recursive-list `q` shape (`'<id>' in
+    /// parents and trashed=false`, no `name=` filter) — the query the tree
+    /// walk issues per folder to list ALL of its live children.
+    fn parse_parent_only_q(q: &str) -> Option<String> {
+        if q.contains("name='") {
+            return None; // a name-scoped lookup, handled by parse_child_q instead
+        }
+        q.split('\'').nth(1).map(str::to_string)
+    }
+
     async fn spawn_drive_mock(mock: DriveMock) -> (String, DriveCalls) {
         let calls = DriveCalls {
             creates: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
@@ -1704,6 +1782,44 @@ mod tests {
                         async move {
                             let q = params.get("q").cloned().unwrap_or_default();
                             let folders_only = q.contains(FOLDER_MIME);
+                            if let Some(parent) = parse_parent_only_q(&q) {
+                                // The recursive `list` walk's per-folder query (no
+                                // name= filter): serve one entry per page so its
+                                // nextPageToken loop is exercised for real, not
+                                // short-circuited on a single page.
+                                const PAGE_SIZE: usize = 1;
+                                let offset: usize = params
+                                    .get("pageToken")
+                                    .and_then(|t| t.parse().ok())
+                                    .unwrap_or(0);
+                                let all: Vec<MockEntry> = state
+                                    .lock()
+                                    .unwrap()
+                                    .entries
+                                    .iter()
+                                    .filter(|e| e.parent == parent && !e.trashed)
+                                    .cloned()
+                                    .collect();
+                                let files: Vec<Value> = all
+                                    .iter()
+                                    .skip(offset)
+                                    .take(PAGE_SIZE)
+                                    .map(|e| {
+                                        json!({
+                                            "id": e.id,
+                                            "name": e.name,
+                                            "mimeType": if e.folder { FOLDER_MIME } else { "text/markdown" },
+                                            "md5Checksum": if e.folder { Value::Null } else { json!(format!("md5-{}", e.id)) },
+                                        })
+                                    })
+                                    .collect();
+                                let next_offset = offset + files.len();
+                                let next_page_token =
+                                    (next_offset < all.len()).then(|| next_offset.to_string());
+                                return axum::Json(
+                                    json!({ "files": files, "nextPageToken": next_page_token }),
+                                );
+                            }
                             let files: Vec<Value> = match parse_child_q(&q) {
                                 Some((name, parent)) => state
                                     .lock()
@@ -2010,5 +2126,23 @@ mod tests {
         let ctx = test_ctx(&format!("{base}/token"), &base);
         let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
         assert!(backend.read("A/missing.md").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn gdrive_list_walks_the_tree_and_prefixes_paths() {
+        // Mock tree under root-folder: A/ (folder) contains a.md and B/ (folder)
+        // contains b.md. A root-only listing would surface neither.
+        let (base, _calls) = spawn_drive_mock(DriveMock::tree()).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+        let mut got: Vec<String> = backend
+            .list("")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|(r, _)| r)
+            .collect();
+        got.sort();
+        assert_eq!(got, vec!["A/B/b.md".to_string(), "A/a.md".to_string()]);
     }
 }
