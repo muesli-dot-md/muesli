@@ -66,19 +66,35 @@ fn retention_default() -> &'static str {
 /// One pluggable backend (ADR 0013). Deliberately minimal and honest: read/write/list of
 /// whole objects keyed by a connection-relative path; assets come later. Every method
 /// returns the backend's content version tag (etag) alongside the bytes.
-#[allow(async_fn_in_trait)]
+///
+/// Futures are explicitly bounded `+ Send`: `backend_from_conn` returns `impl StorageBackend`
+/// (the `Scoped` decorator), and that opaque return type only lets the compiler infer Send
+/// for the materialize/poll `tokio::spawn` futures when the trait itself promises it — a
+/// plain `async fn` here (no explicit bound) does not compose through two layers of opaque
+/// types. Every impl below still uses ordinary `async fn` sugar; only the trait's shape
+/// changed, not the implementations.
 pub trait StorageBackend: Send + Sync {
     /// None = the object does not exist. Some((bytes, etag)) otherwise.
-    async fn read(&self, rel_path: &str) -> Result<Option<(Vec<u8>, String)>>;
+    fn read(
+        &self,
+        rel_path: &str,
+    ) -> impl std::future::Future<Output = Result<Option<(Vec<u8>, String)>>> + Send;
     /// Write (create or replace) and return the new etag.
-    async fn write(&self, rel_path: &str, bytes: &[u8]) -> Result<String>;
+    fn write(
+        &self,
+        rel_path: &str,
+        bytes: &[u8],
+    ) -> impl std::future::Future<Output = Result<String>> + Send;
     /// (rel_path, etag) pairs under the prefix.
     #[allow(dead_code)]
     // No production caller since the probe replaced connect-time list(); kept for the storage listing surface + future health checks (1a-T10).
-    async fn list(&self, prefix: &str) -> Result<Vec<(String, String)>>;
+    fn list(
+        &self,
+        prefix: &str,
+    ) -> impl std::future::Future<Output = Result<Vec<(String, String)>>> + Send;
     /// Remove the object; an already-absent object is Ok (idempotent). Used when a
     /// folder move/rename relocates a document's rel_path — the old file goes away.
-    async fn delete(&self, rel_path: &str) -> Result<()>;
+    fn delete(&self, rel_path: &str) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
 /// The backend rel_path implied by a document's folder placement: the folder-chain
@@ -1129,8 +1145,9 @@ pub enum AnyBackend {
     Memory(tests::MemoryBackend),
 }
 
-/// Construct the right backend for a storage_connections row.
-pub fn backend_from_conn(kind: &str, config: &Value) -> Result<AnyBackend> {
+/// Construct the kind-dispatched backend WITHOUT container scoping. Prefer
+/// [`backend_from_conn`]; this exists for the pre-scope probe path and tests.
+pub(crate) fn any_backend_from_conn(kind: &str, config: &Value) -> Result<AnyBackend> {
     match kind {
         "s3" => Ok(AnyBackend::S3(S3Backend::from_conn(kind, config)?)),
         "github" => Ok(AnyBackend::Github(GithubBackend::from_conn(kind, config)?)),
@@ -1144,6 +1161,79 @@ pub fn backend_from_conn(kind: &str, config: &Value) -> Result<AnyBackend> {
             "unsupported storage kind {other:?} (implemented: \"s3\", \"github\", \"gdrive\", \"sharepoint\")"
         )),
     }
+}
+
+/// Applies a workspace's frozen container to every path, so backends stay entirely
+/// container-unaware. Pure string surgery — talks to no network.
+struct Scoped<B: StorageBackend> {
+    inner: B,
+    container: String,
+}
+
+impl<B: StorageBackend> Scoped<B> {
+    fn scoped(&self, rel_path: &str) -> String {
+        format!("{}/{}", self.container, rel_path.trim_start_matches('/'))
+    }
+}
+
+/// Deliberately does not require (or print) `B: Debug`: several backends carry
+/// credentials (S3 access/secret keys, OAuth tokens) that must never reach a `{:?}` log
+/// line. Only the container — never secret — is shown.
+impl<B: StorageBackend> std::fmt::Debug for Scoped<B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Scoped")
+            .field("container", &self.container)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<B: StorageBackend> StorageBackend for Scoped<B> {
+    async fn read(&self, rel_path: &str) -> Result<Option<(Vec<u8>, String)>> {
+        self.inner.read(&self.scoped(rel_path)).await
+    }
+    async fn write(&self, rel_path: &str, bytes: &[u8]) -> Result<String> {
+        self.inner.write(&self.scoped(rel_path), bytes).await
+    }
+    async fn list(&self, prefix: &str) -> Result<Vec<(String, String)>> {
+        let entries = self.inner.list(&self.scoped(prefix)).await?;
+        let strip = format!("{}/", self.container);
+        Ok(entries
+            .into_iter()
+            .filter_map(|(rel, etag)| rel.strip_prefix(&strip).map(|r| (r.to_string(), etag)))
+            .collect())
+    }
+    async fn delete(&self, rel_path: &str) -> Result<()> {
+        self.inner.delete(&self.scoped(rel_path)).await
+    }
+}
+
+/// Construct the container-scoped backend for a storage_connections row. The container is
+/// REQUIRED (fail closed): a row without one predates per-workspace isolation and must be
+/// recreated, never served unscoped. The stored value is re-validated as a single path
+/// segment on every read-back — defense in depth, and the only container guard for the
+/// Drive backend, which does not call validate_rel_path itself.
+pub fn backend_from_conn(
+    kind: &str,
+    config: &Value,
+) -> Result<impl StorageBackend + std::fmt::Debug> {
+    let inner = any_backend_from_conn(kind, config)?;
+    let container = config
+        .get("container")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            anyhow!(
+                "storage connection has no container (created before per-workspace isolation — recreate it)"
+            )
+        })?
+        .to_string();
+    validate_rel_path(&container)?;
+    if container.contains('/') {
+        return Err(anyhow!(
+            "storage container {container:?} must be a single path segment"
+        ));
+    }
+    Ok(Scoped { inner, container })
 }
 
 impl StorageBackend for AnyBackend {
@@ -2719,6 +2809,75 @@ mod tests {
         )
     }
 
+    /// Reads the single stored key ending with `suffix` back out of the process-global
+    /// in-memory store, so a scoping test can assert on the RAW (container-prefixed) key
+    /// without the manager or a direct backend handle knowing the container itself.
+    #[cfg(test)]
+    fn raw_memory_key_containing(suffix: &str) -> String {
+        let g = memory_store().lock().unwrap();
+        g.values()
+            .flat_map(|m| m.keys())
+            .find(|k| k.ends_with(suffix))
+            .cloned()
+            .expect("a stored key ending with the suffix")
+    }
+
+    #[tokio::test]
+    async fn scoped_backend_prepends_and_strips_the_container() {
+        let (mut config, _direct) = memory_conn();
+        config
+            .as_object_mut()
+            .unwrap()
+            .insert("container".into(), serde_json::json!("ws-abc123def456"));
+        let backend = backend_from_conn("memory", &config).unwrap();
+        backend.write("Notes/a.md", b"hello").await.unwrap();
+
+        // The stored key is container-scoped...
+        let raw = raw_memory_key_containing("Notes/a.md");
+        assert_eq!(raw, "ws-abc123def456/Notes/a.md");
+
+        // ...but read/list present the UNscoped path back to callers.
+        let got = backend.read("Notes/a.md").await.unwrap().unwrap();
+        assert_eq!(got.0, b"hello");
+        let listed = backend.list("").await.unwrap();
+        assert!(listed.iter().any(|(rel, _)| rel == "Notes/a.md"));
+    }
+
+    #[test]
+    fn backend_from_conn_fails_closed_without_a_container() {
+        let (config, _direct) = memory_conn(); // no "container" key
+        let err = backend_from_conn("memory", &config)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("container"), "got {err}");
+    }
+
+    /// Reads back the container `create_storage_connection` stamped onto a row, for tests
+    /// that hold a direct (unscoped) backend handle and need to reproduce the SAME keys
+    /// the manager (which goes through the scoped factory) writes and reads.
+    #[cfg(test)]
+    async fn container_of(p: &Persistence, conn: Uuid, workspace_id: Uuid) -> String {
+        p.get_storage_connection(conn, workspace_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .config
+            .get("container")
+            .and_then(|v| v.as_str())
+            .expect("create_storage_connection stamps a container")
+            .to_string()
+    }
+
+    #[test]
+    fn backend_from_conn_rejects_a_multi_segment_container() {
+        let (mut config, _direct) = memory_conn();
+        config
+            .as_object_mut()
+            .unwrap()
+            .insert("container".into(), serde_json::json!("a/../b"));
+        assert!(backend_from_conn("memory", &config).is_err());
+    }
+
     /// Build a throwaway StorageManager over a live test pool. The rooms/links/events it
     /// carries are unused by the DB-only paths under test (set_rel_path_with_fallback,
     /// and relocate's early no-op for unattached docs).
@@ -2984,16 +3143,21 @@ mod tests {
         active_workspace(p, "Owner WS", owner).await;
         let slug = format!("doc-{}", Uuid::now_v7());
         let doc = p.ensure_document_owned(&slug, owner, owner).await.unwrap();
+        let workspace_id = doc.workspace_id.unwrap();
         let conn = p
-            .create_storage_connection(doc.workspace_id.unwrap(), "memory", &config)
+            .create_storage_connection(workspace_id, "memory", &config)
             .await
             .unwrap();
         p.attach_document_storage(doc.id, conn, &format!("{slug}.md"))
             .await
             .unwrap();
+        // The manager writes/reads through the container `create_storage_connection`
+        // stamped on the row, so the direct handle (which bypasses that scoping) must
+        // read it back and prepend it itself to land on the same keys.
+        let container = container_of(p, conn, workspace_id).await;
         // Materialize the canonical file at the slug path.
         backend
-            .write(&format!("{slug}.md"), b"# hello\n")
+            .write(&format!("{container}/{slug}.md"), b"# hello\n")
             .await
             .unwrap();
 
@@ -3004,10 +3168,17 @@ mod tests {
         mgr.relocate(doc.id).await.expect("relocate succeeds");
 
         assert!(
-            backend.read(&format!("{slug}.md")).await.unwrap().is_none(),
+            backend
+                .read(&format!("{container}/{slug}.md"))
+                .await
+                .unwrap()
+                .is_none(),
             "old slug-based key was deleted"
         );
-        let moved = backend.read("Renamed Doc.md").await.unwrap();
+        let moved = backend
+            .read(&format!("{container}/Renamed Doc.md"))
+            .await
+            .unwrap();
         assert_eq!(
             moved.map(|(b, _)| b),
             Some(b"# hello\n".to_vec()),
@@ -3039,15 +3210,23 @@ mod tests {
             .ensure_document_owned(&slug_a, owner, owner)
             .await
             .unwrap();
+        let workspace_id = da.workspace_id.unwrap();
         let conn = p
-            .create_storage_connection(da.workspace_id.unwrap(), "memory", &config)
+            .create_storage_connection(workspace_id, "memory", &config)
             .await
             .unwrap();
+        // The manager writes/reads through the container `create_storage_connection`
+        // stamped on the row, so the direct handle (which bypasses that scoping) must
+        // read it back and prepend it itself to land on the same keys.
+        let container = container_of(p, conn, workspace_id).await;
         // A occupies "Shared.md"; B is materialized at its slug path.
         p.attach_document_storage(da.id, conn, "Shared.md")
             .await
             .unwrap();
-        backend.write("Shared.md", b"# A\n").await.unwrap();
+        backend
+            .write(&format!("{container}/Shared.md"), b"# A\n")
+            .await
+            .unwrap();
         let db = p
             .ensure_document_owned(&slug_b, owner, owner)
             .await
@@ -3056,7 +3235,7 @@ mod tests {
             .await
             .unwrap();
         backend
-            .write(&format!("{slug_b}.md"), b"# B\n")
+            .write(&format!("{container}/{slug_b}.md"), b"# B\n")
             .await
             .unwrap();
 
@@ -3069,14 +3248,20 @@ mod tests {
             .expect("collision relocate must not error");
 
         // B's canonical file is intact at its slug path (NOT destroyed).
-        let b_bytes = backend.read(&format!("{slug_b}.md")).await.unwrap();
+        let b_bytes = backend
+            .read(&format!("{container}/{slug_b}.md"))
+            .await
+            .unwrap();
         assert_eq!(
             b_bytes.map(|(b, _)| b),
             Some(b"# B\n".to_vec()),
             "B's bytes survived the collision"
         );
         // A is untouched.
-        let a_bytes = backend.read("Shared.md").await.unwrap();
+        let a_bytes = backend
+            .read(&format!("{container}/Shared.md"))
+            .await
+            .unwrap();
         assert_eq!(
             a_bytes.map(|(b, _)| b),
             Some(b"# A\n".to_vec()),
@@ -3210,12 +3395,12 @@ mod tests {
             "drive_name": "Documents",
             "prefix": "notes",
         });
-        let backend = backend_from_conn("sharepoint", &config).expect("dispatches");
+        let backend = any_backend_from_conn("sharepoint", &config).expect("dispatches");
         assert!(matches!(backend, AnyBackend::Sharepoint(_)));
         // required fields are enforced by from_conn
-        assert!(backend_from_conn("sharepoint", &serde_json::json!({})).is_err());
+        assert!(any_backend_from_conn("sharepoint", &serde_json::json!({})).is_err());
         // the unsupported-kind message names the new backend
-        if let Err(e) = backend_from_conn("ftp", &serde_json::json!({})) {
+        if let Err(e) = any_backend_from_conn("ftp", &serde_json::json!({})) {
             let msg = e.to_string();
             assert!(msg.contains("sharepoint"), "{msg}");
         } else {
