@@ -20,12 +20,14 @@
 //! cached in memory until 60s before expiry; a 401 from the Drive API forces one refresh
 //! and one retry.
 //!
-//! **File mapping**: documents live FLAT in the connection's folder. The Drive file name
-//! is the rel_path with every `/` replaced by `∕` (U+2215 DIVISION SLASH), so nested
-//! rel_paths stay unique and round-trip losslessly (Drive itself has no real paths —
-//! names are not unique and folders are just parents). Resolution is by
-//! `files.list q="name='…' and '<folder>' in parents and trashed=false"`, with an
-//! in-memory fileId cache per (folder, name), invalidated on 404.
+//! **File mapping**: documents live in REAL nested folders under the connection's
+//! folder — every rel_path directory segment is a Drive folder, the last segment the
+//! plain file name. Drive has no real paths (names are not unique; folders are just
+//! parents), so each segment is resolved by
+//! `files.list q="name='…' and '<parent>' in parents and trashed=false"` with a
+//! deterministic lowest-id tiebreak for duplicates; folder ids are cached per
+//! (parent_id, name) and file ids per (leaf_folder_id, filename), invalidated on 404.
+//! Reads never create folders; writes find-or-create the chain.
 //!
 //! Endpoint override envs (MUESLI_GOOGLE_AUTH_URI / _TOKEN_URI / _API_BASE) exist as test
 //! hooks so the whole dance can run against a mock Google (apps/web/scripts/gdrive-e2e.mjs).
@@ -91,17 +93,12 @@ pub fn configured() -> bool {
 // Pure helpers (unit-tested): name mapping, Drive query building, multipart body
 // ---------------------------------------------------------------------------
 
-/// rel_path → Drive file name: documents live flat in the folder, `/` becomes `∕`
-/// (U+2215 DIVISION SLASH) so nested rel_paths stay distinct and reversible.
-pub(crate) fn drive_name(rel_path: &str) -> String {
-    rel_path.trim_start_matches('/').replace('/', "\u{2215}")
-}
-
-/// Drive file name → rel_path (the inverse of [`drive_name`]).
-#[allow(dead_code)]
-// No production caller since the probe replaced connect-time list(); kept as the inverse of drive_name for the list surface + future health checks (1a-T10).
-pub(crate) fn rel_from_name(name: &str) -> String {
-    name.replace('\u{2215}', "/")
+/// Split a rel_path into (folder chain, filename).
+fn split_rel(rel_path: &str) -> (Vec<&str>, &str) {
+    let rel = rel_path.trim_start_matches('/');
+    let mut parts: Vec<&str> = rel.split('/').filter(|s| !s.is_empty()).collect();
+    let name = parts.pop().unwrap_or("");
+    (parts, name)
 }
 
 /// Escape a string literal for a Drive `q` query: backslashes and single quotes.
@@ -601,11 +598,16 @@ impl GdriveBackend {
         Ok(last.expect("loop ran"))
     }
 
-    /// Resolve a rel_path to (fileId, md5Checksum). Cached fileIds are verified with a
-    /// metadata GET (and invalidated on 404/trashed); misses go through files.list.
+    /// Resolve a rel_path to (fileId, md5Checksum): walk the folder chain (never
+    /// creating), then find the plain filename in the leaf. Cached fileIds are verified
+    /// with a metadata GET (and invalidated on 404/trashed); misses go through
+    /// files.list scoped to the leaf.
     async fn resolve(&self, rel_path: &str) -> Result<Option<(String, String)>> {
-        let name = drive_name(rel_path);
-        if let Some(id) = self.ctx.cached_file_id(&self.folder_id, &name) {
+        let (dirs, name) = split_rel(rel_path);
+        let Some(leaf) = self.resolve_folder_path(&dirs).await? else {
+            return Ok(None);
+        };
+        if let Some(id) = self.ctx.cached_file_id(&leaf, name) {
             let url = format!(
                 "{}/{}?fields=id,md5Checksum,trashed",
                 self.files_url(),
@@ -627,12 +629,12 @@ impl GdriveBackend {
                 let body = res.text().await.unwrap_or_default();
                 return Err(anyhow!("drive files.get {rel_path}: {status} {body}"));
             }
-            self.ctx.invalidate_file_id(&self.folder_id, &name);
+            self.ctx.invalidate_file_id(&leaf, name);
         }
         let url = format!(
             "{}?q={}&fields=files(id,md5Checksum)",
             self.files_url(),
-            uri_encode(&q_file_in_folder(&name, &self.folder_id), true),
+            uri_encode(&q_file_in_folder(name, &leaf), true),
         );
         let res = self.send_authed(reqwest::Method::GET, &url, None).await?;
         if !res.status().is_success() {
@@ -654,15 +656,16 @@ impl GdriveBackend {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        self.ctx.cache_file_id(&self.folder_id, &name, &id);
+        self.ctx.cache_file_id(&leaf, name, &id);
         Ok(Some((id, md5)))
     }
 
-    /// Create a new file in the folder: one multipart/related request carrying both the
-    /// metadata {name, parents} and the content.
+    /// Create a new file: find-or-create the folder chain, then one multipart/related
+    /// request carrying both the metadata {name, parents: [leaf]} and the content.
     async fn create_multipart(&self, rel_path: &str, bytes: &[u8]) -> Result<String> {
-        let name = drive_name(rel_path);
-        let metadata = json!({ "name": name, "parents": [self.folder_id] }).to_string();
+        let (dirs, name) = split_rel(rel_path);
+        let leaf = self.ensure_folder_path(&dirs).await?;
+        let metadata = json!({ "name": name, "parents": [leaf] }).to_string();
         let boundary = format!("muesli-{}", crate::auth::random_token());
         let body = multipart_body(&metadata, bytes, &boundary);
         let url = format!(
@@ -685,7 +688,7 @@ impl GdriveBackend {
         }
         let v: Value = res.json().await?;
         if let Some(id) = v.get("id").and_then(Value::as_str) {
-            self.ctx.cache_file_id(&self.folder_id, &name, id);
+            self.ctx.cache_file_id(&leaf, name, id);
         }
         Ok(v.get("md5Checksum")
             .and_then(Value::as_str)
@@ -739,7 +742,6 @@ impl GdriveBackend {
     }
 
     /// Walk the folder chain from the app-folder root without creating anything.
-    #[allow(dead_code)] // wired into the file methods (read/list) in Task 6
     async fn resolve_folder_path(&self, dirs: &[&str]) -> Result<Option<String>> {
         let mut parent = self.folder_id.clone();
         for name in dirs {
@@ -752,7 +754,6 @@ impl GdriveBackend {
     }
 
     /// Walk the folder chain, find-or-creating each segment; returns the leaf folder id.
-    #[allow(dead_code)] // wired into the file methods (write) in Task 6
     async fn ensure_folder_path(&self, dirs: &[&str]) -> Result<String> {
         let mut parent = self.folder_id.clone();
         for name in dirs {
@@ -809,8 +810,10 @@ impl StorageBackend for GdriveBackend {
         let res = self.send_authed(reqwest::Method::GET, &url, None).await?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
             // Deleted between resolve and read: drop the stale id, report absent.
-            self.ctx
-                .invalidate_file_id(&self.folder_id, &drive_name(rel_path));
+            let (dirs, name) = split_rel(rel_path);
+            if let Some(leaf) = self.resolve_folder_path(&dirs).await? {
+                self.ctx.invalidate_file_id(&leaf, name);
+            }
             return Ok(None);
         }
         if !res.status().is_success() {
@@ -841,9 +844,12 @@ impl StorageBackend for GdriveBackend {
                 )
                 .await?;
             if res.status() == reqwest::StatusCode::NOT_FOUND {
-                // Deleted under us: invalidate and recreate below.
-                self.ctx
-                    .invalidate_file_id(&self.folder_id, &drive_name(rel_path));
+                // Deleted under us: invalidate, then recreate below (create_multipart
+                // re-ensures the folder chain).
+                let (dirs, name) = split_rel(rel_path);
+                if let Some(leaf) = self.resolve_folder_path(&dirs).await? {
+                    self.ctx.invalidate_file_id(&leaf, name);
+                }
             } else if !res.status().is_success() {
                 let status = res.status();
                 let body = res.text().await.unwrap_or_default();
@@ -886,8 +892,11 @@ impl StorageBackend for GdriveBackend {
             .iter()
             .filter(|f| f.get("mimeType").and_then(Value::as_str) != Some(FOLDER_MIME))
             .filter_map(|f| {
+                // Root-only interim listing: files now live in nested folders, so this
+                // only sees the root's direct children — Task 8 replaces it with the
+                // recursive folder walk.
                 let name = f.get("name").and_then(Value::as_str)?;
-                let rel = rel_from_name(name);
+                let rel = name.to_string();
                 if !rel.starts_with(prefix) {
                     return None;
                 }
@@ -912,8 +921,10 @@ impl StorageBackend for GdriveBackend {
         let res = self
             .send_authed(reqwest::Method::DELETE, &url, None)
             .await?;
-        self.ctx
-            .invalidate_file_id(&self.folder_id, &drive_name(rel_path));
+        let (dirs, name) = split_rel(rel_path);
+        if let Some(leaf) = self.resolve_folder_path(&dirs).await? {
+            self.ctx.invalidate_file_id(&leaf, name);
+        }
         if !res.status().is_success() && res.status() != reqwest::StatusCode::NOT_FOUND {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
@@ -1282,12 +1293,11 @@ mod tests {
     }
 
     #[test]
-    fn drive_name_round_trips_nested_paths() {
-        assert_eq!(drive_name("doc.md"), "doc.md");
-        assert_eq!(drive_name("notes/a/b.md"), "notes\u{2215}a\u{2215}b.md");
-        assert_eq!(drive_name("/leading.md"), "leading.md");
-        assert_eq!(rel_from_name(&drive_name("notes/a/b.md")), "notes/a/b.md");
-        assert_eq!(rel_from_name("plain.md"), "plain.md");
+    fn split_rel_separates_folder_chain_from_filename() {
+        assert_eq!(split_rel("doc.md"), (vec![], "doc.md"));
+        assert_eq!(split_rel("notes/a/b.md"), (vec!["notes", "a"], "b.md"));
+        assert_eq!(split_rel("/leading.md"), (vec![], "leading.md"));
+        assert_eq!(split_rel("a//b.md"), (vec!["a"], "b.md"));
     }
 
     #[test]
@@ -1370,6 +1380,9 @@ mod tests {
     /// The expiry path, deterministically: the token endpoint mints t1 then t2; the
     /// Drive API 401s t1 (revoked) and serves t2. A read must (a) refresh once for the
     /// empty cache, (b) hit the 401, (c) force-refresh, (d) succeed — 2 token calls.
+    /// "doc.md" has an empty dir chain, so resolve_folder_path(&[]) yields the root
+    /// folder with no folder lookups and the file lists under the root — the mock's
+    /// files.list under 'folder-1' is exactly that leaf list.
     #[tokio::test]
     async fn gdrive_read_refreshes_and_retries_on_401() {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1478,6 +1491,8 @@ mod tests {
         parent: String,
         folder: bool,
         trashed: bool,
+        /// Media bytes served by GET {id}?alt=media (empty for folders).
+        content: Vec<u8>,
     }
 
     #[derive(Default)]
@@ -1508,6 +1523,7 @@ mod tests {
                     parent: parent.to_string(),
                     folder: true,
                     trashed: false,
+                    content: Vec::new(),
                 }));
             mock
         }
@@ -1518,17 +1534,67 @@ mod tests {
         fn create_chain() -> Self {
             Self::empty()
         }
+
+        /// Starts empty; the name documents the write-then-read scenario —
+        /// folders are created via POST, the file via multipart upload, and
+        /// media GET serves the recorded bytes back.
+        fn files_and_folders() -> Self {
+            Self::empty()
+        }
+
+        /// Starts empty with the media routes live; every lookup answers
+        /// absent, so reads must resolve to Ok(None), never an error.
+        fn empty_with_media() -> Self {
+            Self::empty()
+        }
     }
 
     #[derive(Clone)]
     struct DriveCalls {
         creates: Arc<std::sync::atomic::AtomicUsize>,
+        /// (name, parents[0]) of the most recent multipart file create — the
+        /// observable that proves a file landed in the leaf folder, not flat.
+        last_file: Arc<Mutex<Option<(String, String)>>>,
     }
 
     impl DriveCalls {
         fn creates(&self) -> usize {
             self.creates.load(std::sync::atomic::Ordering::SeqCst)
         }
+
+        fn last_created_file_name(&self) -> String {
+            self.last_file
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("a multipart file create was recorded")
+                .0
+                .clone()
+        }
+
+        fn last_created_file_parent(&self) -> String {
+            self.last_file
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("a multipart file create was recorded")
+                .1
+                .clone()
+        }
+    }
+
+    /// Parse the exact multipart/related shape [`multipart_body`] builds:
+    /// (metadata JSON, media bytes). Good enough for the harness — test
+    /// content never contains a bare "\r\n--" sequence.
+    fn parse_multipart_upload(body: &str) -> Option<(Value, Vec<u8>)> {
+        let mut sections = body.split("\r\n\r\n");
+        sections.next()?; // metadata part headers
+        let meta = sections.next()?.split("\r\n--").next()?;
+        let content = sections.next()?.rsplit_once("\r\n--")?.0;
+        Some((
+            serde_json::from_str(meta).ok()?,
+            content.as_bytes().to_vec(),
+        ))
     }
 
     /// Extract (name, parent) from a child-lookup `q` (the shapes
@@ -1548,10 +1614,14 @@ mod tests {
     async fn spawn_drive_mock(mock: DriveMock) -> (String, DriveCalls) {
         let calls = DriveCalls {
             creates: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            last_file: Arc::new(Mutex::new(None)),
         };
         let list_state = mock.state.clone();
         let create_state = mock.state.clone();
+        let upload_state = mock.state.clone();
+        let media_state = mock.state.clone();
         let create_count = calls.creates.clone();
+        let last_file = calls.last_file.clone();
         let app = axum::Router::new()
             .route(
                 "/token",
@@ -1613,10 +1683,74 @@ mod tests {
                             parent,
                             folder,
                             trashed: false,
+                            content: Vec::new(),
                         });
                         axum::Json(json!({ "id": id }))
                     }
                 }),
+            )
+            .route(
+                "/upload/drive/v3/files",
+                axum::routing::post(move |body: axum::body::Bytes| {
+                    let state = upload_state.clone();
+                    let last = last_file.clone();
+                    async move {
+                        let text = String::from_utf8_lossy(&body).into_owned();
+                        let (meta, content) =
+                            parse_multipart_upload(&text).expect("multipart body parses");
+                        let name = meta
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
+                        let parent = meta
+                            .pointer("/parents/0")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
+                        *last.lock().unwrap() = Some((name.clone(), parent.clone()));
+                        let id = format!("{name}-id");
+                        state.lock().unwrap().entries.push(MockEntry {
+                            id: id.clone(),
+                            name,
+                            parent,
+                            folder: false,
+                            trashed: false,
+                            content,
+                        });
+                        axum::Json(json!({ "id": id, "md5Checksum": "md5-mock" }))
+                    }
+                }),
+            )
+            .route(
+                "/drive/v3/files/{id}",
+                axum::routing::get(
+                    move |Path(id): Path<String>,
+                          axum::extract::RawQuery(q): axum::extract::RawQuery| {
+                        let state = media_state.clone();
+                        async move {
+                            let entry = state
+                                .lock()
+                                .unwrap()
+                                .entries
+                                .iter()
+                                .find(|e| e.id == id)
+                                .cloned();
+                            let Some(e) = entry else {
+                                return (StatusCode::NOT_FOUND, Vec::new());
+                            };
+                            if q.as_deref().unwrap_or_default().contains("alt=media") {
+                                (StatusCode::OK, e.content.clone())
+                            } else {
+                                // metadata GET (the cached-fileId verification path)
+                                let meta = json!({
+                                    "id": e.id, "md5Checksum": "md5-mock", "trashed": e.trashed,
+                                });
+                                (StatusCode::OK, meta.to_string().into_bytes())
+                            }
+                        }
+                    },
+                ),
             );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -1673,5 +1807,28 @@ mod tests {
             creates_after_first,
             "second ensure hits cache"
         );
+    }
+
+    #[tokio::test]
+    async fn gdrive_write_then_read_uses_real_nested_folders() {
+        let (base, calls) = spawn_drive_mock(DriveMock::files_and_folders()).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+
+        backend.write("A/B/c.md", b"# hi\n").await.unwrap();
+        // The file was created inside the leaf folder, not named "A∕B∕c.md".
+        assert_eq!(calls.last_created_file_name(), "c.md");
+        assert_eq!(calls.last_created_file_parent(), "B-id");
+
+        let got = backend.read("A/B/c.md").await.unwrap().unwrap();
+        assert_eq!(got.0, b"# hi\n");
+    }
+
+    #[tokio::test]
+    async fn gdrive_read_missing_folder_is_absent_not_an_error() {
+        let (base, _calls) = spawn_drive_mock(DriveMock::empty_with_media()).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+        assert!(backend.read("A/missing.md").await.unwrap().is_none());
     }
 }
