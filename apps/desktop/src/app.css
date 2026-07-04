@@ -234,7 +234,7 @@ html {
     scale: 1;
   }
 }
-/* Outline buttons (e.g. WorkspacePicker "Open folder…") set their border to
+/* Outline buttons set their border to
    the full foreground color — far too heavy. Thin subtle hairline, with a soft
    background tint on hover instead of a darkening border. */
 .btn-outline,

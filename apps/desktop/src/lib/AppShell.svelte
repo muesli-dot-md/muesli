@@ -15,7 +15,6 @@
     Network,
   } from "lucide-svelte";
   import TranscriptView from "$lib/TranscriptView.svelte";
-  import WorkspacePicker from "$lib/WorkspacePicker.svelte";
   import WorkspaceMenu from "$lib/WorkspaceMenu.svelte";
   import FileTree from "$lib/FileTree.svelte";
   import TabStrip from "$lib/TabStrip.svelte";
@@ -582,13 +581,14 @@
     {#if sidebarOpen}
       <aside class="shrink-0 bg-transparent flex flex-col" style="width: {sidebars.left}px">
         <!-- Workspace header: a Multica-style workspace + account switcher is the
-             click-to-switch surface (identity, workspace list, Open workspace…,
-             Settings, Sign in/out, and Theme folded into its dropdown);
-             notifications sit at the right. The rich add/clone/promote picker is
-             rendered triggerless and opened from the switcher's "Open workspace…". -->
+             click-to-switch surface — identity, workspace list (with clone /
+             move / promote inline), Open local folder…, Create remote
+             workspace…, Settings, Sign in/out all in ONE dropdown;
+             notifications sit at the right. `showPicker` binds its open state
+             so the palette command and the no-workspace fallback can pop it. -->
         <div class="flex items-center gap-1 px-2 pt-2 pb-1">
           <WorkspaceMenu
-            onopenpicker={() => (showPicker = true)}
+            bind:open={showPicker}
             onsettings={() => {
               showSettings = true;
               showGraph = false;
@@ -598,11 +598,6 @@
           {#if workspaces.identity}
             <NotificationsBell server={workspaces.activeServer} />
           {/if}
-        </div>
-        <!-- Picker dropdown (no face of its own) for the open-local / clone /
-             promote / create-remote flows, anchored under the header. -->
-        <div class="relative px-2">
-          <WorkspacePicker bind:open={showPicker} triggerless />
         </div>
 
         <!-- Explorer icon row: new note / new folder / sort / collapse-all / graph / search -->
