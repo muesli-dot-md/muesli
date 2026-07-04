@@ -9,6 +9,7 @@ import {
   cloneWorkspace,
   relocateWorkspace as relocateWorkspaceCmd,
   promoteWorkspace as promoteWorkspaceCmd,
+  statPath,
   type Identity,
   type WorkspaceView,
 } from "$lib/tauri";
@@ -168,9 +169,22 @@ class WorkspacesStore {
     this.error = null;
     this.busy = true;
     try {
-      const wasActive = workspace.root === view.local_path;
+      const norm = (p: string) => p.replace(/\/+$/, "");
+      let wasActive = workspace.root != null && norm(workspace.root) === norm(view.local_path);
       if (wasActive) await daemon.stop();
       const newPath = await relocateWorkspaceCmd(view.id, view.local_path, newParent);
+      if (!wasActive && workspace.root) {
+        // The string compare can miss the open workspace when the two sides
+        // spell the same folder differently (symlinked prefix, stale recents
+        // entry). If the open root vanished with the move, it WAS this
+        // workspace — reopen it at its new home instead of leaving the tree
+        // pointed at a folder that no longer exists.
+        wasActive = await statPath(workspace.root).then(
+          () => false,
+          () => true,
+        );
+        if (wasActive) await daemon.stop();
+      }
       if (wasActive) await this.openFolderWithSync(newPath, view.server, view.id);
       await this.refresh();
     } catch (e) {

@@ -64,9 +64,19 @@
     open = false;
     await workspaces.promoteLocalToRemote(view);
   }
+
+  // Outside-pointerdown dismissal (same pattern as WorkspaceMenu). The click
+  // that OPENS the picker lands while `open` is still false, so it never
+  // self-cancels; Escape stays with AppShell's layer handling.
+  function onWindowPointerDown(e: PointerEvent) {
+    if (!open) return;
+    if (!(e.target as HTMLElement)?.closest?.("[data-workspace-picker]")) open = false;
+  }
 </script>
 
-<div class="relative">
+<svelte:window onpointerdown={onWindowPointerDown} />
+
+<div class="relative" data-workspace-picker>
   {#if !triggerless}
     <button
       class="btn btn-ghost btn-sm gap-1.5 max-w-full"
