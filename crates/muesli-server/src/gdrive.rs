@@ -682,6 +682,10 @@ impl GdriveBackend {
         if !res.status().is_success() {
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
+            // Defensive: a failed create (e.g. 404 because the parent folder was
+            // hard-deleted between ensure and upload) must not leave the stale
+            // chain cached, or every retry re-fails on the same dead leaf id.
+            self.invalidate_folder_chain(&dirs);
             return Err(anyhow!(
                 "drive multipart create {rel_path}: {status} {body}"
             ));
@@ -799,6 +803,24 @@ impl GdriveBackend {
         }
         Ok(parent)
     }
+
+    /// Evict every cached `(parent, name)` entry along a folder chain, so the next
+    /// resolve/ensure re-lists from Drive instead of trusting a possibly-trashed id.
+    /// The folders cache is otherwise insert-only, so without this a leaf trashed
+    /// externally keeps resolving to its stale id forever — parenting recreated
+    /// files inside the trash. Best-effort: walks the cache as far as entries
+    /// exist, removing each; a miss means the rest of the chain was cached under
+    /// ids we no longer hold, so there is nothing more to evict.
+    fn invalidate_folder_chain(&self, dirs: &[&str]) {
+        let mut cache = self.ctx.folders.lock().unwrap();
+        let mut parent = self.folder_id.clone();
+        for name in dirs {
+            match cache.remove(&(parent.clone(), name.to_string())) {
+                Some(id) => parent = id, // keep walking with the id we just evicted
+                None => break,           // chain diverges from cache here
+            }
+        }
+    }
 }
 
 impl StorageBackend for GdriveBackend {
@@ -850,6 +872,12 @@ impl StorageBackend for GdriveBackend {
                 if let Some(leaf) = self.resolve_folder_path(&dirs).await? {
                     self.ctx.invalidate_file_id(&leaf, name);
                 }
+                // The 404 often means the FOLDER chain itself was trashed or deleted
+                // (files go with their folder). Evict the cached chain too — after the
+                // file-id invalidation above, which needed the stale leaf id — so the
+                // re-ensure re-lists and finds the live folder (or recreates it)
+                // instead of parenting the new file inside the trash.
+                self.invalidate_folder_chain(&dirs);
             } else if !res.status().is_success() {
                 let status = res.status();
                 let body = res.text().await.unwrap_or_default();
@@ -1822,6 +1850,59 @@ mod tests {
 
         let got = backend.read("A/B/c.md").await.unwrap().unwrap();
         assert_eq!(got.0, b"# hi\n");
+    }
+
+    /// The stale-leaf recovery path: the folders cache holds "A" → L1, but Drive
+    /// has trashed L1 and a fresh list resolves "A" to L2. The write's media
+    /// PATCH 404s (the file was deleted under us — the mock has no PATCH route,
+    /// which models exactly that), and the recreate must land under the LIVE
+    /// folder L2. That requires evicting the stale (root, "A") cache entry so
+    /// ensure_folder_path re-lists instead of trusting the trashed L1.
+    #[tokio::test]
+    async fn gdrive_write_recovers_when_cached_leaf_was_trashed() {
+        let mock = DriveMock::dupes("A", "root-folder", &["L1"]);
+        let state = mock.state.clone();
+        // An existing file under L1, so the write resolves it and takes the
+        // media-update path (whose 404 is the deleted-under-us branch).
+        state.lock().unwrap().entries.push(MockEntry {
+            id: "F1".into(),
+            name: "c.md".into(),
+            parent: "L1".into(),
+            folder: false,
+            trashed: false,
+            content: b"old".to_vec(),
+        });
+        let (base, calls) = spawn_drive_mock(mock).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+
+        // Prime the folders cache: "A" resolves to L1.
+        assert_eq!(
+            backend.resolve_folder_path(&["A"]).await.unwrap(),
+            Some("L1".to_string())
+        );
+
+        // Externally: L1 goes to the trash and "A" now lists as a fresh L2
+        // (the trashed=false query filters L1 out of any uncached list).
+        {
+            let mut s = state.lock().unwrap();
+            for e in s.entries.iter_mut().filter(|e| e.id == "L1") {
+                e.trashed = true;
+            }
+            s.entries.push(MockEntry {
+                id: "L2".into(),
+                name: "A".into(),
+                parent: "root-folder".into(),
+                folder: true,
+                trashed: false,
+                content: Vec::new(),
+            });
+        }
+
+        backend.write("A/c.md", b"x").await.unwrap();
+        // The recreated file must parent under the live folder, not inside the
+        // trash via the stale cached L1.
+        assert_eq!(calls.last_created_file_parent(), "L2");
     }
 
     #[tokio::test]
