@@ -26,7 +26,11 @@
 //! parents), so each segment is resolved by
 //! `files.list q="name='…' and '<parent>' in parents and trashed=false"` with a
 //! deterministic lowest-id tiebreak for duplicates; folder ids are cached per
-//! (parent_id, name) and file ids per (leaf_folder_id, filename), invalidated on 404.
+//! (parent_id, name) and file ids per (leaf_folder_id, filename). Every cache HIT
+//! (folder or file) is verified live with a metadata GET before being trusted —
+//! a folder or file trashed out-of-band (permitted under drive.file) is evicted
+//! and re-resolved rather than silently believed absent (reads) or written into
+//! (writes: a create under a trashed parent does not 404 on real Drive).
 //! The folder-id cache is per-process and load-bearing for the deterministic tiebreak;
 //! a future multi-instance deployment must account for cross-process duplicate-folder
 //! races (converge only after cache eviction/restart).
@@ -738,15 +742,52 @@ impl GdriveBackend {
     /// Lowest-id is a deterministic tiebreak so a duplicate folder (from a prior race or
     /// a restart) can never make ensure and resolve disagree.
     async fn find_child_folder(&self, parent_id: &str, name: &str) -> Result<Option<String>> {
-        if let Some(id) = self
+        // Read the cache hit into an owned value FIRST (not inline in the `if let`
+        // scrutinee): the MutexGuard's temporary otherwise lives to the end of the
+        // `if let` block under today's temporary-scope rules, which spans the
+        // `.await` below and makes the whole future non-Send.
+        let cached = self
             .ctx
             .folders
             .lock()
             .unwrap()
             .get(&(parent_id.to_string(), name.to_string()))
-            .cloned()
-        {
-            return Ok(Some(id));
+            .cloned();
+        if let Some(id) = cached {
+            // Verify the cache hit is still live before trusting it -- mirrors the
+            // file-id cache's verify-on-hit in resolve(). Without this, a folder
+            // trashed out-of-band (permitted under drive.file) keeps resolving
+            // here forever: reads/deletes/list silently report the subtree absent,
+            // and writes can create a fresh file INTO the trashed folder (Drive
+            // does not 404 that create -- the child is simply born trashed too),
+            // silently losing the write. The cost is one metadata GET per cached
+            // hit, exactly what the file-id cache already pays per file; that is
+            // the deliberate trade for correctness parity between the two caches.
+            let url = format!(
+                "{}/{}?fields=id,trashed",
+                self.files_url(),
+                uri_encode(&id, true)
+            );
+            let res = self.send_authed(reqwest::Method::GET, &url, None).await?;
+            if res.status().is_success() {
+                let v: Value = res.json().await?;
+                if v.get("trashed").and_then(Value::as_bool) != Some(true) {
+                    return Ok(Some(id));
+                }
+            } else if res.status() != reqwest::StatusCode::NOT_FOUND {
+                let status = res.status();
+                let body = res.text().await.unwrap_or_default();
+                return Err(anyhow!(
+                    "drive files.get (folder liveness) {name:?} under {parent_id}: {status} {body}"
+                ));
+            }
+            // Trashed or gone: evict and fall through to a fresh list, which
+            // filters trashed=false and applies the same lowest-id tiebreak.
+            self.ctx
+                .folders
+                .lock()
+                .unwrap()
+                .remove(&(parent_id.to_string(), name.to_string()));
         }
         let url = format!(
             "{}?q={}&fields=files(id)&pageSize=1000",
@@ -1930,17 +1971,20 @@ mod tests {
                             .unwrap_or_default()
                             .to_string();
                         // The connection's own app-folder root is never itself an
-                        // entry in the table; any other parent must be a live
-                        // (non-trashed) folder, so a hard-deleted leaf 404s here
-                        // exactly like real Drive would.
-                        let parent_live = parent == "root-folder"
+                        // entry in the table; any other parent must still EXIST as a
+                        // folder entry. Trashed does not disqualify it here: real Drive
+                        // happily creates a child under a trashed parent (the child is
+                        // simply born trashed too) -- no 404, which is exactly the
+                        // silent-write-loss bug this fixture models. Only a
+                        // hard-deleted (removed-from-the-table) leaf 404s.
+                        let parent_exists = parent == "root-folder"
                             || state
                                 .lock()
                                 .unwrap()
                                 .entries
                                 .iter()
-                                .any(|e| e.id == parent && e.folder && !e.trashed);
-                        if !parent_live {
+                                .any(|e| e.id == parent && e.folder);
+                        if !parent_exists {
                             return (StatusCode::NOT_FOUND, axum::Json(json!({})));
                         }
                         *last.lock().unwrap() = Some((name.clone(), parent.clone()));
@@ -2113,6 +2157,98 @@ mod tests {
         // The recreated file must parent under the live folder, not inside the
         // trash via the stale cached L1.
         assert_eq!(calls.last_created_file_parent(), "L2");
+    }
+
+    /// Read-side liveness: the folders cache holds "A" -> A1, but A1 has since
+    /// been trashed out-of-band and a fresh list of "A" now resolves to a live
+    /// A2, which holds the target file. Without a liveness check on the cache
+    /// hit, find_child_folder trusts A1 forever, resolve() finds nothing under
+    /// it, and read reports the file absent even though it plainly exists
+    /// under the live A2 -- poll ingest would stall on this subtree until some
+    /// unrelated write happened to heal the cache.
+    #[tokio::test]
+    async fn gdrive_read_recovers_when_cached_folder_was_trashed() {
+        let mock = DriveMock::dupes("A", "root-folder", &["A1"]);
+        let state = mock.state.clone();
+        let (base, _calls) = spawn_drive_mock(mock).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+
+        // Prime the folders cache: "A" resolves to A1.
+        assert_eq!(
+            backend.resolve_folder_path(&["A"]).await.unwrap(),
+            Some("A1".to_string())
+        );
+
+        // Externally: A1 goes to the trash and "A" now lists as a fresh, live
+        // A2, which is where the target file actually lives.
+        {
+            let mut s = state.lock().unwrap();
+            for e in s.entries.iter_mut().filter(|e| e.id == "A1") {
+                e.trashed = true;
+            }
+            s.entries.push(MockEntry {
+                id: "A2".into(),
+                name: "A".into(),
+                parent: "root-folder".into(),
+                folder: true,
+                trashed: false,
+                content: Vec::new(),
+            });
+            s.entries.push(MockEntry {
+                id: "c-id".into(),
+                name: "c.md".into(),
+                parent: "A2".into(),
+                folder: false,
+                trashed: false,
+                content: b"# recovered\n".to_vec(),
+            });
+        }
+
+        let got = backend.read("A/c.md").await.unwrap();
+        assert_eq!(got.unwrap().0, b"# recovered\n".to_vec());
+    }
+
+    /// Write-side liveness (the write-into-trash half of the same bug): the
+    /// folders cache holds "A" -> A1, A1 is trashed out-of-band, and a fresh
+    /// live A2 takes its place. A create under a trashed parent does NOT 404
+    /// on real Drive (the child is simply born trashed too), so nothing on the
+    /// write's error path would ever catch this -- the liveness check on the
+    /// cache hit is the only thing standing between a new file and silently
+    /// landing in the trash. Asserts the created file parents under the LIVE
+    /// A2, never the stale cached A1.
+    #[tokio::test]
+    async fn gdrive_write_avoids_a_trashed_cached_folder() {
+        let mock = DriveMock::dupes("A", "root-folder", &["A1"]);
+        let state = mock.state.clone();
+        let (base, calls) = spawn_drive_mock(mock).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+
+        // Prime the folders cache: "A" resolves to A1.
+        assert_eq!(
+            backend.resolve_folder_path(&["A"]).await.unwrap(),
+            Some("A1".to_string())
+        );
+
+        // Externally: A1 is trashed and a fresh live A2 replaces it.
+        {
+            let mut s = state.lock().unwrap();
+            for e in s.entries.iter_mut().filter(|e| e.id == "A1") {
+                e.trashed = true;
+            }
+            s.entries.push(MockEntry {
+                id: "A2".into(),
+                name: "A".into(),
+                parent: "root-folder".into(),
+                folder: true,
+                trashed: false,
+                content: Vec::new(),
+            });
+        }
+
+        backend.write("A/new.md", b"fresh").await.unwrap();
+        assert_eq!(calls.last_created_file_parent(), "A2");
     }
 
     /// The create-path recovery: a fresh file's resolved leaf is cached, then
