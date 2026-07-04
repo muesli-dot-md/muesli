@@ -31,6 +31,17 @@ pub async fn auth_config(server: &str) -> Result<AuthConfig> {
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         bail!("{base} doesn't answer like a Muesli server (404 on /api/cli/auth-config). Check the server address.");
     }
+    // An http:// address that a server 308-upgrades to https half-works and is
+    // maddening: login succeeds (redirects re-send the body), but reqwest strips
+    // Authorization on the port-80→443 hop, so every authenticated call after
+    // it arrives anonymous — "signed in" with no user and no remote workspaces.
+    // Catch the upgrade at the front door instead.
+    if base.starts_with("http://") && resp.url().scheme() == "https" {
+        bail!(
+            "{base} redirects to HTTPS; authenticated requests would lose their credentials on that redirect. Use {} as the server address.",
+            base.replacen("http://", "https://", 1)
+        );
+    }
     resp.error_for_status()?
         .json()
         .await
