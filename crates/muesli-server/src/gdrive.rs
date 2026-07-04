@@ -932,9 +932,18 @@ impl StorageBackend for GdriveBackend {
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<(String, String)>> {
-        // `prefix` names a folder to walk (possibly "" — the whole subtree); it
-        // is never itself a filename, so only the folder chain matters here.
-        let (dirs, _leaf_name) = split_rel(prefix);
+        crate::storage::validate_list_prefix(prefix)?;
+        // `prefix` names a folder to walk (possibly "" — the whole subtree). Unlike
+        // a rel_path, a list prefix is ALL folder segments — there is no trailing
+        // filename to pop, so (unlike split_rel) every segment stays in `dirs`.
+        // Popping the last segment here (as split_rel does) would walk from the
+        // PARENT of the requested folder and return its entire subtree, silently
+        // including sibling folders' files — exactly the anchoring bug this fixes.
+        let dirs: Vec<&str> = prefix
+            .trim_matches('/')
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
         // Anchored at the resolved prefix folder, not the app-folder root: a
         // missing segment stops the walk here (empty result) rather than falling
         // back to a wider scope that could bleed into a sibling container.
@@ -1680,6 +1689,34 @@ mod tests {
             ]);
             mock
         }
+
+        /// [`Self::tree`] plus a SIBLING folder `C/` (containing `c.md`) at the
+        /// app-folder root, alongside `A/`. Exists to catch the anchoring bug: a
+        /// `list("A")` that (incorrectly) walks from the root instead of from A
+        /// would surface `C/c.md` too, which the tree() fixture alone can't show
+        /// since it has only one root-level folder.
+        fn tree_with_sibling() -> Self {
+            let mock = Self::tree();
+            mock.state.lock().unwrap().entries.extend([
+                MockEntry {
+                    id: "C-id".into(),
+                    name: "C".into(),
+                    parent: "root-folder".into(),
+                    folder: true,
+                    trashed: false,
+                    content: Vec::new(),
+                },
+                MockEntry {
+                    id: "c-id".into(),
+                    name: "c.md".into(),
+                    parent: "C-id".into(),
+                    folder: false,
+                    trashed: false,
+                    content: Vec::new(),
+                },
+            ]);
+            mock
+        }
     }
 
     #[derive(Clone)]
@@ -2144,5 +2181,31 @@ mod tests {
             .collect();
         got.sort();
         assert_eq!(got, vec!["A/B/b.md".to_string(), "A/a.md".to_string()]);
+    }
+
+    /// The regression test for the anchoring bug: `list("A")` must walk ONLY A's
+    /// own subtree. Root has two siblings, `A/` and `C/`; treating the whole
+    /// trimmed prefix as the folder chain (rather than popping the last segment
+    /// the way `split_rel` does for file paths) is what keeps the walk from
+    /// starting at the root and bleeding into `C/`.
+    #[tokio::test]
+    async fn gdrive_list_is_anchored_to_the_prefix_folder() {
+        let (base, _calls) = spawn_drive_mock(DriveMock::tree_with_sibling()).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+
+        let mut got: Vec<String> = backend
+            .list("A")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|(r, _)| r)
+            .collect();
+        got.sort();
+        assert_eq!(got, vec!["A/B/b.md".to_string(), "A/a.md".to_string()]);
+        assert!(
+            !got.iter().any(|p| p.starts_with('C')),
+            "list(\"A\") must not bleed into the sibling folder C: got {got:?}"
+        );
     }
 }
