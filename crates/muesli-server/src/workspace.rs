@@ -30,6 +30,9 @@ const NO_DB: &str = "this endpoint requires DATABASE_URL (server is running vola
 /// Fold the fixed `Muesli` root segment onto the admin-supplied prefix. The literal
 /// segment makes shared buckets self-documenting and matches the Drive app folder. The
 /// per-workspace container is added later by the Scoped decorator; this is only the root.
+///
+/// Invariant: must only be given the RAW admin-typed prefix; feeding an already-suffixed
+/// prefix results in duplication (e.g., `muesli_prefix("Muesli")` yields `"Muesli/Muesli"`).
 pub(crate) fn muesli_prefix(user_prefix: &str) -> String {
     let user = user_prefix.trim_matches('/');
     if user.is_empty() {

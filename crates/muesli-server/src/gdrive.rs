@@ -27,6 +27,9 @@
 //! `files.list q="name='…' and '<parent>' in parents and trashed=false"` with a
 //! deterministic lowest-id tiebreak for duplicates; folder ids are cached per
 //! (parent_id, name) and file ids per (leaf_folder_id, filename), invalidated on 404.
+//! The folder-id cache is per-process and load-bearing for the deterministic tiebreak;
+//! a future multi-instance deployment must account for cross-process duplicate-folder
+//! races (converge only after cache eviction/restart).
 //! Reads never create folders; writes find-or-create the chain.
 //!
 //! Endpoint override envs (MUESLI_GOOGLE_AUTH_URI / _TOKEN_URI / _API_BASE) exist as test

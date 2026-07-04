@@ -1849,10 +1849,10 @@ impl StorageManager {
         if att.rel_path.contains('/') {
             let mut dirs: Vec<&str> = att.rel_path.split('/').collect();
             dirs.pop(); // the file name
-                        // Externally-influenced names (e.g. a Drive file whose '∕' maps back to '/')
-                        // must never mint '.'/'..'/empty folders — that pollutes the folder tree and
-                        // produces traversal-shaped backend keys on the next relocate. The ingest
-                        // above already succeeded; only the folder placement is skipped.
+                        // Externally-influenced names must never mint '.'/'..'/empty folders — that
+                        // pollutes the folder tree and produces traversal-shaped backend keys on the
+                        // next relocate. The ingest above already succeeded; only the folder placement
+                        // is skipped.
             if dirs.iter().all(|d| crate::folders::valid_folder_name(d)) {
                 let leaf = self
                     .persistence
