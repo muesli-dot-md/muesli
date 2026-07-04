@@ -13,7 +13,6 @@
     List,
     ListOrdered,
     Plus,
-    Download,
     FileDown,
     Printer,
     ChevronDown,
@@ -54,7 +53,7 @@
     type InlineMark,
     type ListKind,
   } from "@muesli/editor-core/mdCommands";
-  import { downloadHtml, downloadMarkdown, printDocument } from "@muesli/editor-core/docExport";
+  import { exportHtmlFile, printDocument } from "$lib/docExport";
 
   const view = $derived(editorState.activeView);
   const canEdit = $derived(view !== null);
@@ -191,18 +190,17 @@
     closeDropdown();
   }
 
-  // --- download / export -------------------------------------------------------
-  function download() {
-    downloadMarkdown(title, editorState.currentText);
-  }
-
+  // --- export ------------------------------------------------------------------
+  // Delivery is desktop-specific (native save dialog / print sheet), unlike the
+  // web app's browser download/window.open — see $lib/docExport. No "Download
+  // .md" here: on desktop the note already lives on disk in the workspace.
   function exportHtml() {
-    downloadHtml(title, title, editorState.currentText);
+    void exportHtmlFile(title, editorState.currentText);
     closeDropdown();
   }
 
   function exportPdf() {
-    printDocument(title, editorState.currentText);
+    void printDocument(title, editorState.currentText);
     closeDropdown();
   }
 </script>
@@ -471,9 +469,6 @@
 
   {@render divider()}
 
-  <button class="btn btn-ghost btn-sm btn-square" title="Download .md" onclick={download}>
-    <Download class="h-4 w-4" aria-hidden="true" />
-  </button>
   <div class="dropdown">
     <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1 font-normal" title="Export">
       <FileDown class="h-4 w-4" aria-hidden="true" />

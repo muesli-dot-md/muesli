@@ -157,6 +157,59 @@ fn write_note_in(root: &Path, path: &str, contents: &str) -> Result<(), String> 
 }
 
 // ---------------------------------------------------------------------------
+// write_export_file
+// ---------------------------------------------------------------------------
+
+/// Write `contents` to the absolute `path` the user picked in a native save
+/// dialog (used by the toolbar's HTML export).
+///
+/// Unlike [`write_note`], this is deliberately NOT confined to the workspace
+/// root: the destination comes straight from the OS save dialog, so the user
+/// has already authorized this exact location. There is no `plugin-fs`, so this
+/// small command is how the frontend writes an export to an arbitrary path.
+#[tauri::command]
+pub fn write_export_file(path: String, contents: String) -> Result<(), String> {
+    std::fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
+/// "Export → PDF": write `contents` (a standalone HTML render, with a load-time
+/// `print()` injected by the caller) to a temp `<name>.html` and open it in the
+/// user's default browser, where the print sheet lets them "Save as PDF".
+///
+/// This lives in Rust because the WKWebview can't reliably drive
+/// `window.print()`/`window.open`, and the opener capability doesn't grant the
+/// webview `open-path` — but the plugin's Rust API is not capability-gated.
+#[tauri::command]
+pub fn print_export(app: tauri::AppHandle, name: String, contents: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let safe: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let safe = if safe.trim().is_empty() {
+        "export".to_string()
+    } else {
+        safe
+    };
+
+    let dir = std::env::temp_dir().join("muesli-exports");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("{safe}.html"));
+    std::fs::write(&path, contents).map_err(|e| e.to_string())?;
+
+    app.opener()
+        .open_path(path.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
 // create_note
 // ---------------------------------------------------------------------------
 

@@ -74,6 +74,15 @@ export const readNote = (path: string): Promise<string> => invoke("read_note", {
 export const writeNote = (path: string, contents: string): Promise<void> =>
   invoke("write_note", { path, contents });
 
+/** Write an export (e.g. HTML) to an absolute `path` chosen via the save dialog. */
+export const writeExportFile = (path: string, contents: string): Promise<void> =>
+  invoke("write_export_file", { path, contents });
+
+/** Write `contents` to a temp `<name>.html` and open it in the default browser
+ *  (the "Export → PDF" path — the browser prints where the webview can't). */
+export const printExport = (name: string, contents: string): Promise<void> =>
+  invoke("print_export", { name, contents });
+
 export const createNote = (dir: string, name: string): Promise<string> =>
   invoke("create_note", { dir, name });
 

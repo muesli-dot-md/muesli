@@ -76,6 +76,8 @@ pub fn run() {
             workspace::graph::build_link_graph,
             workspace::read_note,
             workspace::write_note,
+            workspace::write_export_file,
+            workspace::print_export,
             workspace::create_note,
             workspace::create_folder,
             workspace::rename_path,
