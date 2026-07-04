@@ -71,32 +71,37 @@
   </button>
   {#if open}
     <!-- Popover anchored above the pill: version title, Automatic Updates
-         checkbox, primary Restart and Update. -->
-    <div
-      class="absolute inset-x-2 bottom-full z-50 mb-1.5 rounded-xl bg-base-100 p-3 shadow-[var(--shadow-overlay)] ring-1 ring-base-content/10"
-      role="dialog"
-      aria-label="Update Muesli"
-    >
-      <p class="text-sm font-medium">Muesli {updates.version ?? ""}</p>
-      {#if updates.failureMessage}
-        <p class="mt-1 text-xs text-error">{updates.failureMessage}</p>
-      {/if}
-      <label class="mt-2 flex items-center gap-2 text-xs">
-        <input
-          type="checkbox"
-          class="checkbox checkbox-xs"
-          checked={settings.autoUpdate}
-          onchange={(e) => settings.setAutoUpdate(e.currentTarget.checked)}
-        />
-        Automatic Updates
-      </label>
-      <button
-        class="btn btn-primary btn-xs mt-2 w-full"
-        onclick={restartAndUpdate}
-        disabled={installing || updates.state === "downloading" || updates.state === "checking"}
+         checkbox, primary Restart and Update. The visual gap between pill and
+         card is PADDING on this wrapper (not margin on the card) so the cursor
+         never leaves [data-update-pill] while crossing it — margin is not part
+         of the hover hit area and would fire mouseleave mid-crossing. -->
+    <div class="absolute inset-x-2 bottom-full z-50 pb-1.5">
+      <div
+        class="rounded-xl bg-base-100 p-3 shadow-[var(--shadow-overlay)] ring-1 ring-base-content/10"
+        role="dialog"
+        aria-label="Update Muesli"
       >
-        Restart and Update
-      </button>
+        <p class="text-sm font-medium">Muesli {updates.version ?? ""}</p>
+        {#if updates.failureMessage}
+          <p class="mt-1 text-xs text-error">{updates.failureMessage}</p>
+        {/if}
+        <label class="mt-2 flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-xs"
+            checked={settings.autoUpdate}
+            onchange={(e) => settings.setAutoUpdate(e.currentTarget.checked)}
+          />
+          Automatic Updates
+        </label>
+        <button
+          class="btn btn-primary btn-xs mt-2 w-full"
+          onclick={restartAndUpdate}
+          disabled={installing || updates.state === "downloading" || updates.state === "checking"}
+        >
+          Restart and Update
+        </button>
+      </div>
     </div>
   {/if}
 </div>
