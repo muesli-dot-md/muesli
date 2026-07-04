@@ -138,7 +138,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # --latest=false: releases/latest must stay on the newest desktop-v*
+          # release — the desktop updater reads releases/latest/download/latest.json.
           gh release create "${{ steps.v.outputs.tag }}" \
+            --latest=false \
             --title "muesli CLI ${{ steps.v.outputs.version }}" \
             --notes "Install: \`curl -fsSL https://muesli.md/install.sh | sh\` or \`brew install muesli-dot-md/tap/muesli\`. Binaries below; verify with SHA256SUMS." \
             dist/muesli-* dist/SHA256SUMS
