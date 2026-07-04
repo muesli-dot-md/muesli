@@ -118,6 +118,15 @@ pub(crate) fn q_file_in_folder(name: &str, folder_id: &str) -> String {
     )
 }
 
+/// The `q` that resolves a child FOLDER by name under a parent.
+pub(crate) fn q_child_folder(name: &str, parent_id: &str) -> String {
+    format!(
+        "name='{}' and mimeType='{FOLDER_MIME}' and '{}' in parents and trashed=false",
+        escape_q(name),
+        escape_q(parent_id)
+    )
+}
+
 /// The `q` that finds the app folder at connect time.
 pub(crate) fn q_app_folder() -> String {
     format!(
@@ -184,6 +193,12 @@ pub struct GoogleCtx {
     tokens: Mutex<HashMap<String, CachedToken>>,
     /// (folder_id, drive file name) → fileId; invalidated on 404.
     file_ids: Mutex<HashMap<(String, String), String>>,
+    /// (parent_id, child folder name) -> folder id; invalidated on 404 (Task 7).
+    folders: Mutex<HashMap<(String, String), String>>,
+    /// Serializes folder CREATION so concurrent writes into a new folder don't each
+    /// create a duplicate (Drive permits duplicate names). Held across the
+    /// list-then-create await, so it is a tokio mutex, not the std ones above.
+    folder_create_lock: tokio::sync::Mutex<()>,
 }
 
 #[derive(Deserialize)]
@@ -227,6 +242,8 @@ impl GoogleCtx {
             pending: Mutex::new(HashMap::new()),
             tokens: Mutex::new(HashMap::new()),
             file_ids: Mutex::new(HashMap::new()),
+            folders: Mutex::new(HashMap::new()),
+            folder_create_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -674,6 +691,112 @@ impl GdriveBackend {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string())
+    }
+
+    /// One folder-resolution list call: the lowest-id matching child folder, if any.
+    /// Lowest-id is a deterministic tiebreak so a duplicate folder (from a prior race or
+    /// a restart) can never make ensure and resolve disagree.
+    async fn find_child_folder(&self, parent_id: &str, name: &str) -> Result<Option<String>> {
+        if let Some(id) = self
+            .ctx
+            .folders
+            .lock()
+            .unwrap()
+            .get(&(parent_id.to_string(), name.to_string()))
+            .cloned()
+        {
+            return Ok(Some(id));
+        }
+        let url = format!(
+            "{}?q={}&fields=files(id)&pageSize=1000",
+            self.files_url(),
+            uri_encode(&q_child_folder(name, parent_id), true),
+        );
+        let res = self.send_authed(reqwest::Method::GET, &url, None).await?;
+        if !res.status().is_success() {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            return Err(anyhow!(
+                "drive folder list {name:?} under {parent_id}: {status} {body}"
+            ));
+        }
+        let v: Value = res.json().await?;
+        let lowest = v
+            .get("files")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|f| f.get("id").and_then(Value::as_str).map(str::to_string))
+            .min(); // deterministic lowest-id tiebreak
+        if let Some(id) = &lowest {
+            self.ctx
+                .folders
+                .lock()
+                .unwrap()
+                .insert((parent_id.to_string(), name.to_string()), id.clone());
+        }
+        Ok(lowest)
+    }
+
+    /// Walk the folder chain from the app-folder root without creating anything.
+    #[allow(dead_code)] // wired into the file methods (read/list) in Task 6
+    async fn resolve_folder_path(&self, dirs: &[&str]) -> Result<Option<String>> {
+        let mut parent = self.folder_id.clone();
+        for name in dirs {
+            match self.find_child_folder(&parent, name).await? {
+                Some(id) => parent = id,
+                None => return Ok(None),
+            }
+        }
+        Ok(Some(parent))
+    }
+
+    /// Walk the folder chain, find-or-creating each segment; returns the leaf folder id.
+    #[allow(dead_code)] // wired into the file methods (write) in Task 6
+    async fn ensure_folder_path(&self, dirs: &[&str]) -> Result<String> {
+        let mut parent = self.folder_id.clone();
+        for name in dirs {
+            if let Some(id) = self.find_child_folder(&parent, name).await? {
+                parent = id;
+                continue;
+            }
+            // Serialize creation so two concurrent writes don't both make this folder.
+            let _guard = self.ctx.folder_create_lock.lock().await;
+            if let Some(id) = self.find_child_folder(&parent, name).await? {
+                parent = id;
+                continue;
+            }
+            let res = self
+                .send_authed(
+                    reqwest::Method::POST,
+                    &format!("{}?fields=id", self.files_url()),
+                    Some((
+                        "application/json".to_string(),
+                        json!({ "name": name, "mimeType": FOLDER_MIME, "parents": [parent] })
+                            .to_string()
+                            .into_bytes(),
+                    )),
+                )
+                .await?;
+            if !res.status().is_success() {
+                let status = res.status();
+                let body = res.text().await.unwrap_or_default();
+                return Err(anyhow!("drive folder create {name:?}: {status} {body}"));
+            }
+            let v: Value = res.json().await?;
+            let id = v
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("drive folder create returned no id"))?
+                .to_string();
+            self.ctx
+                .folders
+                .lock()
+                .unwrap()
+                .insert((parent.clone(), name.to_string()), id.clone());
+            parent = id;
+        }
+        Ok(parent)
     }
 }
 
@@ -1323,5 +1446,232 @@ mod tests {
         let again = backend.read("doc.md").await.unwrap().unwrap();
         assert_eq!(again.0, b"# from drive\n");
         assert_eq!(token_calls.load(Ordering::SeqCst), 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // DriveMock: reusable mock-Google fixture (folders now; files in Tasks 6-8)
+    //
+    // One axum server answering POST /token (always mints "t1"), GET
+    // /drive/v3/files (list: matches the q param against the entry table) and
+    // POST /drive/v3/files (folder create: id is "<name>-id", echoing the
+    // requested name, so expected ids are readable in assertions).
+    //
+    // All state lives in one shared Arc<Mutex<DriveMockState>> so later tasks
+    // can add endpoints (multipart upload, media GET, trashed flips, tree
+    // listing) against the same entry table without rewriting the harness.
+    //
+    // Variants:
+    //   - DriveMock::empty()                    every list answers empty
+    //   - DriveMock::dupes(name, parent, ids)   seeds duplicate same-name
+    //     folders so the lowest-id tiebreak is observable
+    //   - DriveMock::create_chain()             starts empty; folders created
+    //     via POST resolve on subsequent lists
+    //
+    // spawn_drive_mock returns (base_url, DriveCalls); DriveCalls counts
+    // create POSTs for "no duplicate create" assertions.
+    // -----------------------------------------------------------------------
+
+    #[derive(Clone)]
+    struct MockEntry {
+        id: String,
+        name: String,
+        parent: String,
+        folder: bool,
+        trashed: bool,
+    }
+
+    #[derive(Default)]
+    struct DriveMockState {
+        entries: Vec<MockEntry>,
+    }
+
+    struct DriveMock {
+        state: Arc<Mutex<DriveMockState>>,
+    }
+
+    impl DriveMock {
+        fn empty() -> Self {
+            Self {
+                state: Arc::new(Mutex::new(DriveMockState::default())),
+            }
+        }
+
+        fn dupes(name: &str, parent: &str, ids: &[&str]) -> Self {
+            let mock = Self::empty();
+            mock.state
+                .lock()
+                .unwrap()
+                .entries
+                .extend(ids.iter().map(|id| MockEntry {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    parent: parent.to_string(),
+                    folder: true,
+                    trashed: false,
+                }));
+            mock
+        }
+
+        /// Behaviorally the same start state as `empty()`; the name documents
+        /// the scenario under test — lists answer empty until a create lands,
+        /// then the created folder resolves.
+        fn create_chain() -> Self {
+            Self::empty()
+        }
+    }
+
+    #[derive(Clone)]
+    struct DriveCalls {
+        creates: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl DriveCalls {
+        fn creates(&self) -> usize {
+            self.creates.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    /// Extract (name, parent) from a child-lookup `q` (the shapes
+    /// q_child_folder / q_file_in_folder build). Test fixtures use names
+    /// without quotes, so no unescaping is needed.
+    fn parse_child_q(q: &str) -> Option<(String, String)> {
+        let name = q.split("name='").nth(1)?.split('\'').next()?.to_string();
+        let parent = q
+            .split("' in parents")
+            .next()?
+            .rsplit('\'')
+            .next()?
+            .to_string();
+        Some((name, parent))
+    }
+
+    async fn spawn_drive_mock(mock: DriveMock) -> (String, DriveCalls) {
+        let calls = DriveCalls {
+            creates: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        let list_state = mock.state.clone();
+        let create_state = mock.state.clone();
+        let create_count = calls.creates.clone();
+        let app = axum::Router::new()
+            .route(
+                "/token",
+                axum::routing::post(|| async {
+                    axum::Json(json!({ "access_token": "t1", "expires_in": 3600 }))
+                }),
+            )
+            .route(
+                "/drive/v3/files",
+                axum::routing::get(
+                    move |axum::extract::Query(params): axum::extract::Query<
+                        HashMap<String, String>,
+                    >| {
+                        let state = list_state.clone();
+                        async move {
+                            let q = params.get("q").cloned().unwrap_or_default();
+                            let folders_only = q.contains(FOLDER_MIME);
+                            let files: Vec<Value> = match parse_child_q(&q) {
+                                Some((name, parent)) => state
+                                    .lock()
+                                    .unwrap()
+                                    .entries
+                                    .iter()
+                                    .filter(|e| {
+                                        e.name == name
+                                            && e.parent == parent
+                                            && !e.trashed
+                                            && (!folders_only || e.folder)
+                                    })
+                                    .map(|e| json!({ "id": e.id }))
+                                    .collect(),
+                                None => vec![],
+                            };
+                            axum::Json(json!({ "files": files }))
+                        }
+                    },
+                )
+                .post(move |axum::Json(body): axum::Json<Value>| {
+                    let state = create_state.clone();
+                    let count = create_count.clone();
+                    async move {
+                        count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let name = body
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
+                        let parent = body
+                            .pointer("/parents/0")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
+                        let folder =
+                            body.get("mimeType").and_then(Value::as_str) == Some(FOLDER_MIME);
+                        let id = format!("{name}-id");
+                        state.lock().unwrap().entries.push(MockEntry {
+                            id: id.clone(),
+                            name,
+                            parent,
+                            folder,
+                            trashed: false,
+                        });
+                        axum::Json(json!({ "id": id }))
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{addr}"), calls)
+    }
+
+    #[test]
+    fn q_child_folder_scopes_to_parent_and_folders_only() {
+        assert_eq!(
+            q_child_folder("Projects", "root1"),
+            "name='Projects' and mimeType='application/vnd.google-apps.folder' and 'root1' in parents and trashed=false"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_folder_path_returns_none_on_missing_segment() {
+        // Mock: files.list always returns an empty set.
+        let (base, _calls) = spawn_drive_mock(DriveMock::empty()).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+        assert_eq!(
+            backend.resolve_folder_path(&["A", "B"]).await.unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_folder_path_picks_lowest_id_on_duplicates() {
+        // Mock: files.list for name='A' under 'root-folder' returns two folders, ids "f9","f1".
+        let (base, _calls) =
+            spawn_drive_mock(DriveMock::dupes("A", "root-folder", &["f9", "f1"])).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+        assert_eq!(
+            backend.resolve_folder_path(&["A"]).await.unwrap(),
+            Some("f1".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_folder_path_creates_missing_then_caches() {
+        let (base, calls) = spawn_drive_mock(DriveMock::create_chain()).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+        let leaf = backend.ensure_folder_path(&["A", "B"]).await.unwrap();
+        assert_eq!(leaf, "B-id");
+        // second call is fully cached: no additional create POSTs
+        let creates_after_first = calls.creates();
+        let leaf2 = backend.ensure_folder_path(&["A", "B"]).await.unwrap();
+        assert_eq!(leaf2, "B-id");
+        assert_eq!(
+            calls.creates(),
+            creates_after_first,
+            "second ensure hits cache"
+        );
     }
 }
