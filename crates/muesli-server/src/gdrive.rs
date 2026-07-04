@@ -467,6 +467,15 @@ impl GoogleCtx {
             .unwrap()
             .remove(&(folder_id.to_string(), name.to_string()));
     }
+
+    /// Evict a file-id cache entry by its Drive id rather than its `(folder, name)`
+    /// key, for the rare case the caller no longer knows which leaf it was cached
+    /// under (the whole folder chain vanished between the cache write and now). The
+    /// file_ids cache is otherwise insert-only, so without this the stale entry
+    /// would sit forever under a folder id nothing resolves to any more.
+    fn invalidate_file_id_by_value(&self, id: &str) {
+        self.file_ids.lock().unwrap().retain(|_, v| v != id);
+    }
 }
 
 /// Find-or-create the "Muesli" app folder. Runs at connect time on the fresh access
@@ -662,42 +671,64 @@ impl GdriveBackend {
 
     /// Create a new file: find-or-create the folder chain, then one multipart/related
     /// request carrying both the metadata {name, parents: [leaf]} and the content.
+    ///
+    /// A 404 on the create means the resolved leaf was hard-deleted between ensure
+    /// and upload (a narrower window than the media-PATCH races elsewhere, but the
+    /// same failure mode). Recovering on the *next* call isn't good enough here --
+    /// there is no "next call" fallback the way write()'s media-update path has one
+    /// (that path falls through to this very function) -- so this bounded, single
+    /// retry mirrors send_authed's one-refresh-one-retry discipline: invalidate the
+    /// stale chain, re-ensure it once (cache-misses and re-lists to a live or fresh
+    /// folder), and retry the create exactly once. No loops.
     async fn create_multipart(&self, rel_path: &str, bytes: &[u8]) -> Result<String> {
         let (dirs, name) = split_rel(rel_path);
-        let leaf = self.ensure_folder_path(&dirs).await?;
-        let metadata = json!({ "name": name, "parents": [leaf] }).to_string();
-        let boundary = format!("muesli-{}", crate::auth::random_token());
-        let body = multipart_body(&metadata, bytes, &boundary);
-        let url = format!(
-            "{}?uploadType=multipart&fields=id,md5Checksum",
-            self.upload_url()
-        );
-        let res = self
-            .send_authed(
-                reqwest::Method::POST,
-                &url,
-                Some((format!("multipart/related; boundary={boundary}"), body)),
-            )
-            .await?;
-        if !res.status().is_success() {
-            let status = res.status();
-            let body = res.text().await.unwrap_or_default();
-            // Defensive: a failed create (e.g. 404 because the parent folder was
-            // hard-deleted between ensure and upload) must not leave the stale
-            // chain cached, or every retry re-fails on the same dead leaf id.
-            self.invalidate_folder_chain(&dirs);
-            return Err(anyhow!(
-                "drive multipart create {rel_path}: {status} {body}"
-            ));
+        let mut leaf = self.ensure_folder_path(&dirs).await?;
+        for attempt in 0..2 {
+            let metadata = json!({ "name": name, "parents": [leaf] }).to_string();
+            let boundary = format!("muesli-{}", crate::auth::random_token());
+            let body = multipart_body(&metadata, bytes, &boundary);
+            let url = format!(
+                "{}?uploadType=multipart&fields=id,md5Checksum",
+                self.upload_url()
+            );
+            let res = self
+                .send_authed(
+                    reqwest::Method::POST,
+                    &url,
+                    Some((format!("multipart/related; boundary={boundary}"), body)),
+                )
+                .await?;
+            if res.status() == reqwest::StatusCode::NOT_FOUND && attempt == 0 {
+                debug!(
+                    %rel_path,
+                    "drive multipart create 404'd on the resolved leaf; re-ensuring the folder chain and retrying once"
+                );
+                self.invalidate_folder_chain(&dirs);
+                leaf = self.ensure_folder_path(&dirs).await?;
+                continue;
+            }
+            if !res.status().is_success() {
+                let status = res.status();
+                let body = res.text().await.unwrap_or_default();
+                // Defensive: a failed create (the retry above also 404'd, or a
+                // different failure) must not leave the stale chain cached, or
+                // every later retry re-fails on the same dead leaf id.
+                self.invalidate_folder_chain(&dirs);
+                return Err(anyhow!(
+                    "drive multipart create {rel_path}: {status} {body}"
+                ));
+            }
+            let v: Value = res.json().await?;
+            if let Some(id) = v.get("id").and_then(Value::as_str) {
+                self.ctx.cache_file_id(&leaf, name, id);
+            }
+            return Ok(v
+                .get("md5Checksum")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string());
         }
-        let v: Value = res.json().await?;
-        if let Some(id) = v.get("id").and_then(Value::as_str) {
-            self.ctx.cache_file_id(&leaf, name, id);
-        }
-        Ok(v.get("md5Checksum")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string())
+        unreachable!("the loop above always returns or errors within its two bounded attempts")
     }
 
     /// One folder-resolution list call: the lowest-id matching child folder, if any.
@@ -871,6 +902,12 @@ impl StorageBackend for GdriveBackend {
                 let (dirs, name) = split_rel(rel_path);
                 if let Some(leaf) = self.resolve_folder_path(&dirs).await? {
                     self.ctx.invalidate_file_id(&leaf, name);
+                } else {
+                    // The whole chain is already gone (e.g. a concurrent write
+                    // evicted it), so we can't name the (leaf, name) cache key any
+                    // more -- but `id` above is still the stale Drive file id, so
+                    // evict by value instead of leaking the orphaned entry.
+                    self.ctx.invalidate_file_id_by_value(&id);
                 }
                 // The 404 often means the FOLDER chain itself was trashed or deleted
                 // (files go with their folder). Evict the cached chain too — after the
@@ -1736,6 +1773,20 @@ mod tests {
                             .and_then(Value::as_str)
                             .unwrap_or_default()
                             .to_string();
+                        // The connection's own app-folder root is never itself an
+                        // entry in the table; any other parent must be a live
+                        // (non-trashed) folder, so a hard-deleted leaf 404s here
+                        // exactly like real Drive would.
+                        let parent_live = parent == "root-folder"
+                            || state
+                                .lock()
+                                .unwrap()
+                                .entries
+                                .iter()
+                                .any(|e| e.id == parent && e.folder && !e.trashed);
+                        if !parent_live {
+                            return (StatusCode::NOT_FOUND, axum::Json(json!({})));
+                        }
                         *last.lock().unwrap() = Some((name.clone(), parent.clone()));
                         let id = format!("{name}-id");
                         state.lock().unwrap().entries.push(MockEntry {
@@ -1746,7 +1797,10 @@ mod tests {
                             trashed: false,
                             content,
                         });
-                        axum::Json(json!({ "id": id, "md5Checksum": "md5-mock" }))
+                        (
+                            StatusCode::OK,
+                            axum::Json(json!({ "id": id, "md5Checksum": "md5-mock" })),
+                        )
                     }
                 }),
             )
@@ -1902,6 +1956,51 @@ mod tests {
         backend.write("A/c.md", b"x").await.unwrap();
         // The recreated file must parent under the live folder, not inside the
         // trash via the stale cached L1.
+        assert_eq!(calls.last_created_file_parent(), "L2");
+    }
+
+    /// The create-path recovery: a fresh file's resolved leaf is cached, then
+    /// hard-deleted (removed entirely, not merely trashed) before the multipart
+    /// upload goes out, so the create POST 404s on the stale leaf. Unlike the
+    /// media-PATCH 404 above (which recovers by falling through to a fresh
+    /// create_multipart call), a 404 from create_multipart itself must recover
+    /// IN-CALL: invalidate the chain, re-ensure it against the live replacement
+    /// folder, and retry the create exactly once -- all within one write() call,
+    /// not on the next poll tick.
+    #[tokio::test]
+    async fn gdrive_create_retries_in_call_when_leaf_hard_deleted() {
+        let mock = DriveMock::dupes("A", "root-folder", &["L1"]);
+        let state = mock.state.clone();
+        let (base, calls) = spawn_drive_mock(mock).await;
+        let ctx = test_ctx(&format!("{base}/token"), &base);
+        let backend = GdriveBackend::for_tests(ctx, "rt", "root-folder");
+
+        // Prime the folders cache: "A" resolves to L1.
+        assert_eq!(
+            backend.resolve_folder_path(&["A"]).await.unwrap(),
+            Some("L1".to_string())
+        );
+
+        // Externally: L1 is hard-deleted (gone entirely, unlike the trashed-flag
+        // case) and a fresh live L2 takes its place under the same name.
+        {
+            let mut s = state.lock().unwrap();
+            s.entries.retain(|e| e.id != "L1");
+            s.entries.push(MockEntry {
+                id: "L2".into(),
+                name: "A".into(),
+                parent: "root-folder".into(),
+                folder: true,
+                trashed: false,
+                content: Vec::new(),
+            });
+        }
+
+        // A brand-new file: resolve() finds nothing under the (now-gone) L1, so
+        // write() goes straight to create_multipart, which trusts the cached
+        // stale L1 leaf, 404s creating under it, and must recover within this
+        // one call rather than returning an error.
+        backend.write("A/c.md", b"x").await.unwrap();
         assert_eq!(calls.last_created_file_parent(), "L2");
     }
 
