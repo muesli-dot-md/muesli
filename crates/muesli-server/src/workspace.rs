@@ -27,6 +27,18 @@ const OPEN_MODE: &str =
     "this endpoint requires identity (OIDC_ISSUER) — the server is running in open mode";
 const NO_DB: &str = "this endpoint requires DATABASE_URL (server is running volatile)";
 
+/// Fold the fixed `Muesli` root segment onto the admin-supplied prefix. The literal
+/// segment makes shared buckets self-documenting and matches the Drive app folder. The
+/// per-workspace container is added later by the Scoped decorator; this is only the root.
+pub(crate) fn muesli_prefix(user_prefix: &str) -> String {
+    let user = user_prefix.trim_matches('/');
+    if user.is_empty() {
+        "Muesli".to_string()
+    } else {
+        format!("{user}/Muesli")
+    }
+}
+
 fn err(status: StatusCode, msg: impl Into<String>) -> Response {
     (status, msg.into()).into_response()
 }
@@ -988,7 +1000,7 @@ fn sharepoint_config_from_req(
         "site_id": site_id,
         "drive_id": drive_id,
         "drive_name": drive_name,
-        "prefix": req.prefix.as_deref().unwrap_or(""),
+        "prefix": muesli_prefix(req.prefix.as_deref().unwrap_or("")),
     });
     if has_ws_creds {
         config["client_id"] = json!(client_id);
@@ -1087,7 +1099,7 @@ pub async fn create_storage_connection(
                 "endpoint": endpoint,
                 "bucket": bucket,
                 "region": req.region.as_deref().unwrap_or("us-east-1"),
-                "prefix": req.prefix.as_deref().unwrap_or(""),
+                "prefix": muesli_prefix(req.prefix.as_deref().unwrap_or("")),
                 "force_path_style": true,
             });
             if has_ws_creds {
@@ -1150,7 +1162,7 @@ pub async fn create_storage_connection(
                 "owner": owner,
                 "repo": repo,
                 "branch": branch,
-                "prefix": req.prefix.as_deref().unwrap_or(""),
+                "prefix": muesli_prefix(req.prefix.as_deref().unwrap_or("")),
             });
             if has_ws_creds {
                 let enc = crate::secrets::encrypt_secret(&token)
@@ -1281,7 +1293,11 @@ pub async fn s3_policy(
         .map(String::as_str)
         .unwrap_or("")
         .trim();
-    Json(json!({ "policy": crate::storage::s3_iam_policy(bucket, prefix) })).into_response()
+    // The wizard shows this before the connection is created, but the stored config
+    // already folds the Muesli root segment onto the typed prefix (create_storage_connection
+    // above) — show the grant for the layout that will actually exist.
+    Json(json!({ "policy": crate::storage::s3_iam_policy(bucket, &muesli_prefix(prefix)) }))
+        .into_response()
 }
 
 /// What of a connection's config is safe to show members. A gdrive config carries the
@@ -1812,6 +1828,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn muesli_prefix_folds_the_root_segment() {
+        assert_eq!(muesli_prefix(""), "Muesli");
+        assert_eq!(muesli_prefix("/"), "Muesli");
+        assert_eq!(muesli_prefix("team-notes"), "team-notes/Muesli");
+        assert_eq!(muesli_prefix("/a/b/"), "a/b/Muesli");
+        // stays a clean rel_path
+        assert!(crate::storage::validate_rel_path(&muesli_prefix("a/b")).is_ok());
+    }
+
+    #[test]
     fn gdrive_config_is_redacted_for_members() {
         let gdrive =
             json!({"refresh_token": "1//secret", "folder_id": "f1", "folder_name": "Muesli"});
@@ -2092,7 +2118,8 @@ mod tests {
         assert_eq!(config["site_id"], json!("contoso.sharepoint.com,g1,g2"));
         assert_eq!(config["drive_id"], json!("drv-1"));
         assert_eq!(config["drive_name"], json!("Documents"));
-        assert_eq!(config["prefix"], json!("notes"));
+        // stored prefix folds the Muesli root segment onto the admin-typed prefix
+        assert_eq!(config["prefix"], json!("notes/Muesli"));
         assert_eq!(config["client_id"], json!("ws-cid"));
         let enc = config["client_secret_enc"].as_str().expect("encrypted");
         assert_ne!(enc, "ws-secret", "never stored plaintext");
