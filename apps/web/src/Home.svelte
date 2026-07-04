@@ -1054,10 +1054,10 @@
         {:else if mainPanel === "graph"}
           <GraphView embedded {selectedWorkspaceId} {personalWorkspaceId} />
         {:else}
-          <!-- Breadcrumb row — only inside a folder. At the workspace root the
-               sidebar already names the workspace, so no heading: the toolbar
-               moves up and the files get the vertical space. -->
-          {#if view === "folder"}
+          <!-- Breadcrumb row: the selected workspace is the clickable, drop-target
+               base of the path. At the root the chain is empty, so only the
+               workspace name shows; inside a folder the folder chain follows it. -->
+          {#if view === "root" || view === "folder"}
             <div class="flex items-center justify-between gap-3 px-6 pt-5 pb-2">
               <h1 class="flex min-w-0 items-center gap-1 text-xl" style="text-wrap: balance;">
                 <button
@@ -1095,7 +1095,7 @@
           {/if}
 
           <!-- controls toolbar (§4): New file · New folder · Sort · Collapse-all · Search -->
-          <div class="flex items-center gap-2 px-6 pb-3 {view === 'folder' ? '' : 'pt-5'}">
+          <div class="flex items-center gap-2 px-6 pb-3">
             <button class="btn btn-sm gap-1.5" onclick={() => openModal({ kind: "newDoc" })}>
               {@render docIcon("h-4 w-4")}
               <span class="hidden sm:inline">{t("home.newFile")}</span>
