@@ -3242,8 +3242,18 @@ mod tests {
 
     #[test]
     fn workspace_container_distinguishes_same_name_different_id() {
-        let a = workspace_container("Notes", Uuid::now_v7());
-        let b = workspace_container("Notes", Uuid::now_v7());
+        // Production ids are UUID v4 (gen_random_uuid), so the first 12 hex chars are
+        // random and two distinct workspaces get distinct containers. Fixed v4-shaped ids
+        // here — not now_v7(), whose first 12 hex are a millisecond timestamp that collides
+        // for same-millisecond creation.
+        let a = workspace_container(
+            "Notes",
+            Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+        );
+        let b = workspace_container(
+            "Notes",
+            Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
+        );
         assert_ne!(a, b);
     }
 
