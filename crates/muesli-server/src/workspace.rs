@@ -43,6 +43,13 @@ fn err(status: StatusCode, msg: impl Into<String>) -> Response {
     (status, msg.into()).into_response()
 }
 
+/// True when `rel_path`'s FIRST segment equals `container`. The container is applied
+/// once by the Scoped decorator at write time, never by the caller; an explicit rel_path
+/// that also names it would double-nest on the backend (Muesli/<container>/<container>/…).
+fn rel_path_repeats_container(rel_path: &str, container: &str) -> bool {
+    rel_path.split('/').next() == Some(container)
+}
+
 fn err500(e: anyhow::Error) -> Response {
     warn!(%e, "workspace api error");
     err(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
@@ -1308,6 +1315,9 @@ pub async fn s3_policy(
 pub(crate) fn public_config(kind: &str, config: &Value) -> Value {
     let mut config = config.clone();
     if let Some(obj) = config.as_object_mut() {
+        // "container" is never stripped here: it derives from the member's OWN
+        // workspace name + id (storage::workspace_container), so passing it through
+        // to members never leaks another workspace's data.
         match kind {
             "gdrive" => {
                 // Both the legacy plaintext field and the encrypted-at-rest one
@@ -1758,6 +1768,20 @@ pub async fn attach_document_storage(
             format!("rel_path must be a clean relative path: {e}"),
         );
     }
+    // An explicit rel_path is workspace-relative; the container is implicit, applied
+    // once by the Scoped decorator at write time (never here). Reject a caller-supplied
+    // rel_path that also spells out the container, or it lands double-nested on the
+    // backend instead of failing loudly.
+    if explicit.is_some() {
+        if let Some(container) = conn.config.get("container").and_then(|v| v.as_str()) {
+            if rel_path_repeats_container(&rel_path, container) {
+                return err(
+                    StatusCode::BAD_REQUEST,
+                    "rel_path is workspace-relative; do not include the storage container segment",
+                );
+            }
+        }
+    }
     // An explicit NESTED rel_path implies a folder placement: get-or-create the folder
     // chain in the connection's workspace and move the document into the leaf, so the
     // backend tree and the in-app tree stay one structure.
@@ -1835,6 +1859,23 @@ mod tests {
         assert_eq!(muesli_prefix("/a/b/"), "a/b/Muesli");
         // stays a clean rel_path
         assert!(crate::storage::validate_rel_path(&muesli_prefix("a/b")).is_ok());
+    }
+
+    /// Guard against attach_document_storage double-nesting: the container is applied
+    /// once by the Scoped decorator, never by the caller, so an explicit rel_path that
+    /// repeats it as its first segment must be rejected rather than silently doubled.
+    #[test]
+    fn rel_path_repeats_container_catches_only_a_leading_match() {
+        assert!(rel_path_repeats_container(
+            "ws-abc123def456/notes/a.md",
+            "ws-abc123def456"
+        ));
+        // a same-named later segment is not the container segment
+        assert!(!rel_path_repeats_container(
+            "notes/ws-abc123def456/a.md",
+            "ws-abc123def456"
+        ));
+        assert!(!rel_path_repeats_container("notes/a.md", "ws-abc123def456"));
     }
 
     #[test]
