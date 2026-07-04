@@ -45,18 +45,6 @@ export function avatarLetter(name: string): string {
   return m ? m[0].toUpperCase() : "?";
 }
 
-/** The active workspace's display label, for the selector button face. */
-export function activeWorkspaceLabel(
-  workspaces: WorkspaceSummary[],
-  selectedId: string | null,
-  personalLabel: string,
-  fallback: string,
-): string {
-  const w = workspaces.find((x) => x.id === selectedId);
-  if (!w) return fallback;
-  return w.name.trim() || (w.is_personal ? personalLabel : w.name);
-}
-
 /** The signed-in user's identity, normalized for the dropdown header. Avatar is
  *  the photo URL when present; otherwise initials over a stable color derived
  *  from the user id (reusing colorFromId — the one color derivation in the app). */

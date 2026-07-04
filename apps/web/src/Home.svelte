@@ -67,10 +67,13 @@
   // Raw workspace list; the display-name map is derived so the personal
   // workspace's label re-translates when the locale switches.
   let workspaces: WorkspaceSummary[] = $state([]);
+  // Every workspace shows the name its creator gave it; the localized
+  // "My workspace" label is only the fallback for an unnamed personal one
+  // (same rule as workspaceMenuRows).
+  const workspaceLabel = (w: WorkspaceSummary): string =>
+    w.name.trim() || (w.is_personal ? t("home.myWorkspace") : w.name);
   const workspaceNames: Record<string, string> = $derived(
-    Object.fromEntries(
-      workspaces.map((w) => [w.id, w.is_personal ? t("home.myWorkspace") : w.name]),
-    ),
+    Object.fromEntries(workspaces.map((w) => [w.id, workspaceLabel(w)])),
   );
   // Sidebar selection (spec §2): the active workspace whose contents the main
   // space shows. Defaults to the personal workspace once the list loads.
@@ -281,11 +284,7 @@
   });
 
   const viewLabel = $derived(
-    selectedWorkspace
-      ? selectedWorkspace.is_personal
-        ? t("home.myWorkspace")
-        : selectedWorkspace.name
-      : t("home.myDocuments"),
+    selectedWorkspace ? workspaceLabel(selectedWorkspace) : t("home.myDocuments"),
   );
 
   // --- loading ------------------------------------------------------------------------
@@ -958,14 +957,7 @@
          carries identity + nav, so there's no separate top app header. -->
     <aside class="flex w-64 shrink-0 flex-col gap-1 px-2 pt-2 pb-2">
       <!-- workspace selector + account dropdown (§1) -->
-      <WorkspaceMenu
-        {auth}
-        {workspaces}
-        {selectedWorkspaceId}
-        personalLabel={t("home.myWorkspace")}
-        fallbackLabel={t("home.title")}
-        onsignout={signOut}
-      />
+      <WorkspaceMenu {auth} onsignout={signOut} />
 
       <!-- search row (§2): opens the ⌘K / `/` palette; darkens on hover to the
            same neutral veil as the nav rows. Mirrors Multica's search trigger —
@@ -1013,7 +1005,7 @@
           <p class="px-2 pt-2 text-xs opacity-50">{t("home.treeEmpty")}</p>
         {:else}
           {#each workspaces as w (w.id)}
-            {@const wsLabel = w.is_personal ? t("home.myWorkspace") : w.name}
+            {@const wsLabel = workspaceLabel(w)}
             <button
               class="ws-row arc-tap mb-0.5 flex h-10 w-full cursor-pointer items-center gap-2.5 px-2 text-left"
               class:active={!graphOpen && selectedWorkspaceId === w.id}

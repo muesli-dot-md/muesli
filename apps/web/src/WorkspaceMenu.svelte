@@ -1,44 +1,30 @@
 <script lang="ts">
   // Account-focused dropdown that anchors the top of the sidebar. The button
-  // face shows the active workspace (square letter avatar + name + chevron) —
-  // workspace SWITCHING now lives in the sidebar's workspaces list, so this menu
-  // is profile/settings/logout only: the signed-in user's identity header, a
+  // face is the app brand ("Muesli") — workspace SWITCHING lives in the
+  // sidebar's workspaces list and the active workspace is named there, so
+  // repeating it here would suggest this menu selects workspaces. It is
+  // profile/settings/logout only: the signed-in user's identity header, a
   // Settings entry, and a red "Log out". Selection/hover use a NEUTRAL gray
   // rounded background (hover:bg-base-200), never the accent. Yjs-free
-  // (identity.ts only); pure label/identity logic lives in workspaceMenu.ts.
+  // (identity.ts only); pure identity logic lives in workspaceMenu.ts.
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import LogOut from "@lucide/svelte/icons/log-out";
   import Settings from "@lucide/svelte/icons/settings";
   import { t } from "./i18n/index.svelte";
   import type { AuthInfo } from "./identity";
   import { gotoSettings } from "./route.svelte";
-  import type { WorkspaceSummary } from "./workspaceApi";
-  import { activeWorkspaceLabel, avatarLetter, menuIdentity } from "./workspaceMenu";
+  import { menuIdentity } from "./workspaceMenu";
 
   let {
     auth,
-    workspaces,
-    selectedWorkspaceId,
-    personalLabel,
-    fallbackLabel,
     onsignout,
   }: {
     auth: AuthInfo;
-    workspaces: WorkspaceSummary[];
-    selectedWorkspaceId: string | null;
-    /** Localized "My workspace" label for the personal workspace. */
-    personalLabel: string;
-    /** Label for the selector face when no workspace is resolved yet. */
-    fallbackLabel: string;
     onsignout: () => void | Promise<void>;
   } = $props();
 
   let open = $state(false);
 
-  const activeLabel = $derived(
-    activeWorkspaceLabel(workspaces, selectedWorkspaceId, personalLabel, fallbackLabel),
-  );
-  const activeLetter = $derived(avatarLetter(activeLabel));
   const identity = $derived(auth.user ? menuIdentity(auth.user) : null);
 
   function close() {
@@ -76,9 +62,9 @@
 {/snippet}
 
 <div class="relative" data-workspace-menu>
-  <!-- selector face: square letter avatar + active workspace name + chevron,
-       subtle neutral hover (no accent). 40px tall hit area. Opens the account
-       menu (workspace switching lives in the sidebar list below). -->
+  <!-- brand face: square "M" avatar + "Muesli" + chevron, subtle neutral hover
+       (no accent). 40px tall hit area. Opens the account menu (workspace
+       switching lives in the sidebar list below). -->
   <button
     class="arc-tap flex h-10 w-full items-center gap-2.5 rounded-lg px-2 text-left hover:bg-base-200"
     class:bg-base-200={open}
@@ -86,9 +72,9 @@
     aria-expanded={open}
     onclick={() => (open = !open)}
   >
-    {@render squareAvatar(activeLetter, "h-6 w-6 shrink-0")}
+    {@render squareAvatar("M", "h-6 w-6 shrink-0")}
     <span class="min-w-0 flex-1 truncate text-sm font-medium" style="text-wrap: balance;">
-      {activeLabel}
+      Muesli
     </span>
     <ChevronDown
       class="h-3.5 w-3.5 shrink-0 opacity-50 transition-[rotate] duration-150 {open

@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  activeWorkspaceLabel,
-  avatarLetter,
-  menuIdentity,
-  workspaceMenuRows,
-} from "./workspaceMenu";
+import { avatarLetter, menuIdentity, workspaceMenuRows } from "./workspaceMenu";
 import type { WorkspaceSummary } from "./workspaceApi";
 import type { Me } from "./identity";
 
@@ -54,26 +49,6 @@ describe("workspaceMenuRows", () => {
   it("marks none active when the selection is unresolved (null)", () => {
     const rows = workspaceMenuRows([PERSONAL, TEAM], null, "My workspace");
     expect(rows.every((r) => !r.active)).toBe(true);
-  });
-});
-
-describe("activeWorkspaceLabel", () => {
-  it("returns the active workspace label (real name, even for personal)", () => {
-    expect(activeWorkspaceLabel([PERSONAL, TEAM], "ws-personal", "My workspace", "fallback")).toBe(
-      "Personal",
-    );
-    expect(activeWorkspaceLabel([PERSONAL, TEAM], "ws-team", "My workspace", "fallback")).toBe(
-      "Team Alpha",
-    );
-  });
-
-  it("returns the fallback when nothing is selected or the id is unknown", () => {
-    expect(activeWorkspaceLabel([PERSONAL, TEAM], null, "My workspace", "fallback")).toBe(
-      "fallback",
-    );
-    expect(activeWorkspaceLabel([PERSONAL, TEAM], "ghost", "My workspace", "fallback")).toBe(
-      "fallback",
-    );
   });
 });
 
