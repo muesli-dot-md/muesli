@@ -710,6 +710,10 @@ impl GdriveBackend {
                     %rel_path,
                     "drive multipart create 404'd on the resolved leaf; re-ensuring the folder chain and retrying once"
                 );
+                // Defense-in-depth: find_child_folder's proactive liveness check
+                // already heals a trashed/deleted leaf before ensure_folder_path
+                // returns it in the common case; this covers only the narrow race
+                // where the leaf dies between that check and this POST.
                 self.invalidate_folder_chain(&dirs);
                 leaf = self.ensure_folder_path(&dirs).await?;
                 continue;
@@ -958,6 +962,10 @@ impl StorageBackend for GdriveBackend {
                 // file-id invalidation above, which needed the stale leaf id — so the
                 // re-ensure re-lists and finds the live folder (or recreates it)
                 // instead of parenting the new file inside the trash.
+                // Defense-in-depth: resolve()'s walk through find_child_folder already
+                // heals a trashed/deleted folder proactively before this point in the
+                // common case; this guards only the narrow race where the folder dies
+                // between that check and this PATCH.
                 self.invalidate_folder_chain(&dirs);
             } else if !res.status().is_success() {
                 let status = res.status();
@@ -2106,12 +2114,14 @@ mod tests {
         assert_eq!(got.0, b"# hi\n");
     }
 
-    /// The stale-leaf recovery path: the folders cache holds "A" → L1, but Drive
-    /// has trashed L1 and a fresh list resolves "A" to L2. The write's media
-    /// PATCH 404s (the file was deleted under us — the mock has no PATCH route,
-    /// which models exactly that), and the recreate must land under the LIVE
-    /// folder L2. That requires evicting the stale (root, "A") cache entry so
-    /// ensure_folder_path re-lists instead of trusting the trashed L1.
+    /// The stale-leaf recovery is now PROACTIVE: the folders cache holds "A" → L1,
+    /// but Drive has trashed L1, so resolve()'s walk through find_child_folder
+    /// catches the liveness check on the cache hit, evicts L1, and re-lists "A" to
+    /// the live L2 before the write ever reaches Drive. The media-PATCH-404 path
+    /// (the mock has no PATCH route, which would model a deleted-under-us file) is
+    /// not reached here — it only guards the narrower race where a folder is
+    /// trashed BETWEEN the liveness check and the write. Asserts the recreate
+    /// still lands under the LIVE folder L2.
     #[tokio::test]
     async fn gdrive_write_recovers_when_cached_leaf_was_trashed() {
         let mock = DriveMock::dupes("A", "root-folder", &["L1"]);
@@ -2251,14 +2261,14 @@ mod tests {
         assert_eq!(calls.last_created_file_parent(), "A2");
     }
 
-    /// The create-path recovery: a fresh file's resolved leaf is cached, then
-    /// hard-deleted (removed entirely, not merely trashed) before the multipart
-    /// upload goes out, so the create POST 404s on the stale leaf. Unlike the
-    /// media-PATCH 404 above (which recovers by falling through to a fresh
-    /// create_multipart call), a 404 from create_multipart itself must recover
-    /// IN-CALL: invalidate the chain, re-ensure it against the live replacement
-    /// folder, and retry the create exactly once -- all within one write() call,
-    /// not on the next poll tick.
+    /// The create-path recovery is now PROACTIVE: "A" is cached to L1, then L1 is
+    /// hard-deleted (removed entirely, not merely trashed) and replaced by a live
+    /// L2. find_child_folder's liveness GET 404s on the dead L1 id, evicts it, and
+    /// re-lists "A" to L2, so ensure_folder_path (and thus create_multipart) never
+    /// sees the stale leaf. The in-call create-404 retry below is not reached here
+    /// — it only guards the narrower race where the leaf is deleted BETWEEN
+    /// ensure_folder_path resolving it and the multipart POST. Asserts the file
+    /// still lands under the live L2.
     #[tokio::test]
     async fn gdrive_create_retries_in_call_when_leaf_hard_deleted() {
         let mock = DriveMock::dupes("A", "root-folder", &["L1"]);
