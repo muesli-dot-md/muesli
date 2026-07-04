@@ -105,6 +105,34 @@ pub fn rel_path_for_named(chain: &[String], name: &str) -> String {
     }
 }
 
+/// The per-workspace container segment: `<slug>-<shortid>`.
+///
+/// A single, traversal-safe path segment: `links::slugify` output (falling back to
+/// "workspace" when a name slugs to empty, e.g. a purely non-ASCII name) joined to the
+/// first 12 hex chars (48 random bits) of the workspace id. Frozen at connection
+/// creation — never recomputed, so a workspace rename never moves already-stored files.
+/// Correctness of isolation rests on the id, not the slug (which is a human hint).
+#[allow(dead_code)]
+pub fn workspace_container(name: &str, id: uuid::Uuid) -> String {
+    let mut slug = crate::links::slugify(name);
+    if slug.is_empty() {
+        slug = "workspace".to_string();
+    }
+    // slugify emits only ASCII [a-z0-9_-], so truncating by bytes is char-safe.
+    const MAX_SLUG: usize = 48;
+    if slug.len() > MAX_SLUG {
+        slug.truncate(MAX_SLUG);
+        let trimmed = slug.trim_end_matches('-');
+        slug = if trimmed.is_empty() {
+            "workspace".to_string()
+        } else {
+            trimmed.to_string()
+        };
+    }
+    let short: String = id.simple().to_string().chars().take(12).collect();
+    format!("{slug}-{short}")
+}
+
 /// Case-preserving filename sanitizer. MIRRORS `muesli-cli`'s `sync::sanitize_segment`
 /// (the desktop client's local-file namer): replace any path separator with '-', strip
 /// leading dots, trim surrounding whitespace, and fall back to "untitled" when empty.
@@ -3194,5 +3222,41 @@ mod tests {
         } else {
             panic!("expected error for unsupported kind");
         }
+    }
+
+    #[test]
+    fn workspace_container_is_slug_plus_12_hex() {
+        let id = Uuid::parse_str("a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d").unwrap();
+        let c = workspace_container("My Notes", id);
+        assert_eq!(c, "my-notes-a1b2c3d4e5f6");
+        // single, traversal-safe segment
+        assert!(validate_rel_path(&c).is_ok());
+        assert!(!c.contains('/'));
+    }
+
+    #[test]
+    fn workspace_container_falls_back_when_slug_empty() {
+        let id = Uuid::parse_str("00000000-0000-4000-8000-00000000abcd").unwrap();
+        let c = workspace_container("日本語", id); // slugs to "" -> "workspace" fallback
+        assert_eq!(c, "workspace-000000000000");
+    }
+
+    #[test]
+    fn workspace_container_distinguishes_same_name_different_id() {
+        let a = workspace_container("Notes", Uuid::now_v7());
+        let b = workspace_container("Notes", Uuid::now_v7());
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn workspace_container_caps_long_slug_but_stays_valid() {
+        let id = Uuid::now_v7();
+        let long = "x".repeat(200);
+        let c = workspace_container(&long, id);
+        // slug capped to 48, plus '-' plus 12 hex
+        let (slug, short) = c.rsplit_once('-').unwrap();
+        assert!(slug.len() <= 48, "slug capped");
+        assert_eq!(short.len(), 12);
+        assert!(validate_rel_path(&c).is_ok());
     }
 }
