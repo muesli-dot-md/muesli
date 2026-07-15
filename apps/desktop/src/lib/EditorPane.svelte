@@ -3,7 +3,7 @@
   import { EditorView } from "@codemirror/view";
   import * as Y from "yjs";
   import { yCollab } from "y-codemirror.next";
-  import { BookOpen, Pencil, MessageSquarePlus } from "lucide-svelte";
+  import { MessageSquarePlus } from "lucide-svelte";
   import { tabs } from "$lib/tabs.svelte";
   import { editorState } from "$lib/editorState.svelte";
   import Toolbar from "$lib/Toolbar.svelte";
@@ -20,7 +20,6 @@
   import { workspaces } from "$lib/workspaces.svelte";
   import { presence } from "$lib/sync/presence.svelte";
   import { colorFromId } from "$lib/presence";
-  import PresenceStack from "$lib/PresenceStack.svelte";
   import ReadingView from "$lib/ReadingView.svelte";
   import { docContext } from "$lib/collab/docContext";
   import { docCollab } from "$lib/collab/docCollab.svelte";
@@ -211,28 +210,21 @@
     return path.split("/").at(-1) ?? path;
   }
 
-  // Reference to the live note's debounced saver, so a mode toggle can flush
-  // pending keystrokes to disk BEFORE tearing the editor down for reading view.
-  let currentSaver: { flush: () => Promise<void> } | null = null;
-
-  function handleToggleMode() {
-    const id = tabs.activeId;
-    if (!id) return;
-    // Flush pending edits before switching mode (read mode unmounts the editor).
-    currentSaver?.flush().catch(() => {});
-    tabs.toggleMode(id);
-  }
-
   $effect(() => {
     // Depend ONLY on the value-stable primitives (see note above) so a
     // keystroke never remounts the editor.
     const id = activeId;
     const path = activePath;
     const mode = activeMode;
-    if (!id || !path || !host) return;
+    if (!id || !path) return;
 
     // Don't mount the editor in read mode — but DO refresh the shared text so
-    // ReadingView and StatusBar show the correct content for this tab.
+    // ReadingView and StatusBar show the correct content for this tab. This
+    // branch MUST run before the `host` guard below: the CodeMirror host div
+    // only renders in edit mode, so in read mode `host` is always unset and a
+    // combined guard would dead-end the whole effect — leaving docCollab in
+    // its reset state (isRemote false) and the Suggest segment disabled for
+    // the entire reading session.
     if (mode === "read") {
       editorState.activeView = null;
       // Keep the collab context current so the panels stay correct in read mode.
@@ -250,6 +242,9 @@
         .catch(() => {});
       return;
     }
+    // Edit mode from here on: the effect re-runs once bind:this delivers the
+    // freshly rendered CodeMirror host.
+    if (!host) return;
     // Tier-2 (Plan 3): when the daemon owns this workspace, attach the open editor to its
     // replica over IPC for live cursors. Legacy per-note websocket sync only when the daemon
     // is NOT running (local-server dev mode). `daemonRunning` is the value-stable $derived
@@ -307,7 +302,6 @@
     // tabs.flush(id) callers (rename/move) can await the disk write before touching
     // the file.
     tabs.registerFlush(id, () => saver.flush().catch(() => {}));
-    currentSaver = saver;
 
     if (useTauriSync || useWsSync) {
       // ── Sync-aware open flow ───────────────────────────────────────────────
@@ -448,8 +442,13 @@
           })
           .catch(() => {
             // attachEditor failed (daemon stopped between decision and call) — fall
-            // back gracefully: mark ready so the file stays editable.
+            // back gracefully: mark ready so the file stays editable. No collab
+            // store can come from this mount: release anything waiting on one
+            // (ModeGroup's pending Suggesting intent expires on this signal).
+            // A superseded mount's late rejection must NOT emit the signal — the
+            // intent may be waiting on a newer, still-healthy mount.
             ready = true;
+            if (!destroyed) docCollab.markWireFailed();
           });
       } else {
         // Legacy websocket path (daemon not running, syncEnabled=true).
@@ -535,8 +534,13 @@
             }, SEED_FALLBACK_MS);
           })
           .catch(() => {
-            // Disk read failed: still let the user edit the (possibly remote) doc.
+            // Disk read failed: still let the user edit the (possibly remote)
+            // doc. No collab store can come from this mount: release anything
+            // waiting on one (ModeGroup's pending Suggesting intent expires on
+            // this signal). A superseded mount's late rejection must NOT emit
+            // the signal — the intent may be waiting on a newer, healthy mount.
             ready = true;
+            if (!destroyed) docCollab.markWireFailed();
           });
       }
     } else {
@@ -598,7 +602,6 @@
       } else {
         saver.cancel();
       }
-      if (currentSaver === saver) currentSaver = null;
       if (view) {
         view.destroy();
         view = null;
@@ -621,29 +624,15 @@
 
 <div class="flex-1 flex flex-col min-h-0 overflow-hidden relative">
   {#if tabs.activeId}
-    <!-- Presence: one chip per person (deduped across this user's tabs/apps). -->
-    {#if presence.people.length > 0}
-      <div class="absolute top-2 right-12 z-10">
-        <PresenceStack people={presence.people} />
-      </div>
-    {/if}
-    <!-- Mode toggle button -->
-    <button
-      class="btn btn-ghost btn-xs btn-square absolute top-2 right-2 z-10"
-      onclick={handleToggleMode}
-      title={isReadMode ? "Switch to edit mode" : "Switch to reading view"}
-    >
-      {#if isReadMode}
-        <Pencil size={14} />
-      {:else}
-        <BookOpen size={14} />
-      {/if}
-    </button>
+    <!-- The toolbar renders in BOTH modes: its mode group is the way back out
+         of reading view (where the editing cluster hides itself — the editor
+         view it targets does not exist there). Presence chips render inside
+         the toolbar row too, so nothing can overlay the row's controls. -->
+    <Toolbar />
 
     {#if isReadMode}
       <ReadingView />
     {:else}
-      <Toolbar />
       <!--
         Positioned wrapper: the floating comment/suggest affordance is absolutely
         placed against this box, while CodeMirror mounts into the inner host.

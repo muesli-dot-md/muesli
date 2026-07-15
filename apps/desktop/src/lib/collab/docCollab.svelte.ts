@@ -18,6 +18,18 @@ class DocCollabStore {
   /** The live collab store for the open synced doc (null for local-only docs). */
   store = $state<CollabStore | null>(null);
 
+  /** Monotonic count of editor mounts that completed without wiring a collab
+   * store (session attach or initial disk read failed). Watchers waiting for
+   * `store` to materialize (ModeGroup's pending Suggesting intent) treat a
+   * bump as "the store you were waiting on is not coming" and expire. Never
+   * reset — consumers compare against a baseline captured when they begin
+   * waiting, so an absolute value carries no meaning. */
+  wireFailures = $state(0);
+
+  markWireFailed(): void {
+    this.wireFailures++;
+  }
+
   set(ctx: { slug: string | null; isRemote: boolean; server: string | null }): void {
     this.slug = ctx.slug;
     this.isRemote = ctx.isRemote;
