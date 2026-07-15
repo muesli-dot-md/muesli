@@ -1409,10 +1409,13 @@
                 </div>
               {:else if prefs.homeView === "tree"}
                 <!-- tree view (§3): recursive folders + docs of the selected
-                     workspace, Arc-depth rows; opt-in, never the default. -->
+                     workspace, Arc-depth rows; opt-in, never the default. No
+                     horizontal padding here — indentation and the pane's side
+                     gutter are each row's own padding, so the hover/active
+                     highlight spans the width of the pane. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
                 <div
-                  class="min-h-0 flex-1 overflow-y-auto px-3 pb-4"
+                  class="min-h-0 flex-1 overflow-y-auto pb-4"
                   onclick={(e) => {
                     if (e.target === e.currentTarget) selectedRef = null;
                   }}
@@ -1452,7 +1455,8 @@
                       <!-- svelte-ignore a11y_click_events_have_key_events -->
                       <div
                         class="tree-row-wrap flex cursor-pointer items-center select-none"
-                        style="padding-left: 4px; padding-top: 2px; padding-bottom: 2px; padding-right: 4px;"
+                        class:active={isSelected(docTgt)}
+                        style="padding-left: 12px; padding-top: 2px; padding-bottom: 2px; padding-right: 12px;"
                         draggable={dndEnabled}
                         ondragstart={(e) => startDrag(e, docTgt)}
                         ondragend={() => {
@@ -1477,8 +1481,7 @@
                       >
                         <span class="shrink-0" style="width: 15px;"></span>
                         <div
-                          class="tree-row items-center gap-1.5 min-w-0"
-                          class:active={isSelected(docTgt)}
+                          class="tree-row-label items-center gap-1.5 min-w-0"
                           style="padding: 1px 7px;"
                         >
                           {@render docIcon("h-[15px] w-[15px] shrink-0 text-primary")}

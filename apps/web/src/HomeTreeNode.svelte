@@ -1,8 +1,9 @@
 <script lang="ts">
   // Recursive node for the Home "tree" view (spec §3) — mirrors the desktop
-  // FileTree/TreeNode "Arc depth" pattern: a full-width row whose inner pill
-  // (.tree-row) carries the active/hover highlight, with a disclosure chevron
-  // outside the pill. Folders expand/collapse; docs open. Reuses Home's
+  // FileTree/TreeNode "Arc depth" pattern: the row itself (.tree-row-wrap)
+  // carries the active/hover highlight across the pane width, with a
+  // disclosure chevron and an indent-guide line (.tree-children) marking
+  // nesting depth. Folders expand/collapse; docs open. Reuses Home's
   // drag-drop + context-menu callbacks so behavior matches the list/grid views.
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import FileText from "@lucide/svelte/icons/file-text";
@@ -72,9 +73,10 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
   class="tree-row-wrap flex cursor-pointer items-center select-none"
+  class:active={isFolderSelected}
   class:drop-target={dropping}
-  style:padding-left="{depth * 14 + 4}px"
-  style="padding-top: 2px; padding-bottom: 2px; padding-right: 4px;"
+  style:padding-left="{depth * 14 + 12}px"
+  style="padding-top: 2px; padding-bottom: 2px; padding-right: 12px;"
   draggable={dndEnabled}
   ondragstart={(e) => onDragStart(e, folderTgt)}
   ondragend={onDragEnd}
@@ -105,87 +107,82 @@
   >
     <ChevronRight size={15} aria-hidden="true" />
   </span>
-  <div
-    class="tree-row items-center gap-1.5 min-w-0"
-    class:active={isFolderSelected}
-    style="padding: 1px 7px;"
-  >
+  <div class="tree-row-label items-center gap-1.5 min-w-0" style="padding: 1px 7px;">
     {#if isOpen}
-      <FolderOpen size={17} class="shrink-0 text-base-content/60" aria-hidden="true" />
+      <FolderOpen size={17} class="shrink-0 text-accent" aria-hidden="true" />
     {:else}
-      <Folder size={17} class="shrink-0 text-base-content/60" aria-hidden="true" />
+      <Folder size={17} class="shrink-0 text-accent" aria-hidden="true" />
     {/if}
     <span class="truncate text-sm">{folder.name}</span>
   </div>
 </div>
 
 {#if isOpen}
-  {#each kids as k (k.id)}
-    <HomeTreeNode
-      folder={k}
-      depth={depth + 1}
-      {childFolders}
-      {folderDocs}
-      {expanded}
-      {toggle}
-      {selectedRef}
-      {activeSlug}
-      {dndEnabled}
-      {dropKey}
-      {docName}
-      {onSelect}
-      {onOpen}
-      {onContextMenu}
-      {onDragStart}
-      {onDragEnd}
-      {onDragOver}
-      {onDragLeave}
-      {onDrop}
-    />
-  {/each}
-  {#each docs as d (d.document_id)}
-    {@const docTgt = { kind: "doc", doc: d } as InfoTarget}
-    {@const isDocSelected = selectedRef?.kind === "doc" && selectedRef.id === d.document_id}
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div
-      class="tree-row-wrap flex cursor-pointer items-center select-none"
-      style:padding-left="{(depth + 1) * 14 + 4}px"
-      style="padding-top: 2px; padding-bottom: 2px; padding-right: 4px;"
-      draggable={dndEnabled}
-      ondragstart={(e) => onDragStart(e, docTgt)}
-      ondragend={onDragEnd}
-      onclick={(e) => {
-        e.stopPropagation();
-        onSelect(docTgt);
-      }}
-      ondblclick={() => onOpen(docTgt)}
-      oncontextmenu={(e) => onContextMenu(e, docTgt)}
-      role="treeitem"
-      aria-selected={isDocSelected}
-      tabindex="0"
-      onkeydown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen(docTgt);
-        }
-      }}
-    >
-      <span class="shrink-0" style="width: 15px;"></span>
+  <div class="tree-children" style="--guide-x: {depth * 14 + 23}px;">
+    {#each kids as k (k.id)}
+      <HomeTreeNode
+        folder={k}
+        depth={depth + 1}
+        {childFolders}
+        {folderDocs}
+        {expanded}
+        {toggle}
+        {selectedRef}
+        {activeSlug}
+        {dndEnabled}
+        {dropKey}
+        {docName}
+        {onSelect}
+        {onOpen}
+        {onContextMenu}
+        {onDragStart}
+        {onDragEnd}
+        {onDragOver}
+        {onDragLeave}
+        {onDrop}
+      />
+    {/each}
+    {#each docs as d (d.document_id)}
+      {@const docTgt = { kind: "doc", doc: d } as InfoTarget}
+      {@const isDocSelected = selectedRef?.kind === "doc" && selectedRef.id === d.document_id}
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div
-        class="tree-row items-center gap-1.5 min-w-0"
+        class="tree-row-wrap flex cursor-pointer items-center select-none"
         class:active={isDocSelected || activeSlug === d.slug}
-        style="padding: 1px 7px;"
+        style:padding-left="{(depth + 1) * 14 + 12}px"
+        style="padding-top: 2px; padding-bottom: 2px; padding-right: 12px;"
+        draggable={dndEnabled}
+        ondragstart={(e) => onDragStart(e, docTgt)}
+        ondragend={onDragEnd}
+        onclick={(e) => {
+          e.stopPropagation();
+          onSelect(docTgt);
+        }}
+        ondblclick={() => onOpen(docTgt)}
+        oncontextmenu={(e) => onContextMenu(e, docTgt)}
+        role="treeitem"
+        aria-selected={isDocSelected}
+        tabindex="0"
+        onkeydown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen(docTgt);
+          }
+        }}
       >
-        <FileText size={15} class="shrink-0 text-primary" aria-hidden="true" />
-        <span class="truncate text-sm">{docName(d)}</span>
-        {#if d.starred}
-          <Star
-            class="h-3 w-3 shrink-0 text-warning"
-            fill="currentColor"
-            aria-label={t("home.starred")}
-          />
-        {/if}
+        <span class="shrink-0" style="width: 15px;"></span>
+        <div class="tree-row-label items-center gap-1.5 min-w-0" style="padding: 1px 7px;">
+          <FileText size={15} class="shrink-0 text-primary" aria-hidden="true" />
+          <span class="truncate text-sm">{docName(d)}</span>
+          {#if d.starred}
+            <Star
+              class="h-3 w-3 shrink-0 text-warning"
+              fill="currentColor"
+              aria-label={t("home.starred")}
+            />
+          {/if}
+        </div>
       </div>
-    </div>
-  {/each}
+    {/each}
+  </div>
 {/if}

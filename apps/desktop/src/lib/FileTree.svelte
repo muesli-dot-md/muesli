@@ -187,7 +187,10 @@
   );
 </script>
 
-<div class="flex flex-col py-1 px-2">
+<!-- No horizontal padding here — indentation and the sidebar's side gutter
+     are each row's own padding, so the hover/active highlight spans the full
+     width of the sidebar (see .tree-row-wrap in app.css). -->
+<div class="flex flex-col py-1">
   {#each topLevelChildren as child (child.path)}
     <TreeNode
       node={child}
