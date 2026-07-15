@@ -19,7 +19,10 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-tokio-tungstenite = "0.24"
+# rustls (webpki-roots, matching reqwest's rustls-tls below): without a TLS feature,
+# tungstenite fails wss:// connections instantly with Error::Url(TlsFeatureNotEnabled)
+# — the daemon could never reach an https-hosted server (see session.rs tests).
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 notify = "7"
 clap = { version = "4", features = ["derive", "env"] }

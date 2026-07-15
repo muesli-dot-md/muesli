@@ -57,6 +57,10 @@ muesli-cli = { path = "../../../crates/muesli-cli" }
 tokio = { version = "1", features = ["sync"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 dirs = "5"
+# Surfaces muesli-cli's sync-daemon tracing (warn!/info!) when the app runs from a
+# terminal/dev build — without a subscriber those logs are silently dropped (see
+# main.rs; this is how the wss:// TLS-feature bug shipped unnoticed).
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # macOS Voice Processing I/O (AEC + noise suppression + AGC) for the mic
 # ("You" lane). AVAudioEngine's input node exposes setVoiceProcessingEnabled,
