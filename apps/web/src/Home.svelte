@@ -950,7 +950,7 @@
   </button>
 {/snippet}
 
-<div class="flex h-screen flex-col bg-base-200">
+<div class="flex h-screen flex-col bg-[var(--floor)]">
   <div class="flex min-h-0 flex-1">
     <!-- left sidebar (Multica/Linear): workspace selector · search · the active
          workspace's files/folders · Graph pinned at the bottom. The sidebar now

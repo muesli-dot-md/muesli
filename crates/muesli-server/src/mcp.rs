@@ -1898,6 +1898,12 @@ async fn list_document_members(c: &Caller<'_>, args: &Value) -> Result<Value, St
 // stricter posture than the REST inbox (notifications_api.rs) allows — an MCP agent
 // must read ITS OWN inbox — recipient = the agent identity — never its owner's,
 // since a tool call hands the result straight into an LLM's context) ---
+//
+// GET/PATCH /api/me/prefs (prefs_api.rs) is deliberately NOT bridged either, for
+// the same reason: appearance preferences are personal account data, and delegated
+// agent tokens are walled off from personal account data by design
+// (account::authorize_notifications enforces this over REST; a bridge here would
+// hand an agent exactly the owner-scoped access that wall refuses).
 
 fn inbox_user(c: &Caller<'_>) -> Result<Uuid, String> {
     match &c.principal {

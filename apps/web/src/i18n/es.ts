@@ -439,6 +439,22 @@ export const es: Record<keyof Messages, string> = {
   "settings.accent.hint": "Se usa para botones, enlaces y selección.",
   "settings.defaultView.hint": "Cómo la pantalla de inicio lista tus documentos.",
   "settings.language.hint": "Cambia el idioma de la interfaz en este navegador.",
+  // Background tint + folder color (parity with the desktop's Preferences).
+  "settings.background": "Fondo",
+  "settings.background.hint": "Un sutil velo de color sobre el fondo de la aplicación.",
+  "settings.background.tintStrength": "Intensidad del tinte",
+  "settings.background.tintHue": "Tono del tinte",
+  "settings.background.reset": "Restablecer fondo",
+  "settings.background.reset.hint":
+    "Restaura la intensidad y el tono del tinte a los valores predeterminados.",
+  "settings.folderColor": "Color de carpetas",
+  "settings.folderColor.hint":
+    "Color de los iconos de carpeta en el árbol de archivos de la pantalla de inicio.",
+  "settings.folderColor.iconHue": "Tono del icono",
+  "settings.folderColor.reset": "Restablecer color de carpetas",
+  "settings.folderColor.reset.hint": "Restaura el color de carpeta predeterminado.",
+  "settings.resetToDefault": "Restablecer valores predeterminados",
+  "settings.customColor": "Color personalizado",
   "settings.general.name": "Nombre",
   "settings.general.adminOnly":
     "Solo los administradores del espacio pueden cambiar estos ajustes.",
@@ -599,7 +615,8 @@ export const es: Record<keyof Messages, string> = {
   "settings.conn.credsServer": "clave del servidor",
   "settings.conn.sharepoint": "SharePoint",
   "settings.conn.attachSharePoint": "Conectar una biblioteca",
-  "settings.appearance.perBrowser": "Estas preferencias se almacenan en este navegador.",
+  "settings.appearance.perBrowser":
+    "El tema y los colores siguen tu cuenta cuando inicias sesión; el resto de preferencias se quedan en este navegador.",
   "settings.appearance.motionNote":
     "Muesli sigue la configuración de movimiento reducido de tu sistema.",
   "settings.shortcuts.navigation": "Navegación",

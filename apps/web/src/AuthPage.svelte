@@ -47,7 +47,7 @@
 </script>
 
 <main
-  class="flex min-h-screen flex-col items-center justify-center bg-base-200 px-6 text-base-content antialiased"
+  class="flex min-h-screen flex-col items-center justify-center bg-[var(--floor)] px-6 text-base-content antialiased"
 >
   <div class="flex w-full max-w-sm flex-col items-center gap-6">
     <!-- wordmark IS the mark: lowercase Sentient, like the marketing site -->

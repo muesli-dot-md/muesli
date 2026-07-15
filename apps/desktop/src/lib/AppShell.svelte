@@ -34,8 +34,10 @@
   import { commands } from "$lib/commands/registry.svelte";
   import { installKeymap, escapeFallbackTarget } from "$lib/keymap";
   import { theme } from "$lib/theme.svelte";
+  import { accentStore } from "$lib/accent.svelte";
   import { background } from "$lib/background.svelte";
   import { folderColor } from "$lib/folderColor.svelte";
+  import { prefsSync } from "$lib/prefsSync.svelte";
   import { platform } from "$lib/platform.svelte";
   import { docCollab } from "$lib/collab/docCollab.svelte";
   import NotificationsBell from "$lib/notifications/NotificationsBell.svelte";
@@ -214,10 +216,16 @@
 
     // Apply theme early (loads persisted mode, sets data-theme, installs OS listener)
     theme.init();
+    // Apply the persisted accent (--accent-primary* CSS vars).
+    accentStore.init();
     // Apply persisted background (translucency / hue / tint) CSS vars.
     background.init();
     // Apply the persisted folder-icon color CSS var.
     folderColor.init();
+    // Sync theme/accent/tint/folder-color per-user through the server once a
+    // signed-in identity exists (after the local applies above, so a stored
+    // server value wins over the machine-local one at boot).
+    prefsSync.start();
 
     // Seamless updates (spec 2026-07-02 §3): launch check after ~10s + every 4h.
     // Dev builds stay idle (one debug line inside the store).

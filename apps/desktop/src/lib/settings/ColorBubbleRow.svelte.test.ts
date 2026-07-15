@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+// The .svelte.test.ts name is load-bearing: it routes this file through the
+// Svelte compiler so the last test can hold its props in $state and mutate
+// them in place, exercising the component's real $effect resync path.
 // Invariant (round-2 a11y review): the 7 preset bubbles are a pure
 // WAI-ARIA radiogroup — arrow keys move focus AND selection together
 // ("selection follows focus") — while the custom bubble is a separate
@@ -137,18 +140,22 @@ describe("ColorBubbleRow", () => {
   it("syncs the roving tabindex to the checked preset when hue changes externally (e.g. Reset to default)", () => {
     const onSelect = vi.fn();
     // Starts on a custom hue (no preset checked, tabindex defaults to the
-    // first preset), then a fresh render simulates an external "Reset to
-    // default" swapping the bound hue prop straight to a preset — the
-    // roving tabindex must land on that preset, not stay on the first one.
-    let el = render(55, onSelect);
-    let radios = [...el.querySelectorAll('[role="radio"]')] as HTMLButtonElement[];
+    // first preset). The props live in $state so the "Reset to default"
+    // below is a REAL in-place prop mutation on the mounted component —
+    // the $effect resync path itself, not a remount.
+    const props = $state({ presets, hue: 55, onSelect, groupLabel: "Test hue" });
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    component = mount(ColorBubbleRow, { target: host, props });
+    flushSync();
+    const radios = [...host.querySelectorAll('[role="radio"]')] as HTMLButtonElement[];
     expect(radios[0].tabIndex).toBe(0);
 
-    if (component) unmount(component);
-    host?.remove();
-
-    el = render(presets[2].hue, onSelect);
-    radios = [...el.querySelectorAll('[role="radio"]')] as HTMLButtonElement[];
+    // External reset: the bound hue prop jumps straight to a preset — the
+    // roving tabindex must land on that preset, not stay on the first one.
+    props.hue = presets[2].hue;
+    flushSync();
+    expect(radios[2].getAttribute("aria-checked")).toBe("true");
     expect(radios[2].tabIndex).toBe(0);
     expect(radios[0].tabIndex).toBe(-1);
   });

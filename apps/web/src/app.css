@@ -122,10 +122,11 @@
   --noise: 0;
 }
 
-/* Both screens render on bg-base-200; keep the page itself (overscroll, gaps
-   while a chunk loads) on the same token so live theme switches recolor it. */
+/* Both screens render on the tinted floor (see --floor below); keep the page
+   itself (overscroll, gaps while a chunk loads) on the same token so live
+   theme switches recolor it. */
 html {
-  background-color: var(--color-base-200);
+  background-color: var(--floor);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -167,6 +168,19 @@ html {
 [data-theme="muesli"] {
   --color-base-100: oklch(1 0 0); /* cards stay pure white */
   --color-base-200: oklch(0.967 0 0); /* floor / page = neutral gray */
+  /* Tint scoping invariant: the user tint (Settings → Preferences →
+     Background) lives on --floor ONLY — the web's flat counterpart of the
+     desktop's --floor-tint vibrancy wash, which colors the WINDOW floor and
+     nothing else. --floor backs the full-page surfaces (this html element and
+     the top-level screen shells in Home/DocApp/SettingsPage/App/AuthPage/
+     ErrorPage, via bg-[var(--floor)]); everything that merely borrows
+     base-200 — popover/menu hover rows (ContextMenu, WorkspaceMenu,
+     NotificationsBell), kbd chips, code/pre blocks, GraphView — stays on the
+     untinted token above and must never tint. background.svelte.ts sets
+     --floor-c/--floor-h; lightness stays theme-owned (like the desktop's
+     per-theme --floor-l). At tint 0 the store REMOVES both vars, so the
+     fallbacks make --floor compute to exactly --color-base-200. */
+  --floor: oklch(0.967 var(--floor-c, 0) var(--floor-h, 0));
   --color-base-300: oklch(0.9 0 0); /* borders / recessed = neutral */
   --color-base-content: oklch(0.25 0.004 285);
   --lift: oklch(1 0 0); /* active pill = white, lifted by shadow */
@@ -178,6 +192,10 @@ html {
 [data-theme="muesli-dark"] {
   --color-base-100: oklch(0.215 0.002 285); /* cards (lightest neutral) */
   --color-base-200: oklch(0.165 0.001 285); /* floor / near-black neutral */
+  /* Tinted floor — see the muesli block above for the scoping invariant. The
+     fallbacks keep the floor's original whisper of chroma (0.001@285), so at
+     tint 0 --floor computes to exactly --color-base-200. */
+  --floor: oklch(0.165 var(--floor-c, 0.001) var(--floor-h, 285));
   --color-base-300: oklch(0.3 0.002 285); /* borders / recessed */
   --color-base-content: oklch(0.92 0.003 285);
   --lift: oklch(0.315 0.003 285);
@@ -185,6 +203,42 @@ html {
   --text-muted: oklch(0.64 0.003 285);
   --code-bg: oklch(0.25 0.002 285);
   --row-hover: rgba(255, 255, 255, 0.06);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Folder icon color (Settings → Preferences → Folder color) — mirrors the
+   desktop's app.css exactly: --folder-h (default 250 = --arc-accent's own hue)
+   is overridden inline by folderColor.svelte.ts; --folder-l/--folder-c stay
+   per-theme, tracking --arc-accent's own light/dark L and C so a user-chosen
+   hue stays exactly as legible as the built-in accent. Until the store runs
+   this composes to exactly --arc-accent's value, so switching the tree icons
+   from text-accent to --folder-accent changes nothing by default.
+   ────────────────────────────────────────────────────────────────────────── */
+html {
+  --folder-h: 250;
+  --folder-accent: oklch(var(--folder-l, 0.6) var(--folder-c, 0.14) var(--folder-h));
+}
+[data-theme="muesli"] {
+  --folder-l: 0.6;
+  --folder-c: 0.14;
+}
+[data-theme="muesli-dark"] {
+  --folder-l: 0.72;
+  --folder-c: 0.12;
+}
+
+/* Folder glyphs (.folder-glyph on the tree's lucide CLOSED Folder only): the
+   stroke rides currentColor (--folder-accent via the icon's text- class); the
+   interior gets a gentle wash of the SAME hue instead of staying hollow —
+   lucide ships stroke-only paths (svg fill="none"), so the fill is set here in
+   CSS, off the same --folder-accent composition, and therefore tracks a hue
+   change live exactly like the stroke. 18% toward transparent reads as a soft
+   tint over both the light and dark floors without swallowing the outline.
+   FolderOpen must stay stroke-only (no .folder-glyph): its path has no
+   closepath, so a CSS fill implicitly closes it from its endpoint and the
+   shape self-intersects — a visible diagonal seam across every expanded row. */
+.folder-glyph path {
+  fill: color-mix(in oklch, var(--folder-accent) 18%, transparent);
 }
 
 /* --- Interaction polish (impeccable pass) ----------------------------------------

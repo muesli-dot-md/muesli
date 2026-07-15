@@ -217,7 +217,7 @@
 {:else if docError === "generic"}
   <ErrorPage title={t("error.genericTitle")} message={t("error.genericBody")} action="home" />
 {:else}
-  <div class="flex h-screen flex-col bg-base-200">
+  <div class="flex h-screen flex-col bg-[var(--floor)]">
     <header class="navbar min-h-0 border-b border-base-300 bg-base-100 px-4 py-2">
       <div class="flex min-w-0 flex-1 items-center gap-2">
         <button
@@ -388,7 +388,7 @@
       </div>
     </header>
     <Toolbar title={displayTitle} />
-    <main class="flex min-h-0 flex-1 bg-base-200">
+    <main class="flex min-h-0 flex-1 bg-[var(--floor)]">
       <OutlineRail />
       <section class="doc-sheet min-h-0 min-w-0 flex-1">
         <Editor />

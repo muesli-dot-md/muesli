@@ -652,6 +652,38 @@ impl Persistence {
         Ok(res.rows_affected() > 0)
     }
 
+    /// The user's stored preference object (migration 0018). None = no such user.
+    pub async fn get_user_prefs(&self, user_id: Uuid) -> Result<Option<serde_json::Value>> {
+        let row = sqlx::query("select prefs from users where id = $1")
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|r| r.get("prefs")))
+    }
+
+    /// Sparse-merge into users.prefs (PATCH /api/me/prefs): keys in `set` are
+    /// written (overwriting), keys in `delete` are removed — deletion wins when a
+    /// key somehow appears in both, matching "null deletes" (the API layer never
+    /// produces that overlap). Returns the full merged object; None = no such user.
+    /// Last-write-wins, no versioning.
+    pub async fn merge_user_prefs(
+        &self,
+        user_id: Uuid,
+        set: &serde_json::Value,
+        delete: &[String],
+    ) -> Result<Option<serde_json::Value>> {
+        let row = sqlx::query(
+            "update users set prefs = (prefs || $2::jsonb) - $3::text[]
+             where id = $1 returning prefs",
+        )
+        .bind(user_id)
+        .bind(set)
+        .bind(delete)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| r.get("prefs")))
+    }
+
     /// The user's primary workspace if any (personal first, then oldest). BYO storage:
     /// nothing may auto-create workspaces anymore, so this is a lookup only — callers
     /// that used to fall back to auto-creation now surface "no workspace" to the user.

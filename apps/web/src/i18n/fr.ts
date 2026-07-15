@@ -441,6 +441,21 @@ export const fr: Record<keyof Messages, string> = {
   "settings.accent.hint": "Utilisé pour les boutons, les liens et la sélection.",
   "settings.defaultView.hint": "Comment l'écran d'accueil liste vos documents.",
   "settings.language.hint": "Change la langue de l'interface dans ce navigateur.",
+  // Background tint + folder color (parity with the desktop's Preferences).
+  "settings.background": "Arrière-plan",
+  "settings.background.hint": "Un léger voile de couleur sur l'arrière-plan de l'application.",
+  "settings.background.tintStrength": "Intensité de la teinte",
+  "settings.background.tintHue": "Nuance de la teinte",
+  "settings.background.reset": "Réinitialiser l'arrière-plan",
+  "settings.background.reset.hint": "Restaure l'intensité et la nuance de la teinte par défaut.",
+  "settings.folderColor": "Couleur des dossiers",
+  "settings.folderColor.hint":
+    "Couleur des icônes de dossier dans l'arborescence de l'écran d'accueil.",
+  "settings.folderColor.iconHue": "Nuance de l'icône",
+  "settings.folderColor.reset": "Réinitialiser la couleur des dossiers",
+  "settings.folderColor.reset.hint": "Restaure la couleur de dossier par défaut.",
+  "settings.resetToDefault": "Réinitialiser",
+  "settings.customColor": "Couleur personnalisée",
   "settings.general.name": "Nom",
   "settings.general.adminOnly":
     "Seuls les administrateurs de l'espace peuvent modifier ces paramètres.",
@@ -602,7 +617,8 @@ export const fr: Record<keyof Messages, string> = {
   "settings.conn.credsServer": "clé du serveur",
   "settings.conn.sharepoint": "SharePoint",
   "settings.conn.attachSharePoint": "Attacher une bibliothèque",
-  "settings.appearance.perBrowser": "Ces préférences sont stockées dans ce navigateur.",
+  "settings.appearance.perBrowser":
+    "Le thème et les couleurs suivent votre compte lorsque vous êtes connecté ; les autres préférences restent dans ce navigateur.",
   "settings.appearance.motionNote":
     "Muesli respecte le paramètre de mouvement réduit de ton système.",
   "settings.shortcuts.navigation": "Navigation",
