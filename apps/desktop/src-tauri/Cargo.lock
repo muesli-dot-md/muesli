@@ -2843,6 +2843,7 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
+ "trash",
  "uuid",
 ]
 

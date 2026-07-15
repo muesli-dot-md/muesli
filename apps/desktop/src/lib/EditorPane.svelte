@@ -177,7 +177,11 @@
 
   // If sync is unreachable, seed the editor from disk after this long so the
   // file's content always shows and never gets clobbered by an empty Y.Doc.
-  const SEED_FALLBACK_MS = 2000;
+  // The window can be short: a live daemon bridge answers from its in-memory
+  // replica over IPC in milliseconds (even while the server socket is down —
+  // see FileSession::serve_bridge_offline), so waiting longer only prolongs
+  // the blank pane in the genuinely-dead cases.
+  const SEED_FALLBACK_MS = 600;
 
   const activeTab = $derived(tabs.active());
   const isReadMode = $derived(activeTab?.mode === "read");
@@ -299,10 +303,10 @@
       }
     }, 500);
 
-    // Register flush so tab close saves immediately
-    tabs.registerFlush(id, () => {
-      saver.flush().catch(() => {});
-    });
+    // Register flush so tab close saves immediately; returns the write promise so
+    // tabs.flush(id) callers (rename/move) can await the disk write before touching
+    // the file.
+    tabs.registerFlush(id, () => saver.flush().catch(() => {}));
     currentSaver = saver;
 
     if (useTauriSync || useWsSync) {
@@ -331,11 +335,13 @@
         // Tier-2: attach to the daemon's CRDT replica via Tauri IPC.
         // The daemon's reconcile() is the duplication-safe disk-seed authority: it seeds
         // disk→replica only when the server room is empty, after learning server state.
-        // The editor must NOT seed from disk here — if it seeded in the narrow window
-        // after clone/daemon-start but before the daemon's first server sync (replica
-        // still empty), the same text would land twice as CRDT-distinct ops and merge
-        // into duplicated content. Tradeoff: opening a synced note while the daemon is
-        // still offline shows empty until the first sync.
+        // The editor must NOT seed from disk while the bridge can still deliver a
+        // snapshot — if it seeded in the narrow window after clone/daemon-start but
+        // before the daemon's first server sync (replica still empty), the same text
+        // would land twice as CRDT-distinct ops and merge into duplicated content.
+        // The seed fallback below therefore SEVERS the transport first; the prefetch
+        // just has the disk text ready so the fallback applies with no extra wait.
+        const diskPrefetch: Promise<string | null> = readNote(path).catch(() => null);
         // createTauriSession is async; capture session once resolved.
         createTauriSession({ path, identity: presenceIdentity })
           .then((sess) => {
@@ -399,11 +405,46 @@
               markReady();
             });
 
-            seedTimer = setTimeout(() => {
-              seedTimer = null;
-              if (destroyed) return;
-              markReady();
-            }, SEED_FALLBACK_MS);
+            // A dark bridge must NOT leave the empty CRDT as the autosave source:
+            // marking it ready blank is exactly how a healthy on-disk file got
+            // clobbered with "" after a tab switch. Sever the transport first (after
+            // this no late snapshot can merge a duplicate copy), then seed the editor
+            // from the file on disk and go local-only. Tier-1 keeps syncing the file
+            // through the daemon's watcher; live collab returns the next time the
+            // note is opened with the bridge reachable.
+            const seedFromDiskLocalOnly = () => {
+              if (destroyed || ready) return;
+              sess.sever?.();
+              // The pane is deliberately local-only now — don't leave the StatusBar
+              // stuck on the "connecting" set at attach time.
+              if (tabs.activeId === id) syncStatus.set(null);
+              void diskPrefetch
+                // Prefetch failed (transient read error) → one direct retry before
+                // concluding the file is truly unreadable; only then may an empty
+                // doc become the autosave source.
+                .then((text) => text ?? readNote(path).catch(() => null))
+                .then((text) => {
+                  if (destroyed || ready) return;
+                  if (text !== null && sess.ytext.length === 0 && text.length > 0) {
+                    sess.ytext.insert(0, text);
+                  }
+                  markReady();
+                });
+            };
+
+            if (sess.live === false) {
+              // The daemon answered at attach time: no snapshot is coming (no linked
+              // session, or it has never synced this run). Seed from disk NOW — the
+              // fallback timer would only prolong a blank pane.
+              seedFromDiskLocalOnly();
+            } else {
+              // Bridge reported live (or the report timed out): a snapshot arrives
+              // over IPC within milliseconds; the timer is the safety net.
+              seedTimer = setTimeout(() => {
+                seedTimer = null;
+                seedFromDiskLocalOnly();
+              }, SEED_FALLBACK_MS);
+            }
           })
           .catch(() => {
             // attachEditor failed (daemon stopped between decision and call) — fall
@@ -545,8 +586,18 @@
         stopCollab = null;
       }
       docCollab.reset();
-      // Flush pending save before tearing the session down.
-      saver.flush().catch(() => {});
+      // Flush pending save before tearing the session down — but only while a tab still
+      // exists under this id. After a rename/move retarget the id is gone, and a flush
+      // here would write to the OLD path, recreating the just-renamed file — so that
+      // path CANCELS instead: skipping alone would leave the debounce timer armed, and
+      // its late write (re-armed by any change, including remote collab updates) would
+      // resurrect the old file anyway. (Tab close is covered: closeTab invokes the
+      // registered flush before removing the tab.)
+      if (tabs.tabs.some((t) => t.id === id)) {
+        saver.flush().catch(() => {});
+      } else {
+        saver.cancel();
+      }
       if (currentSaver === saver) currentSaver = null;
       if (view) {
         view.destroy();

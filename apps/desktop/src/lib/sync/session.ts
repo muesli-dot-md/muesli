@@ -35,6 +35,19 @@ export interface Session {
   onSynced(cb: () => void): void;
   /** Subscribe to connection-status changes. */
   onStatus(cb: (s: SyncStatus) => void): void;
+  /**
+   * Cut the transport but keep the Y.Doc/awareness alive for local-only editing
+   * (Tier-2 only): after sever() no frames leave or arrive, so the doc can be
+   * seeded from disk with no risk of a late replica snapshot merging a duplicate.
+   * The legacy websocket session does not implement it.
+   */
+  sever?(): void;
+  /**
+   * Tier-2 only: whether the daemon reported the bridge LIVE at attach time (a
+   * linked session that has synced this run). `false` means no snapshot is coming
+   * — sever and seed from disk immediately instead of waiting on the fallback.
+   */
+  live?: boolean;
   destroy(): void;
 }
 

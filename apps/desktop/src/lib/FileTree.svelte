@@ -38,19 +38,36 @@
   let moveTarget = $state<{ path: string; name: string } | null>(null);
   let infoTarget = $state<{ path: string; name: string } | null>(null);
 
+  // Finder-style creation: make the entry with a default name, then drop straight into
+  // the existing inline-rename flow. window.prompt() is NOT an option here — wry's
+  // WKWebView implements no JS text-input panel, so prompt() returns null and the old
+  // prompt-based flow silently did nothing on macOS.
   async function newNoteIn(dir: string) {
-    const name = window.prompt("Note name (e.g. My Note.md):");
-    if (!name?.trim()) return;
-    const newPath = await createNote(dir, name.trim());
-    await workspace.refresh();
-    onOpen(newPath);
+    try {
+      const newPath = await createNote(dir, "Untitled.md");
+      workspace.expandedPaths.add(dir);
+      await workspace.refresh();
+      pendingRename = newPath;
+    } catch (err) {
+      console.error("[create] new note failed", err);
+    }
   }
 
   async function newFolderIn(dir: string) {
-    const name = window.prompt("Folder name:");
-    if (!name?.trim()) return;
-    await createFolder(dir, name.trim());
-    await workspace.refresh();
+    try {
+      const newPath = await createFolder(dir, "New folder");
+      workspace.expandedPaths.add(dir);
+      await workspace.refresh();
+      pendingRename = newPath;
+    } catch (err) {
+      console.error("[create] new folder failed", err);
+    }
+  }
+
+  /** Enter inline-rename mode for `path` (also used by AppShell's toolbar "new folder",
+   *  which creates at the workspace root and then hands the naming off to the tree). */
+  export function startRename(path: string) {
+    pendingRename = path;
   }
 
   /** Open in the current tab (activates the existing tab if already open). */

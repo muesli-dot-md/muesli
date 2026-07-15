@@ -99,6 +99,9 @@
   // the sidebar collapses, the workspace tree unmounts, or the shell unmounts.
   let treeScrollEl = $state<HTMLDivElement | null>(null);
   let treeSentinelEl = $state<HTMLDivElement | null>(null);
+  // FileTree instance — the toolbar's "new folder" hands the freshly-created path to the
+  // tree's inline-rename flow (see handleNewFolder).
+  let fileTree = $state<{ startRename: (path: string) => void } | null>(null);
   let treeScrolled = $state(false);
 
   $effect(() => {
@@ -192,7 +195,19 @@
 
   let removeKeymap: (() => void) | null = null;
 
+  // Tauri's native drag-drop interception is disabled (tauri.conf.json
+  // dragDropEnabled: false) so the tree's HTML5 drag-and-drop works — the native
+  // handler swallows dragover/drop inside the WKWebView. With it off, a file
+  // dragged in from Finder would hit the webview's default behavior (navigating
+  // away from the app), so cancel any drag the tree's own handlers didn't take.
+  function cancelWindowDnd(e: DragEvent) {
+    e.preventDefault();
+  }
+
   onMount(async () => {
+    window.addEventListener("dragover", cancelWindowDnd);
+    window.addEventListener("drop", cancelWindowDnd);
+
     // Apply theme early (loads persisted mode, sets data-theme, installs OS listener)
     theme.init();
     // Apply persisted background (translucency / hue / tint) CSS vars.
@@ -367,6 +382,8 @@
   });
 
   onDestroy(() => {
+    window.removeEventListener("dragover", cancelWindowDnd);
+    window.removeEventListener("drop", cancelWindowDnd);
     removeKeymap?.();
     updates.stop();
   });
@@ -396,11 +413,16 @@
   }
 
   async function handleNewFolder() {
-    const name = window.prompt("Folder name:");
-    if (!name?.trim()) return;
     if (!workspace.root) return;
-    await createFolder(workspace.root, name.trim());
-    await workspace.refresh();
+    // Finder-style: create with a default name, then let the tree's inline rename take
+    // over (window.prompt is a silent no-op in the WKWebView — never use it here).
+    try {
+      const newPath = await createFolder(workspace.root, "New folder");
+      await workspace.refresh();
+      fileTree?.startRename(newPath);
+    } catch (err) {
+      console.error("[create] new folder failed", err);
+    }
   }
 
   // --- first-launch onboarding (BYO storage phase 3) --------------------------------
@@ -664,7 +686,7 @@
         {#if workspace.tree}
           <div class="tree-scroll flex-1 text-sm overflow-y-auto" bind:this={treeScrollEl}>
             <div bind:this={treeSentinelEl} aria-hidden="true"></div>
-            <FileTree tree={workspace.tree} {activePath} onOpen={handleOpen} />
+            <FileTree bind:this={fileTree} tree={workspace.tree} {activePath} onOpen={handleOpen} />
           </div>
         {:else}
           <div class="flex-1 px-2 text-sm text-base-content/40 italic py-4">No workspace open</div>

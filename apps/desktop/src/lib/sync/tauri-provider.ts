@@ -143,6 +143,8 @@ function handleInboundFrame(provider: TauriProviderInternal, frameBytes: Uint8Ar
 export function makeTauriProvider(opts: MakeTauriProviderOpts): TauriProviderInternal & {
   /** Return a Session-compatible interface. */
   toSession(): Session;
+  /** Cut the transport, keep the doc alive (see the inner sever()). */
+  sever(): void;
   destroy(): void;
 } {
   const { doc: ydoc, path, identity, send, subscribe } = opts;
@@ -212,15 +214,23 @@ export function makeTauriProvider(opts: MakeTauriProviderOpts): TauriProviderInt
   // Send SyncStep1 so the remote peer replies with SyncStep2
   sendSyncStep1(send, ydoc);
 
-  function destroy() {
-    // Broadcast departure before tearing down
-    awarenessProtocol.removeAwarenessStates(awareness, [ydoc.clientID], "local");
+  /** Cut the transport only: no frames leave or arrive after this, but the Y.Doc,
+   *  text and awareness stay alive for local-only editing. Used by the editor's
+   *  seed fallback when the bridge never syncs — a severed doc can be seeded from
+   *  disk without the risk of a late replica snapshot merging in a duplicate copy. */
+  function sever() {
     ydoc.off("update", provider._docUpdateHandler);
     awareness.off("update", provider._awarenessHandler);
     if (provider._unlisten) {
       provider._unlisten();
       provider._unlisten = null;
     }
+  }
+
+  function destroy() {
+    // Broadcast departure before tearing down
+    awarenessProtocol.removeAwarenessStates(awareness, [ydoc.clientID], "local");
+    sever();
     awareness.destroy();
     ydoc.destroy();
   }
@@ -245,11 +255,12 @@ export function makeTauriProvider(opts: MakeTauriProviderOpts): TauriProviderInt
         // Immediately deliver current status
         cb(provider._status);
       },
+      sever,
       destroy,
     };
   }
 
-  return Object.assign(provider, { toSession, destroy });
+  return Object.assign(provider, { toSession, sever, destroy });
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -270,20 +281,40 @@ export async function createTauriSession(opts: CreateTauriSessionOpts): Promise<
 
   const doc = new Y.Doc();
 
-  // Tell the daemon to open the bridge for this file
-  await attachEditor(path);
-
   // Map of per-path inbound handlers (filtered by path inside the shared listener)
   let inboundHandler: ((frame: Uint8Array) => void) | null = null;
+  // Frames that arrive before makeTauriProvider registers its handler (the daemon
+  // bootstraps a fresh attach with SyncStep1 while the attach invoke is still in
+  // flight) are buffered and drained on subscribe — never dropped.
+  let preSubscribe: Uint8Array[] = [];
 
   // onEditorFrame subscribes to the Tauri `editor://frame` event globally;
-  // we filter by path inside the subscribe callback.
+  // we filter by path inside the subscribe callback. The listener MUST be live
+  // before attachEditor: Tauri events are not replayed for listeners registered
+  // later — attaching first would lose the daemon's bootstrap frame outright.
   const unlistenOuter = await onEditorFrame((evt) => {
     if (evt.path !== path) return;
+    const frame = new Uint8Array(evt.frame);
     if (inboundHandler) {
-      inboundHandler(new Uint8Array(evt.frame));
+      inboundHandler(frame);
+    } else {
+      preSubscribe.push(frame);
     }
   });
+
+  // Tell the daemon to open the bridge for this file. The reply says whether the
+  // bridge is LIVE (linked session that has synced this run): a dead bridge stays
+  // silent, so the editor should seed from disk right away instead of waiting.
+  // On failure, release what we hold — the global listener and the Y.Doc would
+  // otherwise leak once per failed open.
+  let live: boolean;
+  try {
+    live = (await attachEditor(path)) === true;
+  } catch (err) {
+    unlistenOuter();
+    doc.destroy();
+    throw err;
+  }
 
   const transport: TauriTransport = {
     send: (frame: Uint8Array) => {
@@ -293,6 +324,10 @@ export async function createTauriSession(opts: CreateTauriSessionOpts): Promise<
     },
     subscribe: (handler: (frame: Uint8Array) => void) => {
       inboundHandler = handler;
+      // Deliver anything the daemon sent while the attach invoke was in flight.
+      const buffered = preSubscribe;
+      preSubscribe = [];
+      for (const frame of buffered) handler(frame);
       return () => {
         inboundHandler = null;
       };
@@ -308,8 +343,16 @@ export async function createTauriSession(opts: CreateTauriSessionOpts): Promise<
   });
 
   const session = providerWithSession.toSession();
+  session.live = live;
 
-  // Wrap destroy to also call detachEditor and remove the outer listener
+  // Wrap sever/destroy to also drop the outer listener and detach the daemon bridge.
+  // Both are idempotent: a destroy after a sever repeats only no-ops.
+  const originalSever = session.sever?.bind(session);
+  session.sever = () => {
+    originalSever?.();
+    unlistenOuter();
+    detachEditor(path).catch(() => {});
+  };
   const originalDestroy = session.destroy.bind(session);
   session.destroy = () => {
     originalDestroy();

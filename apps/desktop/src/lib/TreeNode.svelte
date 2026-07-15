@@ -2,6 +2,7 @@
   import { ChevronRight, Folder, FolderOpen, FileText } from "lucide-svelte";
   import type { WorkspaceNode } from "$lib/tauri";
   import { workspace } from "$lib/workspace.svelte";
+  import { tabs } from "$lib/tabs.svelte";
   import { renamePath, deletePath, movePath } from "$lib/tauri";
   import { sortNodes } from "$lib/sortNodes";
   import { dnd } from "$lib/dnd.svelte";
@@ -95,11 +96,16 @@
     e.preventDefault();
     e.stopPropagation();
     dragOver = false;
-    const src = e.dataTransfer?.getData("text/plain") || dnd.draggingPath || "";
+    // Only the shared drag state is authoritative: with native drag-drop interception
+    // off, ANY text/plain drag (a dragged editor selection, content from another app)
+    // reaches this handler, and its payload must not be mistaken for a tree path.
+    const src = dnd.draggingPath ?? "";
     dnd.draggingPath = null;
-    if (!isValidDrop(src)) return;
+    if (!src || !isValidDrop(src)) return;
     try {
-      await movePath(src, node.path);
+      await tabs.flush(src);
+      const newPath = await movePath(src, node.path);
+      tabs.retarget(src, newPath);
       workspace.expandedPaths.add(node.path);
       await workspace.refresh();
     } catch (err) {
@@ -140,20 +146,36 @@
     }
   }
 
+  // Guards commitRename against re-entry: Enter and the input's blur both commit, and
+  // a successful commit unmounts the input (which fires blur) — without the guard the
+  // second call renames again ("target already exists") on a node about to be re-keyed.
+  let renameCommitting = false;
+
   async function commitRename() {
+    if (!renaming || renameCommitting) return;
     const newName = renameValue.trim();
     if (!newName || newName === node.name) {
       renaming = false;
       onRenameDone();
       return;
     }
+    renameCommitting = true;
     try {
-      await renamePath(node.path, newName);
+      // Persist any pending autosave to the OLD path first: after the rename, a late
+      // debounced write would recreate the old filename on disk (the "rename doesn't
+      // stick" bug). flush() is a no-op when nothing is pending.
+      await tabs.flush(node.path);
+      const newPath = await renamePath(node.path, newName);
+      // Follow open tabs (and, for a folder, everything under it) to the new path so
+      // the editor remounts against the renamed file instead of resurrecting the old one.
+      tabs.retarget(node.path, newPath);
       await workspace.refresh();
       renaming = false;
       onRenameDone();
     } catch (err) {
       renameError = String(err);
+    } finally {
+      renameCommitting = false;
     }
   }
 
@@ -267,6 +289,7 @@
             }
             if (e.key === "Escape") cancelRename();
           }}
+          onblur={() => void commitRename()}
         />
         {#if renameError}
           <p class="text-error text-xs">{renameError}</p>

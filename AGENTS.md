@@ -60,7 +60,7 @@ cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo clippy --all-targets --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
 ```
 
-Headless integration scripts (plain Node 22 type-stripping, no build step) live in
+Headless integration scripts (plain Node 22+ type-stripping, no build step) live in
 `apps/web/scripts/`; the fast ones are `md-commands-test.mjs`, `live-preview-test.mjs`,
 `render-test.mjs`. The `*-e2e.mjs` scripts need `docker compose up -d` and spawn their
 own server on ports 8790+ — never against the dev server.

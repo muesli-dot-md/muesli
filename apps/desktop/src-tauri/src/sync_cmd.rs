@@ -59,18 +59,27 @@ pub fn workspace_sync_status(daemon: State<'_, DaemonHandle>) -> DaemonStatusVie
 
 /// Attach the open editor at `path` to the daemon's replica (Tier-2). Builds the IPC bridge,
 /// registers the editor→daemon channel, spawns the daemon→editor forwarder, and tells the
-/// daemon to attach. Returns Ok even if the daemon isn't running (the attach is a no-op then).
+/// daemon to attach. Returns whether the bridge is LIVE — a linked session exists and has
+/// synced this run — so the editor can seed from disk immediately instead of waiting out a
+/// fallback timer when the answer is no. A slow daemon (reply timeout) reads as live: the
+/// editor's timer still covers that case, and a false "dead" would needlessly sever a
+/// working bridge.
 #[tauri::command]
-pub fn attach_editor(
+pub async fn attach_editor(
     app: AppHandle,
     path: String,
     daemon: State<'_, DaemonHandle>,
     bridges: State<'_, EditorBridges>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let pb = PathBuf::from(&path);
     let bridge = editor_bridge::build_bridge(&app, &bridges, &pb);
-    daemon.attach_editor(pb, bridge);
-    Ok(())
+    let live_rx = daemon.attach_editor(pb, bridge);
+    let live = match tokio::time::timeout(std::time::Duration::from_millis(250), live_rx).await {
+        Ok(Ok(live)) => live,
+        Ok(Err(_)) => false, // daemon dropped the channel (stopping) — treat as dead
+        Err(_) => true,      // timeout: optimistic; the editor's fallback timer guards
+    };
+    Ok(live)
 }
 
 /// Detach the editor at `path`: tell the daemon to drop the bridge and forget our channels.

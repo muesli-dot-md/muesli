@@ -6,7 +6,7 @@
 //! delta), ingests disk edits as text diffs, and materializes remote edits atomically.
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -75,6 +75,11 @@ pub struct SyncShared {
     doc_hashes: Mutex<HashMap<String, u64>>,
     events: AtomicU64,
     last_activity: Mutex<Option<String>>,
+    /// Docs whose session completed at least one server sync handshake this run. The
+    /// embedder's attach path consults this to tell an editor synchronously whether the
+    /// bridge can serve a snapshot (a never-synced replica stays silent — see
+    /// serve_bridge_offline) or the editor should seed from disk without waiting.
+    synced_docs: Mutex<HashSet<String>>,
 }
 
 impl Default for SyncShared {
@@ -89,7 +94,23 @@ impl SyncShared {
             doc_hashes: Mutex::new(HashMap::new()),
             events: AtomicU64::new(0),
             last_activity: Mutex::new(None),
+            synced_docs: Mutex::new(HashSet::new()),
         }
+    }
+    /// Record that `doc_id`'s session completed a server sync handshake this run.
+    pub fn mark_synced(&self, doc_id: &str) {
+        self.synced_docs.lock().unwrap().insert(doc_id.to_string());
+    }
+    /// Whether `doc_id`'s session has synced at least once this run (its replica holds
+    /// room-derived state and can serve an editor even while the socket is down).
+    pub fn is_synced(&self, doc_id: &str) -> bool {
+        self.synced_docs.lock().unwrap().contains(doc_id)
+    }
+    /// Forget a doc's synced marker. A respawned session (rename/move re-bind) starts
+    /// with a PRISTINE replica: until its next handshake it must not report a live
+    /// bridge, or an editor would wait on a snapshot that cannot come.
+    pub fn clear_synced(&self, doc_id: &str) {
+        self.synced_docs.lock().unwrap().remove(doc_id);
     }
     pub fn set_hash(&self, doc_id: &str, text: &str) {
         self.doc_hashes
@@ -164,6 +185,7 @@ impl SessionCtx {
             SessionMode::Sync { label, shared } => {
                 println!("✓ synced {label} ⇄ #{}", self.doc_id);
                 shared.note(format!("synced {label}"));
+                shared.mark_synced(&self.doc_id);
                 let _ = store::touch_synced(&self.file);
             }
         }
@@ -253,13 +275,134 @@ impl FileSession {
                     attempts += 1;
                     let delay = Duration::from_secs(2u64.pow(attempts.min(5)).min(30));
                     warn!(%e, "connection lost — reconnecting in {:?}", delay);
-                    tokio::select! {
-                        _ = tokio::time::sleep(delay) => {}
-                        res = stop_rx.changed() => {
-                            let stop = if res.is_err() { Stop::Flush } else { *stop_rx.borrow() };
-                            if stop != Stop::Run {
-                                return Ok(SessionOutcome::Stopped(stop));
+                    // The backoff is not dead time: an attached editor keeps getting served
+                    // from the in-memory replica (local-first — the server socket being
+                    // down must not blank the editor).
+                    if let Some(outcome) = self
+                        .serve_bridge_offline(delay, stop_rx, bridge_ctl_rx)
+                        .await
+                    {
+                        return Ok(outcome);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Serve an attached editor from the in-memory replica while the server socket is
+    /// down (the reconnect backoff window). Bridge STEP1s get STEP2 replies, editor
+    /// updates apply to the replica and materialize to disk (debounced), so the editor
+    /// syncs instantly over IPC with no server at all.
+    ///
+    /// ONLY for a session that has synced at least once (`announced`): a pristine
+    /// replica must stay silent — answering STEP1 with an empty state would make the
+    /// editor treat an empty doc as the synced truth (the disk-clobber hazard); silence
+    /// lets the editor's own fallback seed from the file on disk instead. Server-bound
+    /// deltas are dropped here: the reconnect handshake (STEP1 with our state vector)
+    /// carries every accumulated change. Dirty state is flushed to disk on every exit
+    /// except `Stop::Drop` — the first-sync reconcile ingests DISK over the replica, so
+    /// leaving offline edits unmaterialized would revert them at reconnect.
+    ///
+    /// Returns `Some(outcome)` when a stop was requested, `None` when the backoff
+    /// expired and the caller should try to reconnect.
+    async fn serve_bridge_offline(
+        &mut self,
+        delay: Duration,
+        stop_rx: &mut watch::Receiver<Stop>,
+        bridge_ctl_rx: &mut mpsc::UnboundedReceiver<BridgeCmd>,
+    ) -> Option<SessionOutcome> {
+        let ctx = &self.ctx;
+        let file = ctx.file.as_path();
+        let replica = &self.replica;
+        let last_written = &mut self.last_written;
+        let announced = self.announced;
+        let bridge = &mut self.bridge;
+
+        let deadline = tokio::time::Instant::now() + delay;
+        let mut dirty = false;
+        macro_rules! flush_dirty {
+            () => {
+                if dirty {
+                    let text = replica.materialize();
+                    if text != *last_written && atomic_write(file, &text).is_ok() {
+                        *last_written = text;
+                        ctx.note_text(last_written);
+                        ctx.on_materialize();
+                    }
+                }
+            };
+        }
+
+        // An editor may already be attached from before the disconnect (or from the
+        // pre-connect window, where attaches are stored without a bootstrap): offer it
+        // the replica now. A repeated STEP1 is harmless — the editor just replies.
+        if announced {
+            if let Some(b) = bridge.as_ref() {
+                let _ = b
+                    .outbound
+                    .send(frame_sync(SYNC_STEP1, &replica.state_vector()));
+            }
+        }
+
+        let materialize_timer = tokio::time::sleep(Duration::from_secs(86_400 * 365));
+        tokio::pin!(materialize_timer);
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => {
+                    flush_dirty!();
+                    return None;
+                }
+                res = stop_rx.changed() => {
+                    let stop = if res.is_err() { Stop::Flush } else { *stop_rx.borrow() };
+                    if stop != Stop::Run {
+                        if stop != Stop::Drop {
+                            flush_dirty!();
+                        }
+                        return Some(SessionOutcome::Stopped(stop));
+                    }
+                }
+                Some(cmd) = bridge_ctl_rx.recv() => {
+                    match cmd {
+                        BridgeCmd::Attach(b) => {
+                            if announced {
+                                let _ = b
+                                    .outbound
+                                    .send(frame_sync(SYNC_STEP1, &replica.state_vector()));
                             }
+                            *bridge = Some(b);
+                        }
+                        BridgeCmd::Detach => *bridge = None,
+                    }
+                }
+                frame = async {
+                    match bridge.as_mut() {
+                        Some(b) => b.inbound.recv().await,
+                        None => std::future::pending().await,
+                    }
+                }, if announced => {
+                    let Some(frame) = frame else { *bridge = None; continue };
+                    let fo = handle_frame(replica, &frame, &mut dirty);
+                    if let (Some(b), Some(reply)) = (bridge.as_ref(), fo.reply) {
+                        let _ = b.outbound.send(reply);
+                    }
+                    // fo.delta (server-bound) and fo.awareness (presence relay) are
+                    // dropped: no socket — the reconnect handshake resyncs content.
+                    if dirty {
+                        materialize_timer
+                            .as_mut()
+                            .reset(tokio::time::Instant::now() + MATERIALIZE_DEBOUNCE);
+                    }
+                }
+                () = &mut materialize_timer, if dirty => {
+                    dirty = false;
+                    let text = replica.materialize();
+                    if text != *last_written {
+                        if let Err(e) = atomic_write(file, &text) {
+                            warn!(%e, "offline materialize failed");
+                        } else {
+                            *last_written = text;
+                            ctx.note_text(last_written);
+                            ctx.on_materialize();
                         }
                     }
                 }
@@ -618,6 +761,18 @@ fn reconcile(
         info!("materialized room state → {}", file.display());
         return Ok(None);
     }
+    if disk_text == *last_written {
+        // The file holds exactly what we last wrote — nothing external happened. The
+        // divergence is replica-side (remote ops merged during this handshake, or
+        // offline editor edits whose exit flush failed): ingesting the stale disk
+        // would REVERT those changes and push the reversion to the server.
+        // Materialize the replica over the file instead; the connect handshake
+        // already carries the replica's ops, so there is nothing to send.
+        atomic_write(file, &room_text)?;
+        *last_written = room_text;
+        info!("materialized replica-side changes → {}", file.display());
+        return Ok(None);
+    }
     // Both non-empty and divergent: the disk edit happened while we weren't watching —
     // merge it as an out-of-band ingest (CRDT merge, one coherent change; never discard).
     let sv = replica.state_vector();
@@ -740,6 +895,172 @@ mod tests {
         server.apply_update(&base).unwrap();
         server.apply_update(&delta).unwrap();
         assert_eq!(server.materialize(), "hi there");
+    }
+
+    /// disk == last_written means nothing external happened: replica-side changes
+    /// (remote ops merged in this handshake, or offline edits whose flush failed) must
+    /// be materialized OVER the file — never reverted by ingesting the stale disk.
+    #[test]
+    fn reconcile_keeps_replica_side_changes_when_disk_unchanged() {
+        let tmp = std::env::temp_dir().join(format!("muesli-reconcile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let file = tmp.join("n.md");
+        std::fs::write(&file, "base").unwrap();
+
+        let replica = MuesliDoc::with_text("base");
+        replica.ingest("base plus offline edit");
+        let mut last_written = "base".to_string();
+
+        let update = reconcile(&replica, "base", &file, &mut last_written).unwrap();
+        assert!(update.is_none(), "no out-of-band ingest to push");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "base plus offline edit",
+            "replica-side changes reach disk"
+        );
+        assert_eq!(last_written, "base plus offline edit");
+        assert_eq!(
+            replica.materialize(),
+            "base plus offline edit",
+            "the replica is never reverted to stale disk text"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn offline_test_session(file: PathBuf) -> FileSession {
+        FileSession::new(SessionCtx {
+            file,
+            doc_id: "doc-offline".into(),
+            server: "http://unreachable.invalid".into(),
+            url: "ws://unreachable.invalid/ws/doc-offline".into(),
+            token: None,
+            mode: SessionMode::Open {
+                web: "http://unreachable.invalid".into(),
+            },
+        })
+    }
+
+    /// Decode (msg subtype, payload) of a MSG_SYNC frame.
+    fn sync_frame_parts(frame: &[u8]) -> Option<(u64, Vec<u8>)> {
+        let mut c = Cursor::new(frame);
+        if c.read_var_u64().ok()? != MSG_SYNC {
+            return None;
+        }
+        let sub = c.read_var_u64().ok()?;
+        c.read_bytes().ok().map(|b| (sub, b.to_vec()))
+    }
+
+    /// A pristine (never-synced) session must not answer an offline editor: replying
+    /// STEP2 from an empty replica would make the editor treat an empty doc as the
+    /// synced truth (the disk-clobber hazard). Silence → the editor seeds from disk.
+    #[tokio::test]
+    async fn offline_bridge_stays_silent_before_first_sync() {
+        let tmp = std::env::temp_dir().join(format!("muesli-offline-a-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let file = tmp.join("a.md");
+        std::fs::write(&file, "on disk").unwrap();
+
+        let mut session = offline_test_session(file.clone());
+        let (_stop_tx, mut stop_rx) = watch::channel(Stop::Run);
+        let (ctl_tx, mut ctl_rx) = mpsc::unbounded_channel();
+        let (in_tx, in_rx) = mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+        ctl_tx
+            .send(BridgeCmd::Attach(EditorBridge {
+                inbound: in_rx,
+                outbound: out_tx,
+            }))
+            .unwrap();
+        in_tx
+            .send(frame_sync(SYNC_STEP1, &MuesliDoc::new().state_vector()))
+            .unwrap();
+
+        let outcome = session
+            .serve_bridge_offline(Duration::from_millis(150), &mut stop_rx, &mut ctl_rx)
+            .await;
+        assert!(outcome.is_none(), "backoff expiry returns None (reconnect)");
+        assert!(
+            out_rx.try_recv().is_err(),
+            "a pristine replica must stay silent toward the editor"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "on disk",
+            "the file is untouched"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// After a first sync, the offline window serves the editor from the replica:
+    /// attach → bootstrap STEP1; editor STEP1 → STEP2 carrying the replica text;
+    /// editor UPDATE → applied and materialized to disk (debounced).
+    #[tokio::test]
+    async fn offline_bridge_serves_replica_and_materializes_edits() {
+        let tmp = std::env::temp_dir().join(format!("muesli-offline-b-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let file = tmp.join("b.md");
+        std::fs::write(&file, "hello").unwrap();
+
+        let mut session = offline_test_session(file.clone());
+        session.announced = true; // a prior server round-trip happened
+        session.replica.ingest("hello");
+        session.last_written = "hello".into();
+        let base = session.replica.encode_full_update();
+
+        // The "editor": a peer doc anchored to the replica's state, with one edit.
+        let editor = MuesliDoc::new();
+        editor.apply_update(&base).unwrap();
+        let sv = editor.state_vector();
+        editor.ingest("hello world");
+        let upd = editor.diff_update(&sv).unwrap();
+
+        let (_stop_tx, mut stop_rx) = watch::channel(Stop::Run);
+        let (ctl_tx, mut ctl_rx) = mpsc::unbounded_channel();
+        let (in_tx, in_rx) = mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+        ctl_tx
+            .send(BridgeCmd::Attach(EditorBridge {
+                inbound: in_rx,
+                outbound: out_tx,
+            }))
+            .unwrap();
+        in_tx
+            .send(frame_sync(SYNC_STEP1, &MuesliDoc::new().state_vector()))
+            .unwrap();
+        in_tx.send(frame_sync(SYNC_UPDATE, &upd)).unwrap();
+
+        // Long enough to cover the 500ms materialize debounce.
+        let outcome = session
+            .serve_bridge_offline(Duration::from_millis(900), &mut stop_rx, &mut ctl_rx)
+            .await;
+        assert!(outcome.is_none());
+
+        // Outbound: a bootstrap STEP1, then a STEP2 answering the editor's STEP1 with
+        // the replica's pre-edit text.
+        let frames: Vec<Vec<u8>> = std::iter::from_fn(|| out_rx.try_recv().ok()).collect();
+        let subs: Vec<u64> = frames
+            .iter()
+            .filter_map(|f| sync_frame_parts(f).map(|(s, _)| s))
+            .collect();
+        assert!(
+            subs.contains(&SYNC_STEP1),
+            "attach must bootstrap with STEP1: {subs:?}"
+        );
+        let step2 = frames
+            .iter()
+            .filter_map(|f| sync_frame_parts(f))
+            .find(|(s, _)| *s == SYNC_STEP2)
+            .expect("editor STEP1 must get a STEP2 reply");
+        let peer = MuesliDoc::new();
+        peer.apply_update(&step2.1).unwrap();
+        assert_eq!(peer.materialize(), "hello");
+
+        // The editor's UPDATE reached disk while fully offline.
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "hello world");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
