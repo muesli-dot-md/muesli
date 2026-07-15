@@ -19,6 +19,14 @@ edition = "2021"
 name = "muesli_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# ANE (Apple Neural Engine) inference via the FluidAudio CoreML backend.
+# Spike-only until the go/no-go decision is recorded (design doc section 14).
+# Off by default so the crate builds ONNX-only and Linux CI is unaffected.
+# Requires macOS 14+ and a Swift 6 toolchain (fluidaudio-rs builds a SwiftPM
+# package from source in its build.rs and links libFluidAudioBridge.a).
+ane = ["dep:fluidaudio-rs"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -41,6 +49,9 @@ ureq = "2"
 tar = "0.4"
 flate2 = "1"
 chrono = "0.4"
+# System-lane loudness normalization (EBU R128). Pure Rust port of libebur128
+# (MIT, no C), cross-platform so its tests run in CI. See audio/normalize.rs.
+ebur128 = "0.1"
 muesli-core = { path = "../../../crates/muesli-core" }
 muesli-cli = { path = "../../../crates/muesli-cli" }
 tokio = { version = "1", features = ["sync"] }
@@ -63,6 +74,12 @@ window-vibrancy = "0.7.1"
 # System-audio ("Them" lane) capture. macOS-only: `macos_15_0` enables system
 # audio + current-process-audio exclusion APIs; target is macOS 15.7 (Sequoia).
 screencapturekit = { version = "8", features = ["macos_15_0"] }
+# ANE inference backend (spike, behind the `ane` feature — see [features]).
+# Pinned exact. NOTE: the plan named =0.12.6, but crates.io only publishes
+# 0.1.0 and 0.14.1 — 0.12.6 never existed. 0.14.1 wraps FluidAudio 0.14.1
+# exactly (Package.resolved), so Path A is NOT version-stale as the design
+# feared. Its build.rs runs `swift build -c release` and links the frameworks.
+fluidaudio-rs = { version = "=0.14.1", optional = true }
 
 [dev-dependencies]
 tempfile = "3"

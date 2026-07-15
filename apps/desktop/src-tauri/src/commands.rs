@@ -218,6 +218,11 @@ pub async fn ensure_model(app: AppHandle) -> Result<(), String> {
 
 /// macOS implementation of [`ensure_model`]: resolves the app-data dir and
 /// downloads + extracts the Parakeet model if absent.
+///
+/// In `ane` builds this fetches BOTH model sets — the ONNX tarball first (so the
+/// unconditional fallback engine is always on disk), then the CoreML bundle — as
+/// one monotonic `model://progress` sweep. Without `ane` it is exactly today's
+/// ONNX-only download.
 #[cfg(target_os = "macos")]
 async fn ensure_model_macos(app: AppHandle) -> Result<(), String> {
     let app_data = app
@@ -225,21 +230,46 @@ async fn ensure_model_macos(app: AppHandle) -> Result<(), String> {
         .app_data_dir()
         .map_err(|e| format!("could not resolve app data dir: {e}"))?;
 
-    let paths = ParakeetPaths::resolve(&app_data);
-    if paths.is_present() {
-        return Ok(());
+    #[cfg(not(feature = "ane"))]
+    {
+        let paths = ParakeetPaths::resolve(&app_data);
+        if paths.is_present() {
+            return Ok(());
+        }
+
+        let app_for_progress = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::stt::model::ensure(&app_data, |done, total| {
+                let _ = app_for_progress.emit("model://progress", ModelProgress { done, total });
+            })
+            .map(|_| ())
+            .map_err(|e| format!("model download failed: {e}"))
+        })
+        .await
+        .map_err(|e| format!("model download task panicked: {e}"))?
     }
 
-    let app_for_progress = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::stt::model::ensure(&app_data, |done, total| {
-            let _ = app_for_progress.emit("model://progress", ModelProgress { done, total });
+    #[cfg(feature = "ane")]
+    {
+        let onnx = ParakeetPaths::resolve(&app_data);
+        let Some(coreml_root) = crate::stt::model::fluidaudio_models_root() else {
+            return Err("could not resolve FluidAudio models directory".into());
+        };
+        let coreml = crate::stt::model::CoremlPaths::resolve(&coreml_root);
+        if onnx.is_present() && coreml.is_present() {
+            return Ok(());
+        }
+
+        let app_for_progress = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::stt::model::ensure_both(&app_data, &coreml_root, |done, total| {
+                let _ = app_for_progress.emit("model://progress", ModelProgress { done, total });
+            })
+            .map_err(|e| format!("model download failed: {e}"))
         })
-        .map(|_| ())
-        .map_err(|e| format!("model download failed: {e}"))
-    })
-    .await
-    .map_err(|e| format!("model download task panicked: {e}"))?
+        .await
+        .map_err(|e| format!("model download task panicked: {e}"))?
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -252,9 +282,58 @@ struct ModelProgress {
 // warm_models — keep speech engines pre-loaded in memory
 // ---------------------------------------------------------------------------
 
-/// Load a Parakeet engine as a boxed trait object (None on failure, logged).
+/// Which concrete [`SttEngine`] impl to construct for a lane.
+///
+/// Referenced only by the `ane`-gated selection path and the tests; the default
+/// lib target (no `ane`, no `cfg(test)`) would otherwise flag them as dead code.
+#[cfg(target_os = "macos")]
+#[cfg_attr(not(feature = "ane"), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EngineKind {
+    Ane,
+    Onnx,
+}
+
+/// Pure engine selection. ANE is chosen only when a live CoreML engine is
+/// available; every failure path (feature off, bundle missing, load failed)
+/// falls back to the ONNX engine, which the both-sets download guarantees on disk.
+#[cfg(target_os = "macos")]
+#[cfg_attr(not(feature = "ane"), allow(dead_code))]
+fn choose_engine_kind(ane_available: bool) -> EngineKind {
+    if ane_available {
+        EngineKind::Ane
+    } else {
+        EngineKind::Onnx
+    }
+}
+
+/// Whether a live ANE engine is selectable: the CoreML bundle is present and
+/// complete (refined in Task 7's both-sets download). Compiled only with the
+/// `ane` feature; without it `load_boxed_engine` never references this or any
+/// CoreML path, and the default/Linux build is untouched.
+#[cfg(all(target_os = "macos", feature = "ane"))]
+fn ane_engine_available() -> bool {
+    crate::stt::fluidaudio::coreml_bundle_present()
+}
+
+/// Load a speech engine as a boxed trait object (None on failure, logged).
+///
+/// The whole ANE attempt is feature-gated: without `ane` this is exactly today's
+/// ONNX load and no CoreML symbol is referenced. With `ane`, the fallback matrix
+/// runs through the pure [`choose_engine_kind`] — ANE only when a live CoreML
+/// engine is available, else ONNX, which is always on disk (both-sets download).
 #[cfg(target_os = "macos")]
 fn load_boxed_engine(paths: &ParakeetPaths) -> Option<Box<dyn SttEngine>> {
+    #[cfg(feature = "ane")]
+    if choose_engine_kind(ane_engine_available()) == EngineKind::Ane {
+        // fluidaudio-rs 0.14.1 loads from its own default path (no custom-dir
+        // parameter), so `load` takes no arguments — the both-sets download
+        // (Task 7) pre-populates that path.
+        match crate::stt::fluidaudio::FluidAudioEngine::load() {
+            Ok(e) => return Some(Box::new(e)),
+            Err(e) => eprintln!("[warm] ANE engine load failed, falling back to ONNX: {e}"),
+        }
+    }
     match ParakeetEngine::load(paths) {
         Ok(e) => Some(Box::new(e)),
         Err(e) => {
@@ -403,12 +482,12 @@ fn start_capture_macos(
     }
 
     // Mic-lane engine: reuse a pre-warmed instance if available (instant), else
-    // cold-load one now (~2s).
+    // cold-load one now (~2s). The cold path must go through the same selection
+    // point as the warm slots and the system lane, so both lanes always agree on
+    // the backend (ANE vs ONNX) within a session.
     let engine: Box<dyn SttEngine> = match state.warm_mic.lock().ok().and_then(|mut g| g.take()) {
         Some(e) => e,
-        None => Box::new(
-            ParakeetEngine::load(&paths).map_err(|e| format!("failed to load model: {e}"))?,
-        ),
+        None => load_boxed_engine(&paths).ok_or("failed to load model")?,
     };
 
     // Output sink: workspace directory if provided, else ~/Documents/muesli-transcripts/
@@ -484,8 +563,22 @@ fn start_capture_macos(
     // --- System-audio ("Them") lane (best-effort) ------------------------------
     // Requires Screen Recording permission. If it can't start, we log and keep the
     // mic-only session usable rather than failing start_capture. This loads a
-    // SECOND ParakeetEngine instance (the worker owns Box<dyn SttEngine>), roughly
-    // doubling model RAM (~1 GB total) — acceptable for the MVP.
+    // SECOND engine (the worker owns Box<dyn SttEngine>) for the "Them" lane.
+    //
+    // Per-lane engines are the right topology for BOTH backends:
+    //  - ONNX (CpuOnly): two instances cost ~1 GB total (~500 MB each). The
+    //    shared-single-engine option was weighed and rejected for CPU — one Mutex
+    //    would serialize the two lanes' decodes exactly during cross-talk, the
+    //    moment a meeting transcriber must not stall (design section 8/9).
+    //  - ANE (CoreML): the spike measured two AsrManager instances at ~122 MB
+    //    total — CoreML shares the compiled .mlmodelc program/weights across
+    //    instances, so the second lane adds only ~37 MB (design section 14). At
+    //    that cost the sharing complexity buys nothing, so ANE keeps the same
+    //    per-lane topology rather than a shared Mutex-guarded engine.
+    // Selection is inherited for free: both warm slots and this cold-load path go
+    // through load_boxed_engine, which returns an ANE or ONNX box per the fallback
+    // matrix — no lane-specific engine code.
+    //
     // System-lane engine: reuse a warm instance, else cold-load; if loading fails
     // we simply run mic-only.
     let sys_engine: Option<Box<dyn SttEngine>> = state
@@ -698,6 +791,13 @@ pub fn reveal_output(state: State<'_, AppState>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn engine_selection_falls_back_to_onnx_without_ane() {
+        assert_eq!(choose_engine_kind(false), EngineKind::Onnx);
+        assert_eq!(choose_engine_kind(true), EngineKind::Ane);
+    }
 
     #[test]
     fn started_stamp_has_expected_shape() {

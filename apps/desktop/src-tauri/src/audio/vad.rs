@@ -2,6 +2,10 @@
 pub enum VadEvent {
     Silence,
     SpeechStarted,
+    /// Advisory soft pause: a shorter-than-`SpeechEnded` silence used to finalize
+    /// long run-on utterances at a sentence boundary. Does not change gate state.
+    /// Internal only — never crosses the Tauri boundary.
+    SpeechPaused,
     Speaking,
     SpeechEnded,
 }
@@ -32,10 +36,15 @@ pub struct SpeechGate {
     exit_threshold: f32,
     onset_chunks: u32,
     end_chunks: u32,
+    /// Silence chunks after which an advisory `SpeechPaused` fires (once per run).
+    /// `None` disables the soft pause — the default via `new`.
+    soft_end_chunks: Option<u32>,
 
     in_speech: bool,
     speech_run: u32,
     silence_run: u32,
+    /// Whether `SpeechPaused` has already fired for the current silence run.
+    soft_pause_emitted: bool,
 }
 
 impl SpeechGate {
@@ -45,10 +54,30 @@ impl SpeechGate {
             exit_threshold: (threshold - 0.15).max(0.01),
             onset_chunks,
             end_chunks,
+            soft_end_chunks: None,
             in_speech: false,
             speech_run: 0,
             silence_run: 0,
+            soft_pause_emitted: false,
         }
+    }
+
+    /// Like `new`, but enables an advisory `SpeechPaused` after `soft_end_chunks`
+    /// consecutive silence chunks (must be `< end_chunks`), used to split long
+    /// run-on utterances at a sentence boundary.
+    pub fn with_soft_end(
+        threshold: f32,
+        onset_chunks: u32,
+        soft_end_chunks: u32,
+        end_chunks: u32,
+    ) -> Self {
+        debug_assert!(
+            soft_end_chunks < end_chunks,
+            "soft end must precede hard end"
+        );
+        let mut g = Self::new(threshold, onset_chunks, end_chunks);
+        g.soft_end_chunks = Some(soft_end_chunks);
+        g
     }
 
     /// Feed one probability score and return the resulting `VadEvent`.
@@ -61,6 +90,7 @@ impl SpeechGate {
         };
         if active {
             self.silence_run = 0;
+            self.soft_pause_emitted = false;
             self.speech_run += 1;
 
             if !self.in_speech && self.speech_run >= self.onset_chunks {
@@ -78,7 +108,14 @@ impl SpeechGate {
                 if self.silence_run >= self.end_chunks {
                     self.in_speech = false;
                     self.silence_run = 0;
+                    self.soft_pause_emitted = false;
                     VadEvent::SpeechEnded
+                } else if self
+                    .soft_end_chunks
+                    .is_some_and(|soft| !self.soft_pause_emitted && self.silence_run >= soft)
+                {
+                    self.soft_pause_emitted = true;
+                    VadEvent::SpeechPaused
                 } else {
                     VadEvent::Speaking
                 }
@@ -87,6 +124,22 @@ impl SpeechGate {
                 VadEvent::Silence
             }
         }
+    }
+}
+
+/// Fold two per-chunk gate events into one, so a whole `accept()` call collapses
+/// to a single `VadEvent`. Priority: SpeechStarted > SpeechEnded > SpeechPaused >
+/// Speaking > Silence. SpeechPaused is ranked explicitly ABOVE Speaking so a soft
+/// pause fired mid-call (typically `[Speaking, SpeechPaused, Speaking]`) is not
+/// masked by a later Speaking chunk, and BELOW SpeechEnded so a hard end in the
+/// same call still finalizes the whole buffer.
+fn collapse(acc: VadEvent, next: VadEvent) -> VadEvent {
+    match (acc, next) {
+        (_, VadEvent::SpeechStarted) | (VadEvent::SpeechStarted, _) => VadEvent::SpeechStarted,
+        (_, VadEvent::SpeechEnded) | (VadEvent::SpeechEnded, _) => VadEvent::SpeechEnded,
+        (_, VadEvent::SpeechPaused) | (VadEvent::SpeechPaused, _) => VadEvent::SpeechPaused,
+        (_, VadEvent::Speaking) => VadEvent::Speaking,
+        (other, _) => other,
     }
 }
 
@@ -118,10 +171,10 @@ impl SileroVad {
         Ok(Self {
             detector,
             // enter 0.5 / stay 0.35 (hysteresis), onset 2 chunks (~64ms),
-            // end after 38 silence chunks (~1.2s). Continuous transcription quality
-            // depends on keeping whole thoughts together (Parakeet needs the context),
-            // so we only break at genuinely long pauses, not every breath.
-            gate: SpeechGate::new(0.5, 2, 38),
+            // soft pause after 18 silence chunks (~576ms) to split run-on
+            // utterances at a sentence boundary, hard end after 38 chunks (~1.2s).
+            // The soft pause only ever fires before the hard end, never races it.
+            gate: SpeechGate::with_soft_end(0.5, 2, 18, 38),
             buffer: Vec::with_capacity(CHUNK_SIZE * 4),
         })
     }
@@ -145,7 +198,6 @@ impl Vad for SileroVad {
             let event = self.gate.update(prob);
             chunks_this_call += 1;
 
-            // Highest-priority transition wins: SpeechStarted > SpeechEnded > Speaking > Silence.
             // A single accept() call is expected to span fewer than (onset_chunks + end_chunks)
             // = ~21 chunks, so it cannot span a full speech→silence cycle. Real audio frames are
             // ~100ms (~3 chunks); a frame larger than ~2s would be anomalous.
@@ -155,14 +207,7 @@ impl Vad for SileroVad {
                 chunks_this_call
             );
 
-            last_event = match (last_event, event) {
-                (_, VadEvent::SpeechStarted) => VadEvent::SpeechStarted,
-                (VadEvent::SpeechStarted, _) => VadEvent::SpeechStarted,
-                (_, VadEvent::SpeechEnded) => VadEvent::SpeechEnded,
-                (VadEvent::SpeechEnded, _) => VadEvent::SpeechEnded,
-                (_, VadEvent::Speaking) => VadEvent::Speaking,
-                (other, _) => other,
-            };
+            last_event = collapse(last_event, event);
         }
 
         last_event
@@ -299,6 +344,100 @@ mod tests {
             assert_eq!(g.update(0.20), VadEvent::Speaking);
             assert_eq!(g.update(0.20), VadEvent::Speaking);
             assert_eq!(g.update(0.20), VadEvent::SpeechEnded);
+        }
+
+        #[test]
+        fn soft_pause_fires_once_at_soft_end_chunks() {
+            // Production values: onset 2, soft end 18, hard end 38.
+            let mut g = SpeechGate::with_soft_end(0.5, 2, 18, 38);
+            g.update(0.9);
+            g.update(0.9); // SpeechStarted, now in_speech
+
+            // Exactly soft_end_chunks (18) low probs: the 18th fires SpeechPaused once.
+            let mut pauses = 0u32;
+            for _ in 0..18 {
+                if matches!(g.update(0.1), VadEvent::SpeechPaused) {
+                    pauses += 1;
+                }
+            }
+            assert_eq!(pauses, 1, "exactly one SpeechPaused at soft_end_chunks");
+
+            // Continue silence to the hard end (through chunk 38): exactly one
+            // SpeechEnded and no second SpeechPaused.
+            let mut ends = 0u32;
+            let mut extra_pauses = 0u32;
+            for _ in 0..20 {
+                match g.update(0.1) {
+                    VadEvent::SpeechEnded => ends += 1,
+                    VadEvent::SpeechPaused => extra_pauses += 1,
+                    _ => {}
+                }
+            }
+            assert_eq!(ends, 1, "exactly one SpeechEnded at end_chunks");
+            assert_eq!(
+                extra_pauses, 0,
+                "SpeechPaused fires at most once per silence run"
+            );
+        }
+    }
+
+    mod collapse_fn {
+        use super::super::{collapse, VadEvent};
+
+        fn fold(events: &[VadEvent]) -> VadEvent {
+            events
+                .iter()
+                .fold(VadEvent::Silence, |acc, &e| collapse(acc, e))
+        }
+
+        #[test]
+        fn pause_survives_speaking_on_both_sides() {
+            // The common case: within one accept() call the gate returns
+            // [Speaking, SpeechPaused, Speaking]; the pause must survive the fold.
+            assert_eq!(
+                fold(&[
+                    VadEvent::Speaking,
+                    VadEvent::SpeechPaused,
+                    VadEvent::Speaking
+                ]),
+                VadEvent::SpeechPaused
+            );
+        }
+
+        #[test]
+        fn hard_end_outranks_pause() {
+            assert_eq!(
+                fold(&[VadEvent::SpeechPaused, VadEvent::SpeechEnded]),
+                VadEvent::SpeechEnded
+            );
+        }
+
+        #[test]
+        fn start_outranks_pause() {
+            assert_eq!(
+                fold(&[VadEvent::SpeechPaused, VadEvent::SpeechStarted]),
+                VadEvent::SpeechStarted
+            );
+        }
+
+        #[test]
+        fn existing_priorities_unchanged() {
+            assert_eq!(
+                fold(&[VadEvent::Speaking, VadEvent::SpeechEnded]),
+                VadEvent::SpeechEnded
+            );
+            assert_eq!(
+                fold(&[VadEvent::SpeechStarted, VadEvent::Speaking]),
+                VadEvent::SpeechStarted
+            );
+            assert_eq!(
+                fold(&[VadEvent::Silence, VadEvent::Speaking]),
+                VadEvent::Speaking
+            );
+            assert_eq!(
+                fold(&[VadEvent::Silence, VadEvent::Silence]),
+                VadEvent::Silence
+            );
         }
     }
 
