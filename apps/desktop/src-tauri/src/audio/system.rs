@@ -39,6 +39,7 @@ mod macos {
         SCStreamOutputTrait, SCStreamOutputType,
     };
 
+    use crate::audio::normalize::LoudnessNormalizer;
     use crate::audio::resample::Resampler;
     use crate::audio::FrameSender;
 
@@ -69,6 +70,11 @@ mod macos {
     struct AudioOutput {
         tx: FrameSender,
         resampler: Mutex<Resampler>,
+        /// System-lane loudness normalization (design addendum section 12). The
+        /// mic lane's VPIO AGC covers the "Me" side; this is the only gain stage
+        /// on the "Them" side, applied before anything downstream (VAD included)
+        /// sees the audio.
+        normalizer: Mutex<LoudnessNormalizer>,
     }
 
     impl SCStreamOutputTrait for AudioOutput {
@@ -102,16 +108,25 @@ mod macos {
                 samples.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
             }
 
-            let frame = match self.resampler.lock() {
+            let mut frame = match self.resampler.lock() {
                 Ok(mut r) => r.process(&samples),
                 Err(e) => {
                     eprintln!("[system] resampler mutex poisoned: {e}");
                     return;
                 }
             };
-            if !frame.is_empty() {
-                let _ = self.tx.send(frame);
+            if frame.is_empty() {
+                return;
             }
+            // Normalize toward TARGET_LUFS before the frame channel, so the
+            // pre-roll ring, the VAD, and the engine all see one identical
+            // signal of record. On a poisoned mutex, pass the frame through
+            // un-normalized — degraded level beats a silent lane.
+            match self.normalizer.lock() {
+                Ok(mut n) => n.process(&mut frame),
+                Err(e) => eprintln!("[system] normalizer mutex poisoned: {e}"),
+            }
+            let _ = self.tx.send(frame);
         }
     }
 
@@ -158,6 +173,10 @@ mod macos {
         let output = AudioOutput {
             tx,
             resampler: Mutex::new(Resampler::new(CAPTURE_SAMPLE_RATE, CAPTURE_CHANNELS)),
+            normalizer: Mutex::new(
+                LoudnessNormalizer::new()
+                    .context("failed to init system-lane loudness normalizer")?,
+            ),
         };
         stream.add_output_handler(output, SCStreamOutputType::Audio);
 

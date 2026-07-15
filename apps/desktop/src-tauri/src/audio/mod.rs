@@ -22,6 +22,9 @@ impl Source {
 }
 
 pub mod mic;
+// System-lane loudness normalization (EBU R128). Pure DSP, cross-platform so
+// its tests run in CI; only the macOS system capture path constructs it.
+pub mod normalize;
 pub mod resample;
 pub mod vad;
 // System / application output audio is captured via ScreenCaptureKit, which is

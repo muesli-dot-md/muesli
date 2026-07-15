@@ -12,6 +12,9 @@ apps/desktop/vendor
 apps/desktop/static
 apps/desktop/src-tauri/gen
 apps/desktop/src-tauri/target
+# gitignored model weights fetched locally for the #[ignore]d engine tests;
+# prettier dies trying to read multi-hundred-MB binaries
+apps/desktop/src-tauri/tests/models
 apps/web/public
 dev
 

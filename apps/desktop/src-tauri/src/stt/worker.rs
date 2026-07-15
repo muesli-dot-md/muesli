@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -20,7 +21,39 @@ const MIN_SPEECH_MS: usize = 250;
 const MAX_UTTERANCE_MS: usize = 25_000;
 /// Partials only re-transcribe at most this much trailing audio, so the live text
 /// stays responsive as an utterance grows (the final still uses the whole buffer).
-const MAX_PARTIAL_MS: usize = 10_000;
+/// Bounds worst-case partial decode cost to ~7 audio-seconds per wall-second per
+/// lane; the committed final restores any text the shorter window cannot show.
+const MAX_PARTIAL_MS: usize = 5_000;
+/// Only utterances with at least this much confirmed speech are eligible to split
+/// at a soft pause (§6). Below this we keep whole thoughts intact. 6s is ~1-2
+/// spoken sentences: past it a >0.5s pause is a sentence/paragraph boundary.
+const SOFT_MIN_SPEECH_MS: usize = 6_000;
+
+// Engine calls run untrusted C/ONNX (and, later, CoreML) code. A panic must
+// degrade to "no text this round", never unwind the lane's worker thread.
+// AssertUnwindSafe is sound here: on panic we discard the engine's output and
+// reset the utterance buffer, so no observer sees a torn intermediate value.
+//
+// REQUIRES the default unwind panic strategy. Do NOT set `panic = "abort"` in any
+// Cargo profile — it silently defeats this guard and re-exposes the lane-death bug.
+// A future "N panics -> mark engine dead and rebuild" policy (the ANE spike question)
+// would attach here.
+fn guarded<T: Default>(f: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(v) => v,
+        Err(_) => {
+            // Rate-limited: log the first panic, silence the rest (mirrors the
+            // resampler's one-shot log at audio/resample.rs).
+            static LOGGED: AtomicBool = AtomicBool::new(false);
+            if !LOGGED.swap(true, Ordering::Relaxed) {
+                eprintln!(
+                    "[stt] engine call panicked; dropping this decode (further panics silenced)"
+                );
+            }
+            T::default()
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // TranscriptEvent
@@ -74,6 +107,7 @@ pub fn run_worker(
     let min_speech_samples = sr * MIN_SPEECH_MS / 1000;
     let max_utterance_samples = sr * MAX_UTTERANCE_MS / 1000;
     let max_partial_samples = sr * MAX_PARTIAL_MS / 1000;
+    let soft_min_samples = sr * SOFT_MIN_SPEECH_MS / 1000;
 
     let mut buffer: Vec<f32> = Vec::new();
     // Rolling buffer of the most recent pre-speech audio, prepended on speech-start.
@@ -84,6 +118,9 @@ pub fn run_worker(
     let mut utterance_id: u64 = 0;
     let mut t0: f64 = 0.0;
     let mut last_partial: Instant = Instant::now();
+    // Cost of the most recent partial decode; drives overrun backoff. 0 = no prior
+    // decode, so the partial_interval floor governs the first partial.
+    let mut last_partial_cost: Duration = Duration::ZERO;
 
     for frame in &rx {
         match vad.accept(&frame) {
@@ -105,7 +142,7 @@ pub fn run_worker(
 
                 if buffer.len() >= max_utterance_samples {
                     // Safety cap: force-finalize a non-stop utterance and continue fresh.
-                    let text = engine.transcribe_final(&buffer).unwrap_or_default();
+                    let text = guarded(|| engine.transcribe_final(&buffer).unwrap_or_default());
                     if !text.trim().is_empty() {
                         let t1 = started.elapsed().as_secs_f64();
                         let event = TranscriptEvent {
@@ -122,29 +159,72 @@ pub fn run_worker(
                     speech_samples = 0;
                     t0 = started.elapsed().as_secs_f64();
                     last_partial = Instant::now();
-                } else if last_partial.elapsed() >= partial_interval {
+                } else if last_partial.elapsed() >= partial_interval.max(last_partial_cost) {
+                    // Never spend more than ~half the wall clock on partials: if a decode took
+                    // longer than the interval, wait at least that long again before the next.
                     // Re-transcribe only the trailing window so partials stay snappy.
                     let start = buffer.len().saturating_sub(max_partial_samples);
-                    let text = engine
-                        .transcribe_partial(&buffer[start..])
-                        .unwrap_or_default();
-                    let t1 = started.elapsed().as_secs_f64();
-                    let event = TranscriptEvent {
-                        source,
-                        text,
-                        t0,
-                        t1,
-                        utterance_id,
-                    };
-                    emitter.partial(&event);
+                    let decode_start = Instant::now();
+                    let text = guarded(|| {
+                        engine
+                            .transcribe_partial(&buffer[start..])
+                            .unwrap_or_default()
+                    });
+                    last_partial_cost = decode_start.elapsed();
+                    // A panicked or failed partial emits nothing — the next tick or the final
+                    // recovers (design §4). Finals already guard on non-empty text.
+                    if !text.trim().is_empty() {
+                        let t1 = started.elapsed().as_secs_f64();
+                        let event = TranscriptEvent {
+                            source,
+                            text,
+                            t0,
+                            t1,
+                            utterance_id,
+                        };
+                        emitter.partial(&event);
+                    }
                     last_partial = Instant::now();
+                }
+            }
+            VadEvent::SpeechPaused => {
+                // Append the arriving frame FIRST (mirrors the SpeechEnded arm):
+                // the soft-reset successor has no pre-roll protection, so this
+                // frame must not be dropped.
+                buffer.extend_from_slice(&frame);
+                if speech_samples >= soft_min_samples {
+                    // Finalize exactly like a real final, then soft-reset: clear
+                    // the buffer and speech_samples and start a fresh t0, but do
+                    // NOT touch VAD state — the gate is still in_speech, so the
+                    // next frame continues as Speaking into the new utterance.
+                    let text = guarded(|| engine.transcribe_final(&buffer).unwrap_or_default());
+                    if !text.trim().is_empty() {
+                        let t1 = started.elapsed().as_secs_f64();
+                        let event = TranscriptEvent {
+                            source,
+                            text,
+                            t0,
+                            t1,
+                            utterance_id,
+                        };
+                        emitter.final_(&event);
+                        utterance_id += 1;
+                    }
+                    buffer.clear();
+                    speech_samples = 0;
+                    t0 = started.elapsed().as_secs_f64();
+                    last_partial = Instant::now();
+                } else {
+                    // Below the floor: keep the utterance whole. The appended
+                    // frame is Speaking-equivalent audio.
+                    speech_samples += frame.len();
                 }
             }
             VadEvent::SpeechEnded => {
                 buffer.extend_from_slice(&frame);
                 // Drop utterances with too little confirmed speech (spurious blips).
                 if speech_samples >= min_speech_samples {
-                    let text = engine.transcribe_final(&buffer).unwrap_or_default();
+                    let text = guarded(|| engine.transcribe_final(&buffer).unwrap_or_default());
                     if !text.trim().is_empty() {
                         let t1 = started.elapsed().as_secs_f64();
                         let event = TranscriptEvent {
@@ -174,7 +254,7 @@ pub fn run_worker(
     // Channel disconnected — finalize any buffered speech (no min-speech gate; a
     // mid-utterance cutoff should still surface what was said).
     if !buffer.is_empty() {
-        let text = engine.transcribe_final(&buffer).unwrap_or_default();
+        let text = guarded(|| engine.transcribe_final(&buffer).unwrap_or_default());
         if !text.trim().is_empty() {
             let t1 = started.elapsed().as_secs_f64();
             let event = TranscriptEvent {
@@ -378,6 +458,282 @@ mod tests {
             0,
             "short blip should be dropped"
         );
+    }
+
+    /// SttEngine that panics on demand, to prove the worker contains panics.
+    struct PanickingEngine {
+        panic_partial: bool,
+        /// Number of leading `transcribe_final` calls that panic; subsequent calls succeed.
+        final_panics_remaining: usize,
+    }
+    impl SttEngine for PanickingEngine {
+        fn transcribe_partial(&mut self, s: &[f32]) -> anyhow::Result<String> {
+            if self.panic_partial {
+                panic!("boom in transcribe_partial");
+            }
+            Ok(format!("partial:{}", s.len()))
+        }
+        fn transcribe_final(&mut self, s: &[f32]) -> anyhow::Result<String> {
+            if self.final_panics_remaining > 0 {
+                self.final_panics_remaining -= 1;
+                panic!("boom in transcribe_final");
+            }
+            Ok(format!("final:{}", s.len()))
+        }
+    }
+
+    #[test]
+    fn panic_in_partial_is_swallowed_and_lane_survives() {
+        let (tx, rx) = channel::<Vec<f32>>();
+        let vad = ScriptedVad {
+            script: vec![
+                VadEvent::SpeechStarted,
+                VadEvent::Speaking,
+                VadEvent::Speaking,
+                VadEvent::SpeechEnded,
+            ],
+        };
+        let emitter = Arc::new(CapturingEmitter::default());
+        let em2 = emitter.clone();
+        // 16000-sample frames (1s each); partial_interval 0 fires a partial each
+        // Speaking frame — each of those panics and must be swallowed.
+        for _ in 0..4 {
+            tx.send(vec![0.0f32; 16_000]).unwrap();
+        }
+        drop(tx);
+        run_worker(
+            Source::Me,
+            rx,
+            Box::new(vad),
+            Box::new(PanickingEngine {
+                panic_partial: true,
+                final_panics_remaining: 0,
+            }),
+            em2,
+            Instant::now(),
+            Duration::from_millis(0),
+        );
+        // The non-panicking final still fires; every partial was swallowed.
+        let finals = emitter.finals.lock().unwrap();
+        assert_eq!(finals.len(), 1);
+        assert_eq!(finals[0].utterance_id, 0);
+        assert!(
+            emitter.partials.lock().unwrap().is_empty(),
+            "panicked partials emit nothing"
+        );
+    }
+
+    #[test]
+    fn panic_in_final_drops_utterance_without_killing_lane() {
+        let (tx, rx) = channel::<Vec<f32>>();
+        // Two utterances. transcribe_final panics for the first only.
+        let vad = ScriptedVad {
+            script: vec![
+                VadEvent::SpeechStarted,
+                VadEvent::Speaking,
+                VadEvent::SpeechEnded,
+                VadEvent::SpeechStarted,
+                VadEvent::Speaking,
+                VadEvent::SpeechEnded,
+            ],
+        };
+        let emitter = Arc::new(CapturingEmitter::default());
+        let em2 = emitter.clone();
+        for _ in 0..6 {
+            tx.send(vec![0.0f32; 16_000]).unwrap();
+        }
+        drop(tx);
+        run_worker(
+            Source::Me,
+            rx,
+            Box::new(vad),
+            Box::new(PanickingEngine {
+                panic_partial: false,
+                final_panics_remaining: 1,
+            }),
+            em2,
+            Instant::now(),
+            Duration::from_secs(100), // no partials
+        );
+        let finals = emitter.finals.lock().unwrap();
+        assert_eq!(finals.len(), 1, "first utterance dropped, second emitted");
+        // The panicked first utterance emitted nothing, so it consumed NO id: the
+        // second final carries id 0, not 1. Proves state advanced AND id accounting held.
+        assert_eq!(finals[0].utterance_id, 0);
+    }
+
+    /// SttEngine whose partial decode sleeps, to exercise overrun backoff.
+    struct SlowEngine {
+        partial_sleep: Duration,
+    }
+    impl SttEngine for SlowEngine {
+        fn transcribe_partial(&mut self, s: &[f32]) -> anyhow::Result<String> {
+            std::thread::sleep(self.partial_sleep);
+            Ok(format!("partial:{}", s.len()))
+        }
+        fn transcribe_final(&mut self, s: &[f32]) -> anyhow::Result<String> {
+            Ok(format!("final:{}", s.len()))
+        }
+    }
+
+    #[test]
+    fn slow_partials_back_off_instead_of_queueing() {
+        let (tx, rx) = channel::<Vec<f32>>();
+        // 1 SpeechStarted + 20 Speaking + SpeechEnded. With partial_interval 0, an
+        // instant engine would emit ~20 partials; a slow one must emit far fewer
+        // because each 50ms decode gates the next partial by ~50ms of wall time.
+        let mut script = vec![VadEvent::SpeechStarted];
+        script.extend(std::iter::repeat_n(VadEvent::Speaking, 20));
+        script.push(VadEvent::SpeechEnded);
+        let vad = ScriptedVad { script };
+        let emitter = Arc::new(CapturingEmitter::default());
+        let em2 = emitter.clone();
+        for _ in 0..22 {
+            tx.send(vec![0.0f32; 16_000]).unwrap();
+        }
+        drop(tx);
+        run_worker(
+            Source::Me,
+            rx,
+            Box::new(vad),
+            Box::new(SlowEngine {
+                partial_sleep: Duration::from_millis(50),
+            }),
+            em2,
+            Instant::now(),
+            Duration::from_millis(0),
+        );
+        let n = emitter.partials.lock().unwrap().len();
+        // Inequality, not an exact count: the frames drain near-instantly, so after
+        // the first 50ms decode the backoff suppresses the rest of that window.
+        assert!(
+            n <= 3,
+            "backoff should bound partials well below 20; got {n}"
+        );
+    }
+
+    #[test]
+    fn partial_window_is_capped_at_max_partial_ms() {
+        let (tx, rx) = channel::<Vec<f32>>();
+        // 1 SpeechStarted + 10 Speaking frames of 16000 = up to 176000 samples,
+        // well past the 5s (80000-sample) window.
+        let mut script = vec![VadEvent::SpeechStarted];
+        script.extend(std::iter::repeat_n(VadEvent::Speaking, 10));
+        let vad = ScriptedVad { script };
+        let emitter = Arc::new(CapturingEmitter::default());
+        let em2 = emitter.clone();
+        for _ in 0..11 {
+            tx.send(vec![0.0f32; 16_000]).unwrap();
+        }
+        drop(tx);
+        run_worker(
+            Source::Me,
+            rx,
+            Box::new(vad),
+            Box::new(FakeEngine),
+            em2,
+            Instant::now(),
+            Duration::from_millis(0),
+        );
+        // FakeEngine echoes the slice length as "partial:{len}". The window cap is
+        // SAMPLE_RATE * MAX_PARTIAL_MS / 1000 = 16000 * 5000 / 1000 = 80000.
+        let partials = emitter.partials.lock().unwrap();
+        assert!(!partials.is_empty());
+        for e in partials.iter() {
+            let len: usize = e.text.strip_prefix("partial:").unwrap().parse().unwrap();
+            assert!(
+                len <= 80_000,
+                "partial slice {len} exceeds MAX_PARTIAL_MS window"
+            );
+        }
+    }
+
+    #[test]
+    fn soft_pause_before_floor_does_not_fire_final() {
+        // NOTE (plan flag): the design scripts only [SpeechStarted, Speaking,
+        // SpeechPaused], but leaving a non-empty buffer would make the
+        // disconnect-finalize path emit a final. A terminating SpeechEnded whose
+        // total speech is below MIN_SPEECH_MS (250ms = 4000 samples) drops the blip
+        // and clears the buffer, so finals.len() == 0 holds as the design intends.
+        let (tx, rx) = channel::<Vec<f32>>();
+        let vad = ScriptedVad {
+            script: vec![
+                VadEvent::SpeechStarted,
+                VadEvent::Speaking,
+                VadEvent::SpeechPaused,
+                VadEvent::SpeechEnded,
+            ],
+        };
+        let emitter = Arc::new(CapturingEmitter::default());
+        let em2 = emitter.clone();
+        // 1000-sample frames: total speech stays under both the 6s soft floor and
+        // the 250ms min-speech gate.
+        for _ in 0..4 {
+            tx.send(vec![0.0f32; 1000]).unwrap();
+        }
+        drop(tx);
+        run_worker(
+            Source::Me,
+            rx,
+            Box::new(vad),
+            Box::new(FakeEngine),
+            em2,
+            Instant::now(),
+            Duration::from_secs(100),
+        );
+        assert_eq!(
+            emitter.finals.lock().unwrap().len(),
+            0,
+            "below-floor pause must not finalize"
+        );
+    }
+
+    #[test]
+    fn soft_pause_after_floor_finalizes_and_starts_new_utterance() {
+        let (tx, rx) = channel::<Vec<f32>>();
+        // 16000-sample (1s) frames. SpeechStarted + 6 Speaking = 7s of speech
+        // (112000 samples), past the 6s (96000-sample) floor. Then SpeechPaused,
+        // two Speaking, SpeechEnded.
+        let vad = ScriptedVad {
+            script: vec![
+                VadEvent::SpeechStarted,
+                VadEvent::Speaking,
+                VadEvent::Speaking,
+                VadEvent::Speaking,
+                VadEvent::Speaking,
+                VadEvent::Speaking,
+                VadEvent::Speaking,
+                VadEvent::SpeechPaused,
+                VadEvent::Speaking,
+                VadEvent::Speaking,
+                VadEvent::SpeechEnded,
+            ],
+        };
+        let emitter = Arc::new(CapturingEmitter::default());
+        let em2 = emitter.clone();
+        for _ in 0..11 {
+            tx.send(vec![0.0f32; 16_000]).unwrap();
+        }
+        drop(tx);
+        run_worker(
+            Source::Me,
+            rx,
+            Box::new(vad),
+            Box::new(FakeEngine),
+            em2,
+            Instant::now(),
+            Duration::from_secs(100), // no partials
+        );
+        let finals = emitter.finals.lock().unwrap();
+        assert_eq!(finals.len(), 2, "soft pause splits into two finals");
+        // First final: 8 frames = 128000 — 7 pre-pause PLUS the frame that arrived
+        // with SpeechPaused (pins append-before-finalize). Second: 3 frames = 48000
+        // (two Speaking + the SpeechEnded frame), proving the buffer reset and the
+        // paused frame was not double-counted into the successor.
+        assert_eq!(finals[0].utterance_id, 0);
+        assert_eq!(finals[0].text, "final:128000");
+        assert_eq!(finals[1].utterance_id, 1);
+        assert_eq!(finals[1].text, "final:48000");
     }
 
     #[test]
