@@ -1078,4 +1078,64 @@ mod tests {
             "awareness payload is surfaced verbatim for relay, not dropped"
         );
     }
+
+    /// Regression test for the wss:// TLS bug: without a TLS feature enabled on
+    /// tokio-tungstenite, `connect_async` fails EVERY `wss://` URL with
+    /// `Error::Url(UrlError::TlsFeatureNotEnabled)` — raised only AFTER a successful TCP
+    /// connect, once tungstenite tries (and fails) to hand the socket to a TLS backend
+    /// (see tokio-tungstenite's tls.rs: `Mode::Tls => Err(TlsFeatureNotEnabled)`). A
+    /// closed/refused port (e.g. port 1) never reaches that code path — the TCP connect
+    /// itself fails first with `Error::Io`, which is indistinguishable from the real bug.
+    /// So this test binds a real local listener (TCP connect succeeds) and drops the
+    /// accepted socket immediately, forcing whatever comes next: with no TLS feature,
+    /// tungstenite bails with `TlsFeatureNotEnabled` before touching the socket again;
+    /// with `rustls-tls-webpki-roots` (Cargo.toml) it attempts a real TLS handshake
+    /// against the closed peer and fails with a plain IO error instead. That is exactly
+    /// the daemon's real-world failure mode: it could reach app.muesli.md's TCP port
+    /// fine, then hit the missing-TLS-feature error on every attempt (session.rs run_once
+    /// -> connect_async), while local ws://localhost e2e testing never exercised this at
+    /// all.
+    #[tokio::test]
+    async fn wss_url_reaches_tls_stack_instead_of_missing_feature_error() {
+        use tokio_tungstenite::tungstenite::error::UrlError;
+        use tokio_tungstenite::tungstenite::Error as WsError;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local listener");
+        let port = listener.local_addr().expect("local addr").port();
+        let server = tokio::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await {
+                // Drop immediately: the client gets a closed peer, not a real TLS server,
+                // so whatever it does next past the TCP connect fails fast either way.
+                drop(stream);
+            }
+        });
+
+        let request = format!("wss://127.0.0.1:{port}/ws/x")
+            .into_client_request()
+            .expect("valid request");
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio_tungstenite::connect_async(request),
+        )
+        .await
+        .expect("connect_async must not hang");
+        let err = result.expect_err("no real TLS server is listening");
+        server.abort();
+
+        assert!(
+            !matches!(err, WsError::Url(UrlError::TlsFeatureNotEnabled)),
+            "tokio-tungstenite has no TLS feature compiled in — wss:// can never connect: {err:?}"
+        );
+        // With the feature present, the failure is a genuine connection-level error (the
+        // TLS handshake against our closed peer), never the feature/config error above.
+        assert!(
+            matches!(
+                err,
+                WsError::Io(_) | WsError::ConnectionClosed | WsError::AlreadyClosed
+            ),
+            "expected a connection error once TLS is enabled, got: {err:?}"
+        );
+    }
 }
