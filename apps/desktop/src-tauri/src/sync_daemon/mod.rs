@@ -110,13 +110,28 @@ impl DaemonHandle {
         }
     }
 
-    /// Attach an editor bridge to the running daemon's session for `path`. No-op if not running.
-    pub fn attach_editor(&self, path: PathBuf, bridge: muesli_cli::session::EditorBridge) {
-        if let Some(r) = self.inner.lock().unwrap().as_ref() {
-            let _ = r
-                .control_tx
-                .send(muesli_cli::sync::DaemonControl::Attach { path, bridge });
+    /// Attach an editor bridge to the running daemon's session for `path`. The returned
+    /// receiver answers whether the bridge can serve a snapshot (linked session that has
+    /// synced this run); it resolves `false` immediately when no daemon is running.
+    pub fn attach_editor(
+        &self,
+        path: PathBuf,
+        bridge: muesli_cli::session::EditorBridge,
+    ) -> tokio::sync::oneshot::Receiver<bool> {
+        let (live_tx, live_rx) = tokio::sync::oneshot::channel();
+        match self.inner.lock().unwrap().as_ref() {
+            Some(r) => {
+                let _ = r.control_tx.send(muesli_cli::sync::DaemonControl::Attach {
+                    path,
+                    bridge,
+                    live_tx,
+                });
+            }
+            None => {
+                let _ = live_tx.send(false);
+            }
         }
+        live_rx
     }
 
     /// Detach any editor from the running daemon's session for `path`. No-op if not running.

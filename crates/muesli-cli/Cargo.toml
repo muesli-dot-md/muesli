@@ -34,3 +34,6 @@ uuid = { version = "1", features = ["v4"] }
 # The path ↔ document_id index (index.db; internal/design/local-agent-cli.md). Bundled: no
 # system sqlite needed; version pinned in the workspace for MSRV rustc 1.86.
 rusqlite = { workspace = true }
+# Inbound remote deletes go to the OS trash (reversible, mirroring the server's soft-delete)
+# — same crate/version as the desktop app's delete_path.
+trash = "5"

@@ -137,6 +137,67 @@ describe("createTauriSession", () => {
     session.destroy();
   });
 
+  it("registers the frame listener BEFORE attach_editor (bootstrap frame is never lost)", async () => {
+    // The daemon bootstraps a freshly-attached editor by sending SyncStep1
+    // immediately; Tauri events are not replayed for later listeners, so the
+    // listener must exist by the time attach_editor runs.
+    const { invoke } = await import("@tauri-apps/api/core");
+    let handlersAtAttach = -1;
+    vi.mocked(invoke).mockImplementationOnce(async (cmd, args) => {
+      invokedCalls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      if (cmd === "attach_editor") {
+        handlersAtAttach = (eventHandlers.get("editor://frame") ?? []).length;
+      }
+    });
+    const session = await createTauriSession({
+      path: TEST_PATH,
+      identity: {
+        userId: "alice@example.com",
+        name: "Alice",
+        color: "#ff0000",
+        colorLight: "#ff000033",
+        kind: "human",
+      },
+    });
+    expect(handlersAtAttach).toBe(1);
+    session.destroy();
+  });
+
+  it("exposes the daemon's liveness answer as session.live", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    // attach_editor resolves true → the bridge will deliver a snapshot.
+    vi.mocked(invoke).mockImplementationOnce(async (cmd, args) => {
+      invokedCalls.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+      return true;
+    });
+    const liveSession = await createTauriSession({
+      path: TEST_PATH,
+      identity: {
+        userId: "alice@example.com",
+        name: "Alice",
+        color: "#ff0000",
+        colorLight: "#ff000033",
+        kind: "human",
+      },
+    });
+    expect(liveSession.live).toBe(true);
+    liveSession.destroy();
+
+    // Default stub resolves undefined (daemon absent) → anything but `true` is dead.
+    const deadSession = await createTauriSession({
+      path: TEST_PATH,
+      identity: {
+        userId: "alice@example.com",
+        name: "Alice",
+        color: "#ff0000",
+        colorLight: "#ff000033",
+        kind: "human",
+      },
+    });
+    expect(deadSession.live).toBe(false);
+    deadSession.destroy();
+  });
+
   it("calls attach_editor on creation", async () => {
     const session = await createTauriSession({
       path: TEST_PATH,
@@ -436,5 +497,41 @@ describe("makeTauriProvider — two-provider convergence", () => {
 
     provA.destroy();
     provB.destroy();
+  });
+
+  it("sever() cuts the transport but keeps the doc alive for local edits", () => {
+    const sent: Uint8Array[] = [];
+    let handler: ((f: Uint8Array) => void) | null = null;
+    const prov = makeTauriProvider({
+      doc: new Y.Doc(),
+      path: "/test.md",
+      identity: {
+        userId: "alice@example.com",
+        name: "Alice",
+        color: "#f00",
+        colorLight: "#f0033",
+        kind: "human",
+      },
+      send: (f) => sent.push(f),
+      subscribe: (h) => {
+        handler = h;
+        return () => {
+          handler = null;
+        };
+      },
+    });
+
+    prov.sever();
+
+    // Unsubscribed: no inbound frames can arrive anymore.
+    expect(handler).toBeNull();
+    // Local edits still work but leave no frames — the doc is safe to seed from
+    // disk without a late replica snapshot merging a duplicate copy.
+    const framesBefore = sent.length;
+    prov.ytext.insert(0, "local only");
+    expect(sent.length).toBe(framesBefore);
+    expect(prov.ytext.toString()).toBe("local only");
+
+    prov.destroy(); // destroy after sever stays safe (idempotent teardown)
   });
 });

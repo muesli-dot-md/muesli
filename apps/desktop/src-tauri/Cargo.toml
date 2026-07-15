@@ -7,6 +7,11 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# Standalone crate (the root workspace `exclude`s this path): the empty table stops
+# cargo's upward workspace traversal, so builds also work from linked git worktrees
+# (where the walk would otherwise land on the outer checkout's manifest).
+[workspace]
+
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.

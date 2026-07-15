@@ -5,6 +5,7 @@
   import { Folder, FolderInput } from "lucide-svelte";
   import { movePath } from "$lib/tauri";
   import { workspace } from "$lib/workspace.svelte";
+  import { tabs } from "$lib/tabs.svelte";
   import { collectFolderTargets } from "$lib/fileInfo";
 
   interface Props {
@@ -32,7 +33,9 @@
     busy = true;
     error = "";
     try {
+      await tabs.flush(srcPath);
       const newPath = await movePath(srcPath, destDir);
+      tabs.retarget(srcPath, newPath);
       workspace.expandedPaths.add(destDir);
       await workspace.refresh();
       onmoved?.(newPath);

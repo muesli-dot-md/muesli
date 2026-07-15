@@ -28,6 +28,12 @@ use crate::{api, store};
 pub const MAX_SESSIONS: usize = 64;
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const REPOLL: Duration = Duration::from_secs(300);
+/// How long an outbound trash waits before firing (a rename's remove(old)/create(new)
+/// watcher events race; see on_removed / sweep_pending_trash). The sweep runs on the
+/// daemon loop AFTER queued watcher events, so this only needs to cover watcher
+/// delivery latency — not event-processing latency, which is network-bound and
+/// unbounded (a bulk move's creates each cost HTTP round-trips).
+const TRASH_GRACE: Duration = Duration::from_secs(5);
 
 /// Coarse run state of the folder daemon, surfaced to embedders (the tray app). The CLI
 /// ignores it; it polls `SyncShared` directly via its own stdout lines.
@@ -60,6 +66,11 @@ pub enum DaemonControl {
     Attach {
         path: PathBuf,
         bridge: crate::session::EditorBridge,
+        /// Answered synchronously with whether the bridge can serve a snapshot: a
+        /// linked session exists AND it has synced at least once this run. `false`
+        /// tells the editor to seed from disk immediately instead of waiting out a
+        /// fallback timer on a bridge that will stay silent.
+        live_tx: tokio::sync::oneshot::Sender<bool>,
     },
     /// Detach any editor from the session for `path`.
     Detach { path: PathBuf },
@@ -138,23 +149,124 @@ pub async fn run(
 
     // ── 1. Discover and link the existing tree ──────────────────────────────
     let files = discover_md_files(&dir)?;
-    let mut taken: std::collections::HashSet<String> = store::load_links()
+    // Workspace mode: one upfront inventory of the server's docs + folders. It seeds slug
+    // allocation (a fresh local file must never collide with a slug that already exists
+    // server-side — the room would open THAT doc instead of creating one) and provides the
+    // folder map for birthing brand-new docs in the target workspace below.
+    let inventory = match (&workspace_id, &token) {
+        (Some(_), Some(tok)) => api::list_docs_and_folders(&server, Some(tok)).await.ok(),
+        _ => None,
+    };
+    let mut taken: HashSet<String> = store::load_links()
         .into_iter()
         .filter(|l| l.server == store::http_base(&server) && !files.contains(&l.file))
         .map(|l| l.doc)
         .collect();
+    if let Some((docs, _)) = &inventory {
+        taken.extend(docs.iter().map(|d| d.slug.clone()));
+    }
     let mut plan: Vec<(PathBuf, String)> = Vec::new();
-    for file in &files {
-        let doc = match store::find_link(file) {
-            Some(link) => link.doc, // stable identity wins over the naming rule (ADR 0009)
-            None => {
-                let rel = file.strip_prefix(&dir).expect("discovered under dir");
-                unique_slug(&slug_from_rel_path(rel, prefix.as_deref()), &taken)
+    // Workspace mode with NO inventory (the list failed — server down at launch):
+    // brand-new files are DEFERRED to the first successful reconcile pass rather than
+    // allocated blind. A blind mint can collide with an unseen server slug (the room
+    // would open — and then clobber — THAT doc), and its lazy room mint would land in
+    // the personal workspace, invisible to this workspace forever.
+    let mut deferred_new: Vec<PathBuf> = Vec::new();
+    {
+        // Adoption inputs (workspace mode with inventory): this workspace's docs and
+        // folder chains, so a file that IS an existing doc (re-attaching a content
+        // folder on a fresh index) adopts that doc instead of forking a "-2" twin.
+        let adoption = match (&workspace_id, &inventory) {
+            (Some(w), Some((docs, folders))) => {
+                let w_folders: Vec<&api::FolderInfo> = folders
+                    .iter()
+                    .filter(|f| f.workspace_id.as_deref() == Some(w.as_str()))
+                    .collect();
+                let w_docs: Vec<&api::DocInfo> = docs
+                    .iter()
+                    .filter(|d| d.workspace_id.as_deref() == Some(w.as_str()))
+                    .collect();
+                let chains = folder_chains(&w_folders);
+                Some((w_docs, chains))
             }
+            _ => None,
         };
-        taken.insert(doc.clone());
-        store::record_link(file, &doc, &server, ws)?;
-        plan.push((file.clone(), doc));
+        let mut fmap = match (&workspace_id, &inventory) {
+            (Some(w), Some((_, folders))) => folder_map(folders, Some(w.as_str())),
+            _ => HashMap::new(),
+        };
+        for file in &files {
+            // Stable identity wins over the naming rule (ADR 0009).
+            if let Some(link) = store::find_link(file) {
+                taken.insert(link.doc.clone());
+                store::record_link(file, &link.doc, &server, ws)?;
+                plan.push((file.clone(), link.doc));
+                continue;
+            }
+            if workspace_id.is_some() && token.is_some() && inventory.is_none() {
+                deferred_new.push(file.clone());
+                continue;
+            }
+            let rel = file.strip_prefix(&dir).expect("discovered under dir");
+            let (doc, adopted) = match &adoption {
+                Some((w_docs, chains)) => {
+                    allocate_new_file_slug(rel, prefix.as_deref(), w_docs, chains, &taken)
+                }
+                None => (
+                    unique_slug(&slug_from_rel_path(rel, prefix.as_deref()), &taken),
+                    false,
+                ),
+            };
+            taken.insert(doc.clone());
+            store::record_link(file, &doc, &server, ws)?;
+            // Birth a MINTED doc in the target workspace BEFORE its room connects.
+            // Without this, resolve_access lazily mints the doc in the creator's
+            // PERSONAL workspace — invisible to this workspace's inbound reconcile,
+            // which would then class the local file "synced but absent" (the data
+            // loss this whole block exists to prevent). Adopted docs already exist.
+            if let (Some(ws_id), false, true) = (&workspace_id, adopted, inventory.is_some()) {
+                let item = place_item(&dir, file, &doc);
+                let folder_id = match ensure_folder_chain(
+                    &server,
+                    token.as_deref(),
+                    &client_id,
+                    Some(ws_id),
+                    &mut fmap,
+                    &item.folders,
+                )
+                .await
+                {
+                    Ok(id) => id,
+                    Err(e) => {
+                        warn!(%e, slug = %item.slug, "startup birth: folder chain failed — \
+                              creating at the workspace root");
+                        None
+                    }
+                };
+                if let Err(e) = api::create_document(
+                    &server,
+                    token.as_deref(),
+                    &client_id,
+                    ws_id,
+                    &item.slug,
+                    folder_id.as_deref(),
+                    Some(&item.title),
+                )
+                .await
+                {
+                    warn!(%e, slug = %item.slug, "startup birth in workspace failed — the \
+                          room connect may fall back to the personal workspace");
+                }
+            }
+            plan.push((file.clone(), doc));
+        }
+    }
+    if !deferred_new.is_empty() {
+        warn!(
+            "server inventory unavailable at startup — deferring {} new file(s) until \
+             the first successful reconcile",
+            deferred_new.len()
+        );
     }
 
     // ── 2. Startup summary ──────────────────────────────────────────────────
@@ -205,6 +317,13 @@ pub async fn run(
         handles: HashMap::new(),
         doc_index: DocIndex::default(),
         places: places.clone(),
+        seen_on_server: HashSet::new(),
+        server_slugs: inventory
+            .as_ref()
+            .map(|(docs, _)| docs.iter().map(|d| d.slug.clone()).collect())
+            .unwrap_or_default(),
+        pending_new: deferred_new,
+        pending_trash: Vec::new(),
     };
     for (file, doc) in plan {
         daemon.spawn_file(file, doc);
@@ -274,17 +393,22 @@ pub async fn run(
                 daemon.on_event(event).await;
                 publish(&status_tx, &daemon, DaemonState::Running);
             }
-            _ = tick.tick() => publish(&status_tx, &daemon, DaemonState::Running),
+            _ = tick.tick() => {
+                daemon.sweep_pending_trash(false).await;
+                publish(&status_tx, &daemon, DaemonState::Running);
+            }
             Some(ctl) = control_rx.recv() => {
                 match ctl {
-                    DaemonControl::Attach { path, bridge } => {
+                    DaemonControl::Attach { path, bridge, live_tx } => {
                         // doc_index unaffected: attach/detach reuse the existing path-keyed handle (B2).
                         let key = resolve_handle_key(&daemon.dir, &path);
                         if let Some(h) = daemon.handles.get(&key) {
                             let _ = h.bridge_ctl.send(crate::session::BridgeCmd::Attach(bridge));
                             let _ = h.fs_tx.send(()); // wake a lazily-idle session so it reconnects
+                            let _ = live_tx.send(daemon.shared.is_synced(&h.doc));
                         } else {
                             warn!(path = %key.display(), "attach_editor: no linked file at path");
+                            let _ = live_tx.send(false);
                         }
                     }
                     DaemonControl::Detach { path } => {
@@ -343,6 +467,8 @@ pub async fn run(
         let _ = handle.stop_tx.send(Stop::Flush);
     }
     while daemon.tasks.join_next().await.is_some() {}
+    // A delete followed by a quick quit must still propagate its trash.
+    daemon.sweep_pending_trash(true).await;
     say!("✓ sync stopped — {n} file(s); index and server docs retained");
     let _ = status_tx.send(DaemonStatus {
         state: DaemonState::Stopped,
@@ -408,11 +534,31 @@ struct SyncDaemon {
     doc_index: DocIndex,
     /// Desired folder placement per linked doc, consumed by the reconciler task.
     places: Arc<Mutex<Vec<PlaceItem>>>,
+    /// Every slug this run has observed in THIS workspace's server list. Inbound deletes
+    /// require an observed-then-vanished transition (see inbound_reconcile) — never
+    /// "absent on first sight".
+    seen_on_server: HashSet<String>,
+    /// Every slug currently visible on the server (ANY workspace), refreshed per
+    /// reconcile pass: the collision pool for fresh-slug allocation — a mint that
+    /// collides with an unseen server slug would open (and then clobber) THAT doc.
+    server_slugs: HashSet<String>,
+    /// Startup-discovered brand-new files whose allocation was deferred because the
+    /// server inventory was unavailable (see run()); linked + birthed + spawned by the
+    /// first successful reconcile pass.
+    pending_new: Vec<PathBuf>,
+    /// Removed known-synced files awaiting their outbound trash decision, swept by the
+    /// daemon loop after TRASH_GRACE (never a detached timer — the sweep must observe
+    /// every queued watcher event that precedes it).
+    pending_trash: Vec<(String, PathBuf, tokio::time::Instant)>,
 }
 
 impl SyncDaemon {
     /// Start the per-file session task (the factored `muesli open` machinery).
     fn spawn_file(&mut self, file: PathBuf, doc: String) {
+        // A fresh session starts with a pristine replica: until its next handshake the
+        // doc must not report a live bridge (respawns after a rename/move re-bind would
+        // otherwise leave a stale synced marker behind).
+        self.shared.clear_synced(&doc);
         let (fs_tx, mut fs_rx) = mpsc::unbounded_channel::<()>();
         let (stop_tx, mut stop_rx) = watch::channel(Stop::Run);
         let label = rel_label(&self.dir, &file);
@@ -494,6 +640,51 @@ impl SyncDaemon {
             .and_then(|p| self.handles.get(p))
     }
 
+    /// Decide + dispatch queued outbound trashes whose grace expired (all of them when
+    /// `drain_all`, the shutdown path — a delete-then-quit must not lose its trash).
+    /// Runs on the daemon loop, so every watcher event queued before this call has
+    /// already been processed: a rename's re-bind or a same-path restore is always
+    /// visible to the predicate, however long the rename's own network calls took.
+    async fn sweep_pending_trash(&mut self, drain_all: bool) {
+        if self.pending_trash.is_empty() {
+            return;
+        }
+        let now = tokio::time::Instant::now();
+        let mut keep = Vec::new();
+        for (doc, path, at) in std::mem::take(&mut self.pending_trash) {
+            if !drain_all && now.duration_since(at) < TRASH_GRACE {
+                keep.push((doc, path, at));
+                continue;
+            }
+            if !should_trash_removed(store::doc_path(&doc, &self.server).as_deref(), &path) {
+                println!("↻ removal of #{doc} superseded (rename or restore) — server doc kept");
+                continue;
+            }
+            let (server, token, client_id) = (
+                self.server.clone(),
+                self.token.clone(),
+                self.client_id.clone(),
+            );
+            if drain_all {
+                // Shutdown: await — a detached task would die with the runtime.
+                if let Err(e) =
+                    api::trash_document(&server, token.as_deref(), &client_id, &doc).await
+                {
+                    warn!(%e, slug = %doc, "outbound trash failed");
+                }
+            } else {
+                tokio::spawn(async move {
+                    if let Err(e) =
+                        api::trash_document(&server, token.as_deref(), &client_id, &doc).await
+                    {
+                        warn!(%e, slug = %doc, "outbound trash failed");
+                    }
+                });
+            }
+        }
+        self.pending_trash = keep;
+    }
+
     async fn on_event(&mut self, event: notify::Event) {
         let mut seen: Vec<PathBuf> = Vec::new();
         for path in event.paths {
@@ -547,22 +738,22 @@ impl SyncDaemon {
                     .as_deref(),
             );
             if known_synced {
-                let (server, token, client_id) = (
-                    self.server.clone(),
-                    self.token.clone(),
-                    self.client_id.clone(),
-                );
-                let slug = doc.clone();
-                tokio::spawn(async move {
-                    if let Err(e) =
-                        api::trash_document(&server, token.as_deref(), &client_id, &slug).await
-                    {
-                        warn!(%e, %slug, "outbound trash failed");
-                    }
-                });
+                // A rename lands as remove(old) + create(new), and the two watcher events
+                // race — trashing here immediately would take the doc offline (rooms
+                // refuse trashed docs with 410) and the next reconcile would remove the
+                // RENAMED local file. Queue the trash instead: the sweep runs on this
+                // same loop AFTER queued events, so a rename's re-bind (however long its
+                // network calls take) is always visible before the decision is made.
+                self.pending_trash.push((
+                    doc.clone(),
+                    path.to_path_buf(),
+                    tokio::time::Instant::now(),
+                ));
                 println!(
-                    "- file removed: {} — trashed #{doc} on the server (reversible soft-delete)",
-                    rel_label(&self.dir, path)
+                    "- file removed: {} — #{doc} will be trashed on the server unless it \
+                     reappears (reversible soft-delete, {}s grace)",
+                    rel_label(&self.dir, path),
+                    TRASH_GRACE.as_secs()
                 );
             } else {
                 println!(
@@ -582,6 +773,9 @@ impl SyncDaemon {
         tokio::time::sleep(Duration::from_millis(100)).await; // settle (create + write bursts)
         if !path.is_file() || self.handles.contains_key(&path) {
             return;
+        }
+        if self.pending_new.contains(&path) {
+            return; // startup-deferred: the next reconcile pass allocates it with inventory
         }
         let Ok(bytes) = std::fs::read(&path) else {
             return;
@@ -628,7 +822,11 @@ impl SyncDaemon {
                     let rel = path
                         .strip_prefix(&self.dir)
                         .expect("candidate is under dir");
-                    let taken = links.iter().map(|l| l.doc.clone()).collect();
+                    // Avoid every slug we know of — local links AND all server-visible
+                    // slugs (refreshed each reconcile pass): a collision would make the
+                    // room open a foreign doc and clobber it with this file's content.
+                    let mut taken: HashSet<String> = links.iter().map(|l| l.doc.clone()).collect();
+                    taken.extend(self.server_slugs.iter().cloned());
                     let doc = unique_slug(&slug_from_rel_path(rel, self.prefix.as_deref()), &taken);
                     if let Err(e) =
                         store::record_link(&path, &doc, &self.server, self.workspace_id.as_deref())
@@ -654,7 +852,14 @@ impl SyncDaemon {
         let workspace_mode = self.workspace_id.is_some() && self.token.is_some();
         if should_create_remote_doc(workspace_mode, is_new) {
             let workspace_id = self.workspace_id.clone().expect("workspace_mode ⇒ Some");
-            let folder_id = self.resolve_folder_chain(&item).await;
+            let folder_id = match self.resolve_folder_chain(&item).await {
+                Ok(id) => id,
+                Err(e) => {
+                    warn!(%e, slug = %item.slug, "new doc: folder chain failed — \
+                          creating at the workspace root");
+                    None
+                }
+            };
             if let Err(e) = api::create_document(
                 &self.server,
                 self.token.as_deref(),
@@ -678,74 +883,133 @@ impl SyncDaemon {
             .map(|l| l.last_synced.is_some())
             .unwrap_or(false)
         {
-            let (server, token, client_id) = (
-                self.server.clone(),
-                self.token.clone(),
-                self.client_id.clone(),
-            );
-            let folder_parent = self.resolve_folder_chain(&item).await;
-            let (slug, title) = (item.slug.clone(), item.title.clone());
-            if let Err(e) = api::place_document(
-                &server,
-                token.as_deref(),
-                &client_id,
-                &slug,
-                folder_parent.as_deref(),
-                &title,
-            )
-            .await
-            {
-                warn!(%e, %slug, "outbound place (rename) failed");
+            // Skip the PATCH entirely when the chain cannot be fully resolved: a placement
+            // built from a partial chain would relocate the doc (worst case to the root),
+            // and the next inbound reconcile would then move the local file to match.
+            match self.resolve_folder_chain(&item).await {
+                Ok(folder_parent) => {
+                    if let Err(e) = api::place_document(
+                        &self.server,
+                        self.token.as_deref(),
+                        &self.client_id,
+                        &item.slug,
+                        folder_parent.as_deref(),
+                        &item.title,
+                    )
+                    .await
+                    {
+                        warn!(%e, slug = %item.slug, "outbound place (rename) failed");
+                    }
+                }
+                Err(e) => {
+                    warn!(%e, slug = %item.slug, "outbound place (rename): folder chain \
+                          failed — leaving the server placement unchanged");
+                }
             }
         }
         self.spawn_file(path, doc);
     }
 
     /// Ensure `item`'s folder chain exists on the server (creating missing levels) and
-    /// return the leaf folder id (None = root). Best-effort: on any error returns what it
-    /// has so far (the reconcile_loop will retry placement).
-    async fn resolve_folder_chain(&self, item: &PlaceItem) -> Option<String> {
-        let (_docs, folders) = api::list_docs_and_folders(&self.server, self.token.as_deref())
-            .await
-            .ok()?;
-        let mut fmap: HashMap<(Option<String>, String), String> = folders
+    /// return the leaf folder id (None = root). Err = the chain could not be fully
+    /// resolved; callers must not act on a partial placement (a PATCH built from a
+    /// half-resolved chain would silently relocate the doc).
+    async fn resolve_folder_chain(&self, item: &PlaceItem) -> Result<Option<String>> {
+        let (_docs, folders) =
+            api::list_docs_and_folders(&self.server, self.token.as_deref()).await?;
+        let mut fmap = folder_map(&folders, self.workspace_id.as_deref());
+        ensure_folder_chain(
+            &self.server,
+            self.token.as_deref(),
+            &self.client_id,
+            self.workspace_id.as_deref(),
+            &mut fmap,
+            &item.folders,
+        )
+        .await
+    }
+
+    /// Link + birth + spawn the startup-deferred new files (see run(): allocation
+    /// waits for a server inventory). Runs with each reconcile pass's fresh inventory
+    /// until the backlog clears; files that vanished while deferred are dropped.
+    async fn process_pending_new(&mut self, docs: &[api::DocInfo], folders: &[api::FolderInfo]) {
+        if self.pending_new.is_empty() {
+            return;
+        }
+        let Some(ws_id) = self.workspace_id.clone() else {
+            self.pending_new.clear(); // open mode never defers; stale entries are a bug
+            return;
+        };
+        let files = std::mem::take(&mut self.pending_new);
+        let w_docs: Vec<&api::DocInfo> = docs
             .iter()
-            .filter(|f| match (&self.workspace_id, &f.workspace_id) {
-                (Some(w), Some(h)) => w == h,
-                (Some(_), None) => false,
-                (None, _) => true,
-            })
-            .map(|f| ((f.parent_id.clone(), f.name.clone()), f.id.clone()))
+            .filter(|d| d.workspace_id.as_deref() == Some(ws_id.as_str()))
             .collect();
-        let mut parent: Option<String> = None;
-        for name in &item.folders {
-            let key = (parent.clone(), name.clone());
-            let id = if let Some(id) = fmap.get(&key) {
-                id.clone()
-            } else {
-                match api::create_folder(
+        let w_folders: Vec<&api::FolderInfo> = folders
+            .iter()
+            .filter(|f| f.workspace_id.as_deref() == Some(ws_id.as_str()))
+            .collect();
+        let chains = folder_chains(&w_folders);
+        let mut fmap = folder_map(folders, Some(&ws_id));
+        let server_base = store::http_base(&self.server);
+        let mut taken: HashSet<String> = store::load_links()
+            .into_iter()
+            .filter(|l| l.server == server_base)
+            .map(|l| l.doc)
+            .collect();
+        taken.extend(self.server_slugs.iter().cloned());
+        for file in files {
+            if !file.is_file() || self.handles.contains_key(&file) {
+                continue;
+            }
+            let Ok(rel) = file.strip_prefix(&self.dir).map(Path::to_path_buf) else {
+                continue;
+            };
+            let (doc, adopted) =
+                allocate_new_file_slug(&rel, self.prefix.as_deref(), &w_docs, &chains, &taken);
+            taken.insert(doc.clone());
+            if let Err(e) = store::record_link(&file, &doc, &self.server, Some(&ws_id)) {
+                warn!(%e, "deferred link: record_link failed");
+            }
+            if !adopted {
+                let item = place_item(&self.dir, &file, &doc);
+                let folder_id = match ensure_folder_chain(
                     &self.server,
                     self.token.as_deref(),
                     &self.client_id,
-                    self.workspace_id.as_deref(),
-                    name,
-                    parent.as_deref(),
+                    Some(&ws_id),
+                    &mut fmap,
+                    &item.folders,
                 )
                 .await
                 {
-                    Ok(id) => {
-                        fmap.insert(key, id.clone());
-                        id
-                    }
+                    Ok(id) => id,
                     Err(e) => {
-                        warn!(%e, name, "rename place: create folder failed");
-                        return parent;
+                        warn!(%e, slug = %item.slug, "deferred birth: folder chain failed — \
+                              creating at the workspace root");
+                        None
                     }
+                };
+                if let Err(e) = api::create_document(
+                    &self.server,
+                    self.token.as_deref(),
+                    &self.client_id,
+                    &ws_id,
+                    &item.slug,
+                    folder_id.as_deref(),
+                    Some(&item.title),
+                )
+                .await
+                {
+                    warn!(%e, slug = %item.slug, "deferred birth in workspace failed");
                 }
-            };
-            parent = Some(id);
+            }
+            println!(
+                "+ deferred file linked: {} → #{doc}",
+                rel_label(&self.dir, &file)
+            );
+            self.spawn_file(file, doc);
         }
-        parent
     }
 
     /// Converge local disk toward the server's structure (Contract 5). Idempotent; safe to call
@@ -759,6 +1023,11 @@ impl SyncDaemon {
                     return;
                 }
             };
+        // Refresh the all-workspace slug pool (fresh-slug allocation consults it) and
+        // settle any startup-deferred new files now that an inventory exists.
+        self.server_slugs = docs.iter().map(|d| d.slug.clone()).collect();
+        self.process_pending_new(&docs, &folders).await;
+
         // Filter to our workspace (client-side; Contract 4). None = open mode → keep all.
         let mine = |ws: &Option<String>| match (&self.workspace_id, ws) {
             (Some(want), Some(have)) => want == have,
@@ -770,25 +1039,7 @@ impl SyncDaemon {
         let docs: Vec<&api::DocInfo> = docs.iter().filter(|d| mine(&d.workspace_id)).collect();
 
         // folder id → ordered ancestor names (root-first).
-        let by_id: HashMap<&str, &api::FolderInfo> =
-            folders.iter().map(|f| (f.id.as_str(), *f)).collect();
-        let mut chain: HashMap<String, Vec<String>> = HashMap::new();
-        for f in &folders {
-            let mut names = Vec::new();
-            let mut cur = Some(f.id.as_str());
-            let mut guard = 0;
-            while let Some(id) = cur {
-                let Some(fi) = by_id.get(id) else { break };
-                names.push(fi.name.clone());
-                cur = fi.parent_id.as_deref();
-                guard += 1;
-                if guard > 64 {
-                    break;
-                } // cycle guard
-            }
-            names.reverse();
-            chain.insert(f.id.clone(), names);
-        }
+        let chain = folder_chains(&folders);
 
         let server_docs: Vec<(String, PathBuf)> = docs
             .iter()
@@ -800,12 +1051,21 @@ impl SyncDaemon {
             })
             .collect();
 
-        // Local links for THIS server.
+        // Local links for THIS daemon: same server, same workspace tag, under OUR root.
+        // The index is global (every workspace and every synced folder on this machine
+        // shares it), so an unscoped list would let this daemon delete or move files that
+        // belong to ANOTHER workspace's folder — e.g. switching workspaces would purge the
+        // previous one's tree because its docs are "absent" from the new workspace's list.
         let server_base = store::http_base(&self.server);
         let links = store::load_links();
+        let in_scope = |l: &&store::Link| {
+            l.server == server_base
+                && l.workspace.as_deref() == self.workspace_id.as_deref()
+                && l.file.starts_with(&self.dir)
+        };
         let local_links: Vec<(String, PathBuf)> = links
             .iter()
-            .filter(|l| l.server == server_base)
+            .filter(in_scope)
             .map(|l| (l.doc.clone(), l.file.clone()))
             .collect();
         // known-synced = the local link exists AND the doc currently has (or had) a server row.
@@ -825,10 +1085,25 @@ impl SyncDaemon {
         let server_slugs: HashSet<&str> = docs.iter().map(|d| d.slug.as_str()).collect();
         let known_synced: HashSet<String> = links
             .iter()
-            .filter(|l| l.server == server_base)
+            .filter(in_scope)
             .filter(|l| l.last_synced.is_some() || server_slugs.contains(l.doc.as_str()))
             .map(|l| l.doc.clone())
             .collect();
+        // Deletable = known-synced AND seen in THIS workspace's list earlier in THIS run.
+        // "last_synced" alone proves a server round-trip, not membership in THIS workspace:
+        // a doc lazily minted into the wrong workspace (e.g. by a room connect that raced
+        // its birth) syncs fine yet never appears in our filtered list — without the seen
+        // guard every such file would be removed as "absent". Requiring an
+        // observed-then-vanished transition makes a local delete mean exactly one thing:
+        // this workspace HAD the doc and someone removed it. (Trade-off, deliberate: a
+        // remote delete performed while this daemon was NOT running no longer removes the
+        // local file — the file stays; data preservation wins over convergence.)
+        let deletable: HashSet<String> = known_synced
+            .intersection(&self.seen_on_server)
+            .cloned()
+            .collect();
+        self.seen_on_server
+            .extend(docs.iter().map(|d| d.slug.clone()));
 
         // Folders that contain no docs → empty dirs to materialize.
         let nonempty: HashSet<&str> = docs.iter().filter_map(|d| d.folder_id.as_deref()).collect();
@@ -848,7 +1123,7 @@ impl SyncDaemon {
             &self.dir,
             &server_docs,
             &local_links,
-            &known_synced,
+            &deletable,
             &empty_folders,
         );
         for action in actions {
@@ -918,7 +1193,24 @@ impl SyncDaemon {
                     let _ = h.stop_tx.send(Stop::Drop);
                 }
                 self.doc_index.unbind(&path);
-                let _ = std::fs::remove_file(&path);
+                // Reversible on both ends: the remote side is a soft-delete (server trash),
+                // so the local side goes to the OS trash too — a wrongly-propagated delete
+                // stays recoverable. Hard-remove only if the platform trash is unavailable
+                // (headless), so the tree still converges.
+                if path.exists() {
+                    if let Err(e) = trash::delete(&path) {
+                        warn!(%e, "inbound delete: OS trash unavailable — removing file");
+                        let _ = std::fs::remove_file(&path);
+                    }
+                }
+                if path.exists() {
+                    // Neither trash nor remove worked (permissions?). Keep the link so
+                    // the next pass retries: dropping it would rediscover the file as
+                    // brand-new and birth a duplicate doc carrying the deleted content.
+                    warn!(path = %path.display(), "inbound delete: file still present — \
+                          keeping the link to retry");
+                    return;
+                }
                 let _ = store::remove_link(&path);
                 println!(
                     "↓ remote delete: removed {} (#{slug})",
@@ -954,6 +1246,107 @@ struct PlaceItem {
 /// still returns true, which is the gap this closes.
 fn should_create_remote_doc(workspace_mode: bool, is_new_link: bool) -> bool {
     workspace_mode && is_new_link
+}
+
+/// folder id → ordered ancestor names (root-first), cycle-guarded. The inputs should
+/// already be scoped to one workspace (chains must never cross the wall).
+fn folder_chains(folders: &[&api::FolderInfo]) -> HashMap<String, Vec<String>> {
+    let by_id: HashMap<&str, &api::FolderInfo> =
+        folders.iter().map(|f| (f.id.as_str(), *f)).collect();
+    let mut chains: HashMap<String, Vec<String>> = HashMap::new();
+    for f in folders {
+        let mut names = Vec::new();
+        let mut cur = Some(f.id.as_str());
+        let mut guard = 0;
+        while let Some(id) = cur {
+            let Some(fi) = by_id.get(id) else { break };
+            names.push(fi.name.clone());
+            cur = fi.parent_id.as_deref();
+            guard += 1;
+            if guard > 64 {
+                break; // cycle guard
+            }
+        }
+        names.reverse();
+        chains.insert(f.id.clone(), names);
+    }
+    chains
+}
+
+/// Slug decision for a brand-new (unlinked) file in workspace mode. ADOPT the workspace
+/// doc whose desired on-disk path equals the file's relative path — the file IS that
+/// doc (re-attaching an existing content folder on a fresh index must converge, not
+/// fork "-2" twins that shadow the originals forever). Otherwise mint a slug free of
+/// EVERY taken slug the caller knows (local links + all server-visible slugs — a
+/// collision would make the room open a foreign doc and clobber its content with this
+/// file on first sync). Returns (slug, adopted).
+fn allocate_new_file_slug(
+    rel: &Path,
+    prefix: Option<&str>,
+    workspace_docs: &[&api::DocInfo],
+    chains: &HashMap<String, Vec<String>>,
+    taken: &HashSet<String>,
+) -> (String, bool) {
+    for d in workspace_docs {
+        if desired_rel_path(d.folder_id.as_deref(), d.title.as_deref(), &d.slug, chains) == rel {
+            return (d.slug.clone(), true);
+        }
+    }
+    (unique_slug(&slug_from_rel_path(rel, prefix), taken), false)
+}
+
+/// (parent_id, name) → folder id for the folders of `workspace_id` (None = open mode,
+/// keep all). Scoping matters: the same (parent=None, name) pair can exist in several
+/// workspaces, and reusing a foreign workspace's folder id would place docs across the wall.
+fn folder_map(
+    folders: &[api::FolderInfo],
+    workspace_id: Option<&str>,
+) -> HashMap<(Option<String>, String), String> {
+    folders
+        .iter()
+        .filter(|f| match (workspace_id, &f.workspace_id) {
+            (Some(w), Some(h)) => w == *h,
+            (Some(_), None) => false,
+            (None, _) => true,
+        })
+        .map(|f| ((f.parent_id.clone(), f.name.clone()), f.id.clone()))
+        .collect()
+}
+
+/// Walk `names` root-first through `fmap`, creating missing levels server-side, and return
+/// the leaf folder id (None = root, i.e. `names` empty). The first failure aborts the walk:
+/// callers skip their placement rather than acting on a partial chain.
+async fn ensure_folder_chain(
+    server: &str,
+    token: Option<&str>,
+    client_id: &str,
+    workspace_id: Option<&str>,
+    fmap: &mut HashMap<(Option<String>, String), String>,
+    names: &[String],
+) -> Result<Option<String>> {
+    let mut parent: Option<String> = None;
+    for name in names {
+        let key = (parent.clone(), name.clone());
+        let id = match fmap.get(&key) {
+            Some(id) => id.clone(),
+            None => {
+                let id = api::create_folder(
+                    server,
+                    token,
+                    client_id,
+                    workspace_id,
+                    name,
+                    parent.as_deref(),
+                )
+                .await
+                .with_context(|| format!("creating folder {name:?}"))?;
+                fmap.insert(key, id.clone());
+                id
+            }
+        };
+        parent = Some(id);
+    }
+    Ok(parent)
 }
 
 fn place_item(dir: &Path, file: &Path, doc: &str) -> PlaceItem {
@@ -1026,10 +1419,7 @@ async fn reconcile_loop(
         let doc_by_slug: HashMap<&str, &api::DocInfo> =
             docs.iter().map(|d| (d.slug.as_str(), d)).collect();
         // (parent_id, name) → folder id, so an existing tree is reused, not duplicated.
-        let mut fmap: HashMap<(Option<String>, String), String> = folders
-            .iter()
-            .map(|f| ((f.parent_id.clone(), f.name.clone()), f.id.clone()))
-            .collect();
+        let mut fmap = folder_map(&folders, workspace_id.as_deref());
 
         for item in &pending {
             let Some(doc) = doc_by_slug.get(item.slug.as_str()) else {
@@ -1045,39 +1435,22 @@ async fn reconcile_loop(
                 continue;
             }
             // Ensure the folder chain, creating missing levels.
-            let mut parent: Option<String> = None;
-            let mut chain_ok = true;
-            for name in &item.folders {
-                let key = (parent.clone(), name.clone());
-                let id = if let Some(id) = fmap.get(&key) {
-                    id.clone()
-                } else {
-                    match api::create_folder(
-                        &server,
-                        token.as_deref(),
-                        &client_id,
-                        workspace_id.as_deref(),
-                        name,
-                        parent.as_deref(),
-                    )
-                    .await
-                    {
-                        Ok(id) => {
-                            fmap.insert(key, id.clone());
-                            id
-                        }
-                        Err(e) => {
-                            warn!(%e, name, "placement: create folder failed");
-                            chain_ok = false;
-                            break;
-                        }
-                    }
-                };
-                parent = Some(id);
-            }
-            if !chain_ok {
-                continue;
-            }
+            let parent = match ensure_folder_chain(
+                &server,
+                token.as_deref(),
+                &client_id,
+                workspace_id.as_deref(),
+                &mut fmap,
+                &item.folders,
+            )
+            .await
+            {
+                Ok(parent) => parent,
+                Err(e) => {
+                    warn!(%e, "placement: create folder failed");
+                    continue;
+                }
+            };
             match api::place_document(
                 &server,
                 token.as_deref(),
@@ -1235,6 +1608,15 @@ fn should_trash_on_delete(last_synced: Option<&str>) -> bool {
     last_synced.is_some()
 }
 
+/// Whether a queued trash still stands when its grace expires: the removed path must
+/// STILL be gone (a restore at the same path — Finder undo, `git checkout` — cancels
+/// it), and the doc must not have been re-bound to a different existing path (a rename
+/// cancels it). `current_link` is the doc's link path now; `removed` is the path whose
+/// removal queued the trash.
+fn should_trash_removed(current_link: Option<&Path>, removed: &Path) -> bool {
+    !removed.exists() && !current_link.is_some_and(|p| p != removed && p.exists())
+}
+
 pub fn rebind_candidate(
     new_hash: u64,
     candidates: &[(String, bool, Option<u64>)],
@@ -1294,7 +1676,9 @@ fn reconcile_actions(
     let server: HashSet<&str> = server_docs.iter().map(|(s, _)| s.as_str()).collect();
     let mut out = Vec::new();
 
-    // Creates + moves, driven by the server's desired state.
+    // Creates + moves, driven by the server's desired state. A link whose current path is
+    // OUTSIDE the root (a stale/foreign index row) is never acted on: moving it would drag a
+    // foreign file into this tree. The caller scopes links to the root; this is the backstop.
     for (slug, rel) in server_docs {
         let dest = root.join(rel);
         match local.get(slug.as_str()) {
@@ -1302,18 +1686,19 @@ fn reconcile_actions(
                 slug: slug.clone(),
                 dest,
             }),
-            Some(cur) if **cur != dest => out.push(InboundAction::Move {
+            Some(cur) if **cur != dest && cur.starts_with(root) => out.push(InboundAction::Move {
                 slug: slug.clone(),
                 from: (*cur).clone(),
                 to: dest,
             }),
-            Some(_) => {} // already in place
+            Some(_) => {} // already in place (or parked outside the root — untouchable)
         }
     }
     // Deletes: locally-linked, known-synced, and now absent on the server. Never touch a
-    // never-synced local (pending first push).
+    // never-synced local (pending first push), and never a path outside the synced root.
     for (slug, path) in local_links {
-        if !server.contains(slug.as_str()) && known_synced.contains(slug) {
+        if !server.contains(slug.as_str()) && known_synced.contains(slug) && path.starts_with(root)
+        {
             out.push(InboundAction::Delete {
                 slug: slug.clone(),
                 path: path.clone(),
@@ -1504,6 +1889,38 @@ mod tests {
     }
 
     #[test]
+    fn reconcile_actions_never_touches_paths_outside_root() {
+        // A link whose current path lies OUTSIDE the synced root (a stale/foreign index row)
+        // must never be deleted or moved by this daemon — even when known-synced and absent
+        // from (or displaced on) the server. Deleting it would reach into another folder's
+        // files; moving it would drag a foreign file into this tree.
+        let root = Path::new("/root");
+        let server_docs = vec![("displaced".to_string(), PathBuf::from("displaced.md"))];
+        let local_links = vec![
+            (
+                "displaced".to_string(),
+                PathBuf::from("/elsewhere/displaced.md"),
+            ),
+            ("gone".to_string(), PathBuf::from("/elsewhere/gone.md")),
+        ];
+        let known_synced: HashSet<String> = ["displaced", "gone"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let acts = reconcile_actions(root, &server_docs, &local_links, &known_synced, &[]);
+        assert!(
+            !acts
+                .iter()
+                .any(|a| matches!(a, InboundAction::Delete { .. })),
+            "an outside-root link must never be deleted: {acts:?}"
+        );
+        assert!(
+            !acts.iter().any(|a| matches!(a, InboundAction::Move { .. })),
+            "an outside-root link must never be moved: {acts:?}"
+        );
+    }
+
+    #[test]
     fn reconcile_actions_never_deletes_unpushed_even_when_absent() {
         // A local link that is NOT known-synced and absent on the server must never be deleted,
         // even when other docs are present. This is the data-loss guard.
@@ -1585,6 +2002,101 @@ mod tests {
         // No link row at all (find_link → None) → conservatively do NOT trash.
         let no_link: Option<String> = None;
         assert!(!should_trash_on_delete(no_link.as_deref()));
+    }
+
+    #[test]
+    fn pending_trash_cancelled_by_rename_or_restore() {
+        let tmp = std::env::temp_dir().join(format!("muesli-rename-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let removed = tmp.join("old.md");
+        let renamed = tmp.join("new.md");
+        std::fs::write(&renamed, "x").unwrap();
+
+        // Re-bound to a different, existing path → the removal was a rename: keep.
+        assert!(!should_trash_removed(Some(&renamed), &removed));
+        // Link still points at the (gone) removed path → a true delete: trash.
+        assert!(should_trash_removed(Some(&removed), &removed));
+        // Re-bound path does not exist (stale index) → still a delete: trash.
+        let ghost = tmp.join("ghost.md");
+        assert!(should_trash_removed(Some(&ghost), &removed));
+        // No link at all → a true delete: trash.
+        assert!(should_trash_removed(None, &removed));
+        // The removed path REAPPEARED (same-path restore: Finder undo, git checkout)
+        // → never trash, whatever the index says.
+        std::fs::write(&removed, "restored").unwrap();
+        assert!(!should_trash_removed(Some(&removed), &removed));
+        assert!(!should_trash_removed(None, &removed));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn new_file_slug_adopts_matching_workspace_doc_else_mints_free_slug() {
+        let mut chains = HashMap::new();
+        chains.insert("f1".to_string(), vec!["Notes".to_string()]);
+        let existing = api::DocInfo {
+            slug: "notes-todo".into(),
+            title: Some("todo".into()),
+            folder_id: Some("f1".into()),
+            workspace_id: Some("ws-1".into()),
+        };
+        let w_docs = vec![&existing];
+
+        // Same desired path → adopt the existing doc (no "-2" twin on re-attach).
+        let taken: HashSet<String> = ["notes-todo".to_string()].into();
+        assert_eq!(
+            allocate_new_file_slug(Path::new("Notes/todo.md"), None, &w_docs, &chains, &taken),
+            ("notes-todo".to_string(), true)
+        );
+        // Different path, but the natural slug is taken (e.g. by a doc in ANOTHER
+        // workspace) → mint a suffixed slug rather than colliding into it.
+        let taken: HashSet<String> = ["other".to_string()].into();
+        assert_eq!(
+            allocate_new_file_slug(Path::new("other.md"), None, &w_docs, &chains, &taken),
+            ("other-2".to_string(), false)
+        );
+        // Free slug → plain mint.
+        assert_eq!(
+            allocate_new_file_slug(Path::new("fresh.md"), None, &w_docs, &chains, &taken),
+            ("fresh".to_string(), false)
+        );
+    }
+
+    #[test]
+    fn folder_map_scopes_to_the_workspace() {
+        let folders = vec![
+            api::FolderInfo {
+                id: "f-mine".into(),
+                parent_id: None,
+                name: "Notes".into(),
+                workspace_id: Some("ws-1".into()),
+            },
+            api::FolderInfo {
+                id: "f-other".into(),
+                parent_id: None,
+                name: "Notes".into(),
+                workspace_id: Some("ws-2".into()),
+            },
+            api::FolderInfo {
+                id: "f-legacy".into(),
+                parent_id: None,
+                name: "Legacy".into(),
+                workspace_id: None,
+            },
+        ];
+        // Workspace mode: only ws-1's folder maps; the same-named ws-2 folder and the
+        // untagged legacy row are excluded (never place across the workspace wall).
+        let mine = folder_map(&folders, Some("ws-1"));
+        assert_eq!(
+            mine.get(&(None, "Notes".to_string())),
+            Some(&"f-mine".to_string())
+        );
+        assert_eq!(mine.len(), 1);
+        // Open mode keeps every workspace's folders (same-named siblings collapse to one
+        // (parent, name) key — the map exists for name-chain lookups, not enumeration).
+        let all = folder_map(&folders, None);
+        assert!(all.contains_key(&(None, "Notes".to_string())));
+        assert!(all.contains_key(&(None, "Legacy".to_string())));
     }
 
     #[test]

@@ -77,6 +77,26 @@ describe("makeDebouncedSaver", () => {
     expect(writes).toEqual(["first", "second"]);
   });
 
+  it("cancel drops the pending write and disarms the timer", async () => {
+    const writes: string[] = [];
+    const write = vi.fn(async (text: string) => {
+      writes.push(text);
+    });
+
+    const saver = makeDebouncedSaver(write, 500);
+    saver.schedule("doomed");
+    saver.cancel();
+    await vi.runAllTimersAsync();
+    expect(write).not.toHaveBeenCalled();
+
+    // A cancelled saver stays usable, and flush after cancel writes nothing.
+    await saver.flush();
+    expect(write).not.toHaveBeenCalled();
+    saver.schedule("kept");
+    await vi.runAllTimersAsync();
+    expect(writes).toEqual(["kept"]);
+  });
+
   it("multiple schedules reset the timer each time", async () => {
     const writes: string[] = [];
     const write = vi.fn(async (text: string) => {

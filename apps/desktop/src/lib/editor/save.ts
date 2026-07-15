@@ -7,6 +7,10 @@ export interface DebouncedSaver {
   schedule(text: string): void;
   /** Cancel any pending timer and write immediately. Returns the write promise. */
   flush(): Promise<void>;
+  /** Drop the pending write and disarm the timer WITHOUT writing. For teardown after
+   *  a rename/move retarget: the saver's captured path is stale, and a late write
+   *  would recreate the old file on disk. */
+  cancel(): void;
 }
 
 export function makeDebouncedSaver(
@@ -44,5 +48,13 @@ export function makeDebouncedSaver(
     }
   }
 
-  return { schedule, flush };
+  function cancel(): void {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    pending = null;
+  }
+
+  return { schedule, flush, cancel };
 }

@@ -126,4 +126,79 @@ describe("tabs store", () => {
     s.close("/workspace/a.md");
     expect(called).toBe(false);
   });
+
+  it("flush: a folder path flushes every open tab underneath it", async () => {
+    const s = createTabsStore();
+    s.open("/ws/dir/a.md", "a.md");
+    s.open("/ws/dir/sub/b.md", "b.md");
+    s.open("/ws/dirty.md", "dirty.md"); // shares the string prefix, NOT the folder
+    const flushed: string[] = [];
+    s.registerFlush("/ws/dir/a.md", () => {
+      flushed.push("a");
+    });
+    s.registerFlush("/ws/dir/sub/b.md", () => {
+      flushed.push("b");
+    });
+    s.registerFlush("/ws/dirty.md", () => {
+      flushed.push("dirty");
+    });
+    await s.flush("/ws/dir");
+    expect(flushed.sort()).toEqual(["a", "b"]);
+  });
+
+  it("flush: awaits the registered callback and no-ops for unknown ids", async () => {
+    const s = createTabsStore();
+    s.open("/workspace/a.md", "a.md");
+    let settled = false;
+    s.registerFlush("/workspace/a.md", async () => {
+      await Promise.resolve();
+      settled = true;
+    });
+    await s.flush("/workspace/a.md");
+    expect(settled).toBe(true);
+    await expect(s.flush("/workspace/nope.md")).resolves.toBeUndefined();
+  });
+
+  it("retarget: re-keys a renamed file's tab and keeps it active", () => {
+    const s = createTabsStore();
+    s.open("/ws/old.md", "old.md");
+    s.retarget("/ws/old.md", "/ws/new.md");
+    expect(s.tabs).toHaveLength(1);
+    expect(s.tabs[0].id).toBe("/ws/new.md");
+    expect(s.tabs[0].path).toBe("/ws/new.md");
+    expect(s.tabs[0].name).toBe("new.md");
+    expect(s.activeId).toBe("/ws/new.md");
+  });
+
+  it("retarget: re-keys tabs under a renamed folder (prefix move)", () => {
+    const s = createTabsStore();
+    s.open("/ws/dir/a.md", "a.md");
+    s.open("/ws/dir/sub/b.md", "b.md");
+    s.open("/ws/dirty.md", "dirty.md"); // shares the string prefix, NOT the folder
+    s.retarget("/ws/dir", "/ws/renamed");
+    const paths = s.tabs.map((t) => t.path);
+    expect(paths).toContain("/ws/renamed/a.md");
+    expect(paths).toContain("/ws/renamed/sub/b.md");
+    expect(paths).toContain("/ws/dirty.md");
+  });
+
+  it("retarget: drops the old flush registration (its saver targets the old path)", () => {
+    const s = createTabsStore();
+    s.open("/ws/old.md", "old.md");
+    let called = false;
+    s.registerFlush("/ws/old.md", () => {
+      called = true;
+    });
+    s.retarget("/ws/old.md", "/ws/new.md");
+    s.close("/ws/new.md");
+    expect(called).toBe(false);
+  });
+
+  it("retarget: no-op when no tab matches", () => {
+    const s = createTabsStore();
+    s.open("/ws/a.md", "a.md");
+    const before = s.tabs;
+    s.retarget("/ws/other.md", "/ws/moved.md");
+    expect(s.tabs).toBe(before);
+  });
 });

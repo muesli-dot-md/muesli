@@ -244,7 +244,10 @@ export const workspaceSyncStatus = (): Promise<DaemonStatusView> => invoke("work
 // ─── Tier-2 editor bridge commands (Plan 3) ──────────────────────────────────
 
 /** Attach the editor for `path` to the daemon's CRDT replica (Tier-2 IPC). */
-export const attachEditor = (path: string): Promise<void> => invoke("attach_editor", { path });
+/** Attach the editor bridge for `path`. Resolves with whether the bridge is LIVE (a
+ *  linked, already-synced session that will answer with a snapshot); `false` means the
+ *  editor should seed from disk immediately rather than wait on a silent bridge. */
+export const attachEditor = (path: string): Promise<boolean> => invoke("attach_editor", { path });
 
 /** Detach the editor for `path` from the daemon's replica. */
 export const detachEditor = (path: string): Promise<void> => invoke("detach_editor", { path });
