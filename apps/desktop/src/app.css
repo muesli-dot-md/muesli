@@ -145,6 +145,37 @@ html {
   --folder-accent: oklch(var(--folder-l, 0.6) var(--folder-c, 0.14) var(--folder-h));
 }
 
+/* Folder glyphs (.folder-glyph on the tree's lucide CLOSED Folder only): the
+   stroke rides currentColor (--folder-accent via the icon's text- class); the
+   interior gets a gentle wash of the SAME hue instead of staying hollow —
+   lucide ships stroke-only paths (svg fill="none"), so the fill is set here in
+   CSS, off the same --folder-accent composition, and therefore tracks a hue
+   change live exactly like the stroke. 18% toward transparent reads as a soft
+   tint over both the light and dark floors without swallowing the outline.
+   FolderOpen must stay stroke-only (no .folder-glyph): its path has no
+   closepath, so a CSS fill implicitly closes it from its endpoint and the
+   shape self-intersects — a visible diagonal seam across every expanded row. */
+.folder-glyph path {
+  fill: color-mix(in oklch, var(--folder-accent) 18%, transparent);
+}
+
+/* Accent override hook — the webapp's mechanism (apps/web/src/app.css), ported
+   verbatim: accent.svelte.ts sets --accent-primary* on the document root from
+   the chosen preset, and each theme points --color-primary at it. Unlike the
+   web (whose default accent is gray), the fallbacks here are the themes' own
+   stock --arc-primary tokens, so with the vars unset — or set to the default
+   periwinkle preset, whose values equal --arc-primary exactly — the desktop
+   renders precisely its pre-accent-picker look. Same selector specificity as
+   the daisyUI theme blocks; source order makes it win. */
+[data-theme="arc-light"] {
+  --color-primary: var(--accent-primary, var(--arc-primary));
+  --color-primary-content: var(--accent-primary-content, var(--arc-primary-content));
+}
+[data-theme="arc-dark"] {
+  --color-primary: var(--accent-primary-dark, var(--arc-primary));
+  --color-primary-content: var(--accent-primary-content-dark, var(--arc-primary-content));
+}
+
 /* Arc-style file-tree rows: the row (.tree-row-wrap) IS the highlight
    surface — hover/active backgrounds span the pane width as a rounded
    rectangle inset 4px from each edge (Arc/Obsidian-style), with depth

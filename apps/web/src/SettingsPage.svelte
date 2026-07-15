@@ -184,7 +184,7 @@
 <!-- Embedded (inside Home's main panel): fill the card, no screen-height shell,
      no top bar — Home owns the chrome (workspaces sidebar + account menu).
      Standalone: the full-page shell with its own header. -->
-<div class={embedded ? "flex h-full min-h-0 flex-col" : "flex h-screen flex-col bg-base-200"}>
+<div class={embedded ? "flex h-full min-h-0 flex-col" : "flex h-screen flex-col bg-[var(--floor)]"}>
   {#if embedded}
     <!-- header inside the card: title + close (back to the document browser). The
          account menu lives in Home's sidebar, so it's not repeated here. -->

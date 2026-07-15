@@ -108,10 +108,19 @@
     <ChevronRight size={15} aria-hidden="true" />
   </span>
   <div class="tree-row-label items-center gap-1.5 min-w-0" style="padding: 1px 7px;">
+    <!-- --folder-accent (app.css) composes to exactly --arc-accent until the
+         user picks a folder hue in Settings → Preferences; .folder-glyph adds
+         the soft same-hue interior wash to the CLOSED glyph only — filling
+         FolderOpen's non-closed lucide path self-intersects into a diagonal
+         seam (see app.css). Mirrors the desktop's TreeNode. -->
     {#if isOpen}
-      <FolderOpen size={17} class="shrink-0 text-accent" aria-hidden="true" />
+      <FolderOpen size={17} class="shrink-0 text-[var(--folder-accent)]" aria-hidden="true" />
     {:else}
-      <Folder size={17} class="shrink-0 text-accent" aria-hidden="true" />
+      <Folder
+        size={17}
+        class="folder-glyph shrink-0 text-[var(--folder-accent)]"
+        aria-hidden="true"
+      />
     {/if}
     <span class="truncate text-sm">{folder.name}</span>
   </div>

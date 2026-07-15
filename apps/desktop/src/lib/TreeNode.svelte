@@ -260,10 +260,14 @@
 
   <div class="tree-row-label items-center gap-1.5 min-w-0" style="padding: 1px 7px;">
     {#if node.isDir}
+      <!-- .folder-glyph (app.css) fills the CLOSED glyph's interior with a
+           soft wash of the same --folder-accent hue the stroke carries.
+           FolderOpen stays stroke-only: filling its non-closed lucide path
+           self-intersects into a diagonal seam (see app.css). -->
       {#if expanded}
         <FolderOpen size={17} class="shrink-0 text-[var(--folder-accent)]" />
       {:else}
-        <Folder size={17} class="shrink-0 text-[var(--folder-accent)]" />
+        <Folder size={17} class="folder-glyph shrink-0 text-[var(--folder-accent)]" />
       {/if}
     {:else}
       <FileText size={15} class="shrink-0 text-base-content/50" />

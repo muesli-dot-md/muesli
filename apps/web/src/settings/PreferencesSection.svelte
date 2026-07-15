@@ -1,15 +1,25 @@
 <script lang="ts">
-  // Settings → Preferences (Multica's "Preferences" page). Per-browser, no API:
-  // a Multica-style Theme card (Light/Dark/System preview cards), the accent
-  // picker, the default home view, and a Language selector (i18n locale
-  // switching IS wired — theme.svelte.ts / accent.svelte.ts / prefs.svelte.ts /
-  // i18n). Cards mirror the new card chrome: small-caps section title above a
-  // bordered, shadow-card surface.
+  // Settings → Preferences (Multica's "Preferences" page): a Multica-style
+  // Theme card (Light/Dark/System preview cards), the accent picker, the
+  // background tint and folder-color controls (ported from the desktop app —
+  // same palettes/ColorBubbleRow, minus its window translucency), the default
+  // home view, and a Language selector. Everything is localStorage-backed;
+  // theme/accent/tint/folder-color additionally sync per-user through the
+  // server when signed in (prefsSync.svelte.ts). Cards mirror the new card
+  // chrome: small-caps section title above a bordered, shadow-card surface.
   import Check from "@lucide/svelte/icons/check";
   import Grid2x2 from "@lucide/svelte/icons/grid-2x2";
   import List from "@lucide/svelte/icons/list";
   import ListTree from "@lucide/svelte/icons/list-tree";
   import { ACCENT_PRESETS, accentStore } from "../accent.svelte";
+  import { background } from "../background.svelte";
+  import {
+    TINT_HUE_PRESETS,
+    FOLDER_HUE_PRESETS,
+    TINT_SWATCH_L,
+    TINT_SWATCH_C,
+  } from "../colorBubbles";
+  import { folderColor } from "../folderColor.svelte";
   import {
     availableLocales,
     currentLocale,
@@ -18,6 +28,8 @@
     type LocaleCode,
   } from "../i18n/index.svelte";
   import { prefs } from "../prefs.svelte";
+  import { resetBackground, resetFolderColor } from "../prefsSync.svelte";
+  import ColorBubbleRow from "./ColorBubbleRow.svelte";
   import SettingRow from "./SettingRow.svelte";
   import SettingsCard from "./SettingsCard.svelte";
   import ThemePreviewCards from "./ThemePreviewCards.svelte";
@@ -95,6 +107,83 @@
           {t("settings.tree")}
         </button>
       </div>
+    {/snippet}
+  </SettingRow>
+</SettingsCard>
+
+<!-- Background tint: the desktop's floor controls, minus its window
+     translucency (no web counterpart) — the wash lands flat on the page floor. -->
+<SettingsCard heading={t("settings.background")} description={t("settings.background.hint")}>
+  <SettingRow title={t("settings.background.tintStrength")} stacked>
+    {#snippet control()}
+      <div class="w-full">
+        <div class="mb-1.5 flex items-center justify-end">
+          <span class="text-xs text-[var(--text-muted)] tabular-nums">{background.tint}%</span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          class="range range-xs range-primary w-full"
+          value={background.tint}
+          oninput={(e) => (background.tint = +e.currentTarget.value)}
+          aria-label={t("settings.background.tintStrength")}
+        />
+      </div>
+    {/snippet}
+  </SettingRow>
+
+  <SettingRow title={t("settings.background.tintHue")} stacked>
+    {#snippet control()}
+      <ColorBubbleRow
+        presets={TINT_HUE_PRESETS}
+        hue={background.hue}
+        onSelect={(hue) => (background.hue = hue)}
+        groupLabel={t("settings.background.tintHue")}
+        customLabel={t("settings.customColor")}
+        disabled={background.tint === 0}
+        swatchL={TINT_SWATCH_L}
+        swatchC={TINT_SWATCH_C}
+      />
+    {/snippet}
+  </SettingRow>
+
+  <SettingRow
+    title={t("settings.background.reset")}
+    description={t("settings.background.reset.hint")}
+  >
+    {#snippet control()}
+      <!-- Routed through prefsSync so the synced keys are deleted server-side
+           (null), not written out as this app's defaults. -->
+      <button class="btn btn-ghost btn-sm" onclick={() => resetBackground()}
+        >{t("settings.resetToDefault")}</button
+      >
+    {/snippet}
+  </SettingRow>
+</SettingsCard>
+
+<!-- File tree folder icon color -->
+<SettingsCard heading={t("settings.folderColor")} description={t("settings.folderColor.hint")}>
+  <SettingRow title={t("settings.folderColor.iconHue")} stacked>
+    {#snippet control()}
+      <ColorBubbleRow
+        presets={FOLDER_HUE_PRESETS}
+        hue={folderColor.hue}
+        onSelect={(hue) => (folderColor.hue = hue)}
+        groupLabel={t("settings.folderColor.iconHue")}
+        customLabel={t("settings.customColor")}
+      />
+    {/snippet}
+  </SettingRow>
+
+  <SettingRow
+    title={t("settings.folderColor.reset")}
+    description={t("settings.folderColor.reset.hint")}
+  >
+    {#snippet control()}
+      <button class="btn btn-ghost btn-sm" onclick={() => resetFolderColor()}
+        >{t("settings.resetToDefault")}</button
+      >
     {/snippet}
   </SettingRow>
 </SettingsCard>

@@ -17,6 +17,7 @@ mod msgraph;
 mod notifications;
 mod notifications_api;
 mod persistence;
+mod prefs_api;
 mod room;
 mod search;
 mod secrets;
@@ -336,6 +337,12 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::delete(account::revoke_token),
         )
         .route("/api/me/storage", get(account::storage_usage))
+        // Cross-app appearance preference sync: notifications-style auth posture
+        // (sessions + the desktop's device token; delegated keys refused).
+        .route(
+            "/api/me/prefs",
+            get(prefs_api::get_prefs).patch(prefs_api::update_prefs),
+        )
         .route("/api/meta", get(account::meta))
         .route("/api/documents/{slug}/share", post(auth::create_share))
         // Phase 2 collaboration depth (ADR 0019/0007): comments, suggestions, history.

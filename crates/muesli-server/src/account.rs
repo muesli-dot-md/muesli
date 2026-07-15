@@ -175,23 +175,26 @@ pub(crate) fn authorize_notifications(
     let Some(principal) = principal else {
         return Err((StatusCode::UNAUTHORIZED, "sign in"));
     };
+    // The copy says "personal-data endpoints", not a specific feature: this one
+    // helper guards every caller_ctx-backed family (the notifications inbox AND
+    // /api/me/prefs), and the message surfaces verbatim on all of them.
     if principal.document_restriction.is_some() || principal.workspace_restriction.is_some() {
         return Err((
             StatusCode::FORBIDDEN,
-            "a restricted API token cannot reach the notifications inbox",
+            "a restricted API token cannot reach personal-data endpoints",
         ));
     }
     if principal.is_agent && principal.token_kind != Some(crate::auth::TokenKind::Device) {
         return Err((
             StatusCode::FORBIDDEN,
-            "delegated API keys cannot reach the notifications inbox — sign in with a \
+            "delegated API keys cannot reach personal-data endpoints — sign in with a \
              browser session or the desktop app",
         ));
     }
     if require_write && principal.role_cap == crate::auth::Role::Viewer {
         return Err((
             StatusCode::FORBIDDEN,
-            "a read-only token cannot modify notifications",
+            "a read-only token cannot modify personal data",
         ));
     }
     Ok(principal.role_user)

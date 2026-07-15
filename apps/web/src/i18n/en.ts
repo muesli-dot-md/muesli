@@ -324,6 +324,20 @@ export const en = {
   "settings.accent.hint": "Used for buttons, links and selection.",
   "settings.defaultView.hint": "How the home screen lists your documents.",
   "settings.language.hint": "Changes the interface language in this browser.",
+  // Background tint + folder color (parity with the desktop's Preferences).
+  "settings.background": "Background",
+  "settings.background.hint": "A subtle color wash over the app background.",
+  "settings.background.tintStrength": "Tint strength",
+  "settings.background.tintHue": "Tint hue",
+  "settings.background.reset": "Reset background",
+  "settings.background.reset.hint": "Restore tint strength and hue to defaults.",
+  "settings.folderColor": "Folder color",
+  "settings.folderColor.hint": "Color of folder icons in the home file tree.",
+  "settings.folderColor.iconHue": "Icon hue",
+  "settings.folderColor.reset": "Reset folder color",
+  "settings.folderColor.reset.hint": "Restore the default folder color.",
+  "settings.resetToDefault": "Reset to default",
+  "settings.customColor": "Custom color",
   // Workspace → General.
   "settings.general.name": "Name",
   "settings.general.adminOnly": "Only workspace admins can change these settings.",
@@ -489,7 +503,8 @@ export const en = {
   "settings.conn.attachSharePoint": "Attach a library",
 
   // --- settings → appearance extras -----------------------------------------------------------
-  "settings.appearance.perBrowser": "These preferences are stored in this browser.",
+  "settings.appearance.perBrowser":
+    "Theme and colors follow your account when signed in; other preferences stay in this browser.",
   "settings.appearance.motionNote": "Muesli follows your system's reduced-motion setting.",
 
   // --- settings → keyboard shortcuts ------------------------------------------------------------

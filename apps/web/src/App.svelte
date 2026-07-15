@@ -17,6 +17,13 @@
   // document root on boot so the gray default (or the user's pick) is live
   // everywhere, not only after visiting Settings.
   import "./accent.svelte";
+  // Self-applying background tint + folder color stores (desktop parity):
+  // push the persisted CSS vars on boot, like the accent above.
+  import "./background.svelte";
+  import "./folderColor.svelte";
+  // Per-user appearance sync (GET/PATCH /api/me/prefs): dormant until
+  // authSession resolves a signed-in user, purely local otherwise.
+  import "./prefsSync.svelte";
   import { decideAppView } from "./appGate";
   import { authSession } from "./authSession.svelte";
   import { loginUrl } from "./identity";
@@ -41,7 +48,7 @@
 
 {#if view === "loading" || view === "redirect"}
   <!-- /api/me in flight, or handing off to the IdP: a calm blank floor. -->
-  <div class="flex min-h-screen items-center justify-center bg-base-200">
+  <div class="flex min-h-screen items-center justify-center bg-[var(--floor)]">
     <span class="loading loading-spinner loading-lg opacity-40"></span>
   </div>
 {:else if view === "auth"}

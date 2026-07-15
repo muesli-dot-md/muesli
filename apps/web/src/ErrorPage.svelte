@@ -30,7 +30,7 @@
 </script>
 
 <main
-  class="flex min-h-screen flex-col items-center justify-center bg-base-200 px-6 text-base-content antialiased"
+  class="flex min-h-screen flex-col items-center justify-center bg-[var(--floor)] px-6 text-base-content antialiased"
 >
   <div class="flex w-full max-w-sm flex-col items-center gap-5 text-center">
     <span class="wordmark text-5xl leading-none" aria-hidden="true">muesli</span>

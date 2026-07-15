@@ -440,6 +440,21 @@ export const it: Record<keyof Messages, string> = {
   "settings.accent.hint": "Usato per pulsanti, link e selezione.",
   "settings.defaultView.hint": "Come la schermata iniziale elenca i tuoi documenti.",
   "settings.language.hint": "Cambia la lingua dell'interfaccia in questo browser.",
+  // Background tint + folder color (parity with the desktop's Preferences).
+  "settings.background": "Sfondo",
+  "settings.background.hint": "Una leggera velatura di colore sullo sfondo dell'app.",
+  "settings.background.tintStrength": "Intensità della tinta",
+  "settings.background.tintHue": "Tonalità della tinta",
+  "settings.background.reset": "Ripristina sfondo",
+  "settings.background.reset.hint": "Ripristina l'intensità e la tonalità della tinta predefinite.",
+  "settings.folderColor": "Colore delle cartelle",
+  "settings.folderColor.hint":
+    "Colore delle icone delle cartelle nell'albero dei file della schermata iniziale.",
+  "settings.folderColor.iconHue": "Tonalità dell'icona",
+  "settings.folderColor.reset": "Ripristina colore delle cartelle",
+  "settings.folderColor.reset.hint": "Ripristina il colore predefinito delle cartelle.",
+  "settings.resetToDefault": "Ripristina predefinito",
+  "settings.customColor": "Colore personalizzato",
   "settings.general.name": "Nome",
   "settings.general.adminOnly":
     "Solo gli amministratori dello spazio possono modificare queste impostazioni.",
@@ -599,7 +614,8 @@ export const it: Record<keyof Messages, string> = {
   "settings.conn.credsServer": "chiave del server",
   "settings.conn.sharepoint": "SharePoint",
   "settings.conn.attachSharePoint": "Collega una raccolta",
-  "settings.appearance.perBrowser": "Queste preferenze sono memorizzate in questo browser.",
+  "settings.appearance.perBrowser":
+    "Tema e colori seguono il tuo account quando hai effettuato l'accesso; le altre preferenze restano in questo browser.",
   "settings.appearance.motionNote":
     "Muesli segue l'impostazione di movimento ridotto del tuo sistema.",
   "settings.shortcuts.navigation": "Navigazione",
