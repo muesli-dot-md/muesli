@@ -147,6 +147,18 @@ export interface Identity {
   onboarded_at: string | null;
 }
 
+/**
+ * True when `identity` represents an actual signed-in account, not an
+ * open-mode server's identity-less placeholder. Some OIDC providers only ever
+ * expose the "sub" claim, so an identity can have `email` and `display_name`
+ * both null and still be signed in — `mode === "oidc"` alone counts. Shared by
+ * ProfileSection (the primary account UI) and SyncSection (its read-only
+ * summary) so the two can never disagree about whether the user is signed in.
+ */
+export function isSignedIn(identity: Identity | null | undefined): boolean {
+  return !!identity && (!!identity.email || !!identity.display_name || identity.mode === "oidc");
+}
+
 export type WorkspaceState = "local-only" | "cloud-only" | "cloned";
 
 export interface WorkspaceView {

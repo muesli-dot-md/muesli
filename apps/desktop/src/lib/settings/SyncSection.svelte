@@ -4,15 +4,29 @@
   // Ported from the SettingsModal "Sync" block into the two-pane card layout.
   import { settings } from "$lib/settings.svelte";
   import { displayUrl, normalizeServerInput } from "$lib/signInServer";
+  import { isSignedIn } from "$lib/tauri";
   import { workspaces } from "$lib/workspaces.svelte";
   import SettingsCard from "./SettingsCard.svelte";
   import SettingRow from "./SettingRow.svelte";
 
   let {
     statusLabel,
+    onNavigateToProfile,
   }: {
     statusLabel: "disconnected" | "connecting" | "connected";
+    /** Switches SettingsPanel to the Profile section, so the "Go to Profile"
+     *  hints below are an actual affordance rather than plain text. Optional
+     *  so this section still renders standalone (e.g. in tests). */
+    onNavigateToProfile?: () => void;
   } = $props();
+
+  // Same predicate as ProfileSection (the primary account UI) — an OIDC
+  // identity may expose only a "sub" claim (no email/display_name), and that
+  // still counts as signed in. Kept in sync via the shared `isSignedIn` helper
+  // so this informational row can't drift into claiming "Not signed in" while
+  // sync is actually active.
+  const signedIn = $derived(isSignedIn(workspaces.identity));
+  const accountLabel = $derived(workspaces.identity?.email ?? workspaces.identity?.display_name);
 </script>
 
 <header class="mb-5">
@@ -59,22 +73,35 @@
   </SettingRow>
 </SettingsCard>
 
-<!-- Connection: account + live status, the connected-storage card treatment -->
+<!-- Connection: account summary + live status. Sign-in/out lives in Profile
+     (the primary account flow) — this card only reports state and, when
+     onNavigateToProfile is wired up, offers a one-click hop to Profile; it
+     never duplicates the auth button itself. -->
 <SettingsCard heading="Connection">
-  <SettingRow title="Account">
-    {#snippet control()}
-      {#if workspaces.identity?.email || workspaces.identity?.display_name}
-        <span class="max-w-[16rem] truncate text-sm text-[var(--text-muted)]">
-          {workspaces.identity.email ?? workspaces.identity.display_name}
-        </span>
-        <button class="btn btn-ghost btn-sm" onclick={() => workspaces.logout()}>Sign out</button>
-      {:else if workspaces.identity?.mode === "open"}
-        <span class="text-sm text-[var(--text-muted)]">Open server — no sign-in needed</span>
-      {:else}
-        <button class="btn btn-primary btn-sm" onclick={() => workspaces.login()}>Sign in…</button>
-      {/if}
-    {/snippet}
-  </SettingRow>
+  {#if signedIn}
+    <SettingRow
+      title="Account"
+      description={accountLabel
+        ? `Signed in as ${accountLabel}. Manage sign-in from Profile.`
+        : "Signed in. Manage sign-in from Profile."}
+    >
+      {#snippet control()}
+        {#if onNavigateToProfile}
+          <button class="btn btn-ghost btn-sm" onclick={onNavigateToProfile}>Go to Profile</button>
+        {/if}
+      {/snippet}
+    </SettingRow>
+  {:else if workspaces.identity?.mode === "open"}
+    <SettingRow title="Account" description="Open server — no sign-in needed." />
+  {:else}
+    <SettingRow title="Not signed in" description="Sign in from Profile to sync this workspace.">
+      {#snippet control()}
+        {#if onNavigateToProfile}
+          <button class="btn btn-ghost btn-sm" onclick={onNavigateToProfile}>Go to Profile</button>
+        {/if}
+      {/snippet}
+    </SettingRow>
+  {/if}
 
   <SettingRow title="Status">
     {#snippet control()}

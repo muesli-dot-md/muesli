@@ -5,16 +5,17 @@
   // muesli-server we're signed in to (workspaces.identity); when signed out /
   // local-only we say so honestly and offer sign-in. Literal strings (no i18n).
   import { Copy } from "lucide-svelte";
+  import { isSignedIn } from "$lib/tauri";
   import { workspaces } from "$lib/workspaces.svelte";
   import SettingsCard from "./SettingsCard.svelte";
   import SettingRow from "./SettingRow.svelte";
 
   const identity = $derived(workspaces.identity);
-  // A signed-in OIDC user (has a name/email/avatar to show). Open-mode servers
-  // and signed-out states get their own honest empty states below.
-  const signedIn = $derived(
-    !!identity && (!!identity.email || !!identity.display_name || identity.mode === "oidc"),
-  );
+  // A signed-in OIDC user (has a name/email/avatar, or at least a "sub" claim,
+  // to show). Open-mode servers and signed-out states get their own honest
+  // empty states below. Shared with SyncSection's read-only summary so the
+  // two surfaces can't disagree about whether the user is signed in.
+  const signedIn = $derived(isSignedIn(identity));
   const shownAvatar = $derived(identity?.avatar_url ?? null);
   const initial = $derived(
     (identity?.display_name ?? identity?.email ?? "?").trim().charAt(0).toUpperCase(),
@@ -51,7 +52,7 @@
   <SettingsCard>
     <SettingRow
       title="Not signed in"
-      description="Sign in to a muesli-server from the Sync settings to load your profile and sync your workspaces."
+      description="Sign in to a muesli-server to load your profile and sync your workspaces."
     >
       {#snippet control()}
         <button class="btn btn-primary btn-sm" onclick={() => workspaces.login()}>Sign in…</button>
@@ -59,7 +60,8 @@
     </SettingRow>
   </SettingsCard>
 {:else}
-  <!-- identity card: avatar + display name -->
+  <!-- identity card: avatar + display name. Sign-out lives here (the primary
+       account flow) rather than duplicated in Sync settings. -->
   <SettingsCard>
     <SettingRow
       title={identity?.display_name ?? "Signed in"}
@@ -75,6 +77,9 @@
             {initial}
           </span>
         {/if}
+      {/snippet}
+      {#snippet control()}
+        <button class="btn btn-ghost btn-sm" onclick={() => workspaces.logout()}>Sign out</button>
       {/snippet}
     </SettingRow>
   </SettingsCard>
