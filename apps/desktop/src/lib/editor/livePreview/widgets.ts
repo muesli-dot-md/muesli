@@ -9,7 +9,7 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import { renderMermaidDiagrams } from "@muesli/editor-core/mermaid";
 import { attachMermaidInteraction } from "@muesli/editor-core/mermaidInteraction";
-import { renderMarkdown } from "@muesli/editor-core/render";
+import { KATEX_TRUST, renderMarkdown, sanitize } from "@muesli/editor-core/render";
 import { buildTableWidget } from "@muesli/editor-core/tableInteraction";
 import type { ParsedTable } from "./transform";
 
@@ -98,11 +98,18 @@ function renderKatexCached(source: string, displayMode: boolean): string {
   let html = katexCache.get(key);
   if (html === undefined) {
     try {
-      html = katex.renderToString(source, {
-        throwOnError: false,
-        displayMode,
-        output: "htmlAndMathml",
-      });
+      // SECURITY: the result goes straight into innerHTML, so it is run
+      // through the same DOMPurify sanitize() as render.ts (finding 32) —
+      // defense-in-depth on top of KaTeX's trust:false. Sanitizing here,
+      // before cachePut, keeps the per-widget cost a Map lookup.
+      html = sanitize(
+        katex.renderToString(source, {
+          throwOnError: false,
+          displayMode,
+          output: "htmlAndMathml",
+          trust: KATEX_TRUST, // SECURITY: keep false — see KATEX_TRUST in render.ts
+        }),
+      );
     } catch {
       html = `<code class="katex-error">${escapeHtml(source)}</code>`;
     }
