@@ -31,7 +31,7 @@ import {
   toggleInlineMark,
   toggleList,
 } from "../../../packages/editor-core/src/mdCommands.ts";
-import { parseTableMarkdown } from "../src/livePreview/transform.ts";
+import { parseTableMarkdown } from "../../../packages/editor-core/src/livePreview/transform.ts";
 
 let passed = 0;
 function check(name, cond, detail) {

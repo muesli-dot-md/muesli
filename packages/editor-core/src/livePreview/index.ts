@@ -5,13 +5,14 @@
 // selection touches their node, inline styles render in place, and
 // table/mermaid/math/image/hr blocks become widgets while the cursor is
 // outside them. Module map:
-//   transform.ts — pure range math (headless-tested, scripts/live-preview-test.mjs)
+//   transform.ts — pure range math (headless-tested, apps/web/scripts/live-preview-test.mjs)
 //   inline.ts    — viewport-scoped ViewPlugin (marks, hides, checkboxes)
 //   blocks.ts    — StateField (block widgets; CM forbids those from plugins)
 //   widgets.ts   — DOM widget classes, render results cached by source text
 //   languages.ts — fenced-code nested parsers for syntax highlighting
 //
-// PRECEDENCE (with the other decoration sources in Editor.svelte):
+// PRECEDENCE (with the other decoration sources in the apps' editor assembly —
+// apps/web/src/Editor.svelte and apps/desktop/src/lib/editor/createEditor.ts):
 //   1. yCollab's remote selections/carets are drawn as layers + widget marks
 //      from the y-codemirror.next plugin — independent of this module.
 //   2. annotations.ts collab decorations (comment anchors, suggestion
@@ -27,20 +28,22 @@
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { gotoDoc } from "../route.svelte";
 import { checkboxToggle } from "./transform";
 import { inlinePreview } from "./inline";
 import { blockPreview } from "./blocks";
+import { livePreviewOptions, type LivePreviewOptions } from "./options";
 
 export { fenceLanguage } from "./languages";
+export type { LivePreviewLabels, LivePreviewOptions } from "./options";
+export { defaultLivePreviewLabels, defaultLivePreviewOptions } from "./options";
 
-function openLink(url: string): void {
+function openLink(url: string, view: EditorView): void {
   if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
     // external scheme -> new tab
     window.open(url, "_blank", "noopener,noreferrer");
   } else if (url.startsWith("#")) {
     // hash link -> doc slug, matching render.ts's wikilink hrefs
-    gotoDoc(decodeURIComponent(url.slice(1)));
+    view.state.facet(livePreviewOptions).onNavigateWikilink?.(decodeURIComponent(url.slice(1)));
   }
   // anything else (relative paths) has no meaningful target in muesli — ignore
 }
@@ -79,13 +82,13 @@ const interactions = EditorView.domEventHandlers({
       const link = tgt.closest<HTMLElement>("[data-live-href]");
       if (link?.dataset.liveHref) {
         event.preventDefault();
-        openLink(link.dataset.liveHref);
+        openLink(link.dataset.liveHref, view);
         return true;
       }
       const wiki = tgt.closest<HTMLElement>("[data-live-doc]");
       if (wiki?.dataset.liveDoc) {
         event.preventDefault();
-        gotoDoc(wiki.dataset.liveDoc);
+        view.state.facet(livePreviewOptions).onNavigateWikilink?.(wiki.dataset.liveDoc);
         return true;
       }
     }
@@ -93,10 +96,15 @@ const interactions = EditorView.domEventHandlers({
   },
 });
 
-/** The whole live-preview layer as one extension bundle (Editor.svelte adds
- * it after collabDecorations — see PRECEDENCE above). */
-export function livePreview(): Extension[] {
+/** The whole live-preview layer as one extension bundle (both apps add it
+ * after their collab decorations — see PRECEDENCE above). `options` is
+ * required: `labels` is a getter each app must supply (webapp: t()-backed,
+ * re-read at every widget build; desktop: () => defaultLivePreviewLabels,
+ * literal English — see options.ts); `onNavigateWikilink` is optional
+ * (desktop passes none today, matching its no wikilink-navigation behavior). */
+export function livePreview(options: LivePreviewOptions): Extension[] {
   return [
+    livePreviewOptions.of(options),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     inlinePreview,
     blockPreview,

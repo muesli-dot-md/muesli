@@ -12,7 +12,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { attachMermaidInteraction } from "@muesli/editor-core/mermaidInteraction";
-import { fenceLanguage, livePreview } from "$lib/editor/livePreview/index";
+import { defaultLivePreviewOptions, fenceLanguage, livePreview } from "./index";
 
 const DOC = ["before", "", "```mermaid", "graph TD; A-->B", "```", "", "after"].join("\n");
 
@@ -28,13 +28,14 @@ let host: HTMLElement;
 beforeEach(() => {
   host = document.createElement("div");
   document.body.appendChild(host);
+  // Place the cursor far from the block so the widget renders (block hidden).
   view = new EditorView({
     state: EditorState.create({
       doc: DOC,
       selection: { anchor: 0 },
       extensions: [
         markdown({ base: markdownLanguage, codeLanguages: fenceLanguage }),
-        livePreview(),
+        livePreview(defaultLivePreviewOptions),
       ],
     }),
     parent: host,
@@ -48,7 +49,8 @@ afterEach(() => {
 
 describe("mermaid widget dblclick-to-edit", () => {
   it("renders the mermaid block as a widget while the cursor is outside it", () => {
-    expect(view.dom.querySelector(".cm-live-mermaid")).not.toBeNull();
+    const widget = view.dom.querySelector(".cm-live-mermaid");
+    expect(widget).not.toBeNull();
   });
 
   it("dblclick on the diagram moves the selection into the block range", () => {
@@ -60,6 +62,8 @@ describe("mermaid widget dblclick-to-edit", () => {
 
     const { from, to } = blockRange(DOC);
     const sel = view.state.selection.main;
+    // The cursor must now touch the fenced block (inclusive edges), which is
+    // exactly what reveals the raw source.
     expect(sel.from).toBeGreaterThanOrEqual(from);
     expect(sel.from).toBeLessThanOrEqual(to);
   });
@@ -81,8 +85,11 @@ describe("mermaid zoom control positioning", () => {
 
     const controls = root.querySelector(".mermaid-controls");
     expect(controls).not.toBeNull();
+    // Must be a descendant of the positioned/overflow-hidden diagram box so it
+    // overlays the bottom-right corner — NOT a sibling rendered below it.
     expect(controls!.parentElement).toBe(holder);
     expect(controls!.closest(".mermaid-block")).toBe(holder);
+    // Three buttons: +, 1:1, −.
     expect(controls!.querySelectorAll("button").length).toBe(3);
 
     root.remove();

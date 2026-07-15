@@ -73,6 +73,11 @@
       "types": "./src/frontmatter.ts",
       "svelte": "./src/frontmatter.ts",
       "default": "./src/frontmatter.ts"
+    },
+    "./livePreview": {
+      "types": "./src/livePreview/index.ts",
+      "svelte": "./src/livePreview/index.ts",
+      "default": "./src/livePreview/index.ts"
     }
   },
   "scripts": {
@@ -86,14 +91,23 @@
     "mermaid": "^11.15.0"
   },
   "peerDependencies": {
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language": "^6.10.0",
     "@codemirror/state": "^6.5.0",
     "@codemirror/view": "^6.36.0"
   },
   "devDependencies": {
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language": "^6.10.0",
     "@codemirror/state": "^6.5.0",
     "@codemirror/view": "^6.36.0",
+    "@lezer/common": "^1.5.2",
     "@types/jsdom": "^28.0.3",
     "@types/katex": "^0.16.8",
     "jsdom": "^29.1.1",
