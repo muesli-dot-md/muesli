@@ -1,20 +1,29 @@
 <script lang="ts">
   // Settings → Preferences (My Account): the desktop's per-machine look & feel —
-  // a Multica-style Theme card (Light/Dark/System preview cards) plus the window
-  // background floor controls (translucency / tint / hue). All localStorage, no
-  // API. Mirrors the webapp's Preferences page chrome; the desktop has no accent
-  // picker / default-view / language, so those are omitted. Literal strings (no
-  // i18n). Folds in the former AppearanceSection's background block.
+  // a Multica-style Theme card (Light/Dark/System preview cards), the window
+  // background floor controls (translucency / tint / hue), and the file tree's
+  // folder icon color. All localStorage, no API. Mirrors the webapp's
+  // Preferences page chrome; the desktop has no default-view / language, so
+  // those are omitted. Literal strings (no i18n). Folds in the former
+  // AppearanceSection's background block.
   import { background } from "$lib/background.svelte";
+  import { folderColor } from "$lib/folderColor.svelte";
+  import {
+    TINT_HUE_PRESETS,
+    FOLDER_HUE_PRESETS,
+    TINT_SWATCH_L,
+    TINT_SWATCH_C,
+  } from "$lib/colorBubbles";
   import SettingsCard from "./SettingsCard.svelte";
   import SettingRow from "./SettingRow.svelte";
   import ThemePreviewCards from "./ThemePreviewCards.svelte";
+  import ColorBubbleRow from "./ColorBubbleRow.svelte";
 </script>
 
 <header class="mb-5">
   <h2 class="text-lg font-semibold tracking-tight">Preferences</h2>
   <p class="mt-1 text-sm text-[var(--text-muted)]" style="text-wrap: pretty;">
-    Theme and window background. Saved on this machine only.
+    Theme, window background, and file tree colors. Saved on this machine only.
   </p>
 </header>
 
@@ -72,24 +81,15 @@
 
   <SettingRow title="Tint hue" stacked>
     {#snippet control()}
-      <div class="w-full" class:opacity-40={background.tint === 0}>
-        <div class="mb-1.5 flex items-center justify-end">
-          <span
-            class="inline-block h-4 w-4 rounded-full border border-base-300"
-            style="background: oklch(0.7 0.16 {background.hue});"
-          ></span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="360"
-          class="range range-xs w-full"
-          value={background.hue}
-          oninput={(e) => (background.hue = +e.currentTarget.value)}
-          disabled={background.tint === 0}
-          aria-label="Tint hue"
-        />
-      </div>
+      <ColorBubbleRow
+        presets={TINT_HUE_PRESETS}
+        hue={background.hue}
+        onSelect={(hue) => (background.hue = hue)}
+        groupLabel="Tint hue"
+        disabled={background.tint === 0}
+        swatchL={TINT_SWATCH_L}
+        swatchC={TINT_SWATCH_C}
+      />
     {/snippet}
   </SettingRow>
 
@@ -99,6 +99,28 @@
   >
     {#snippet control()}
       <button class="btn btn-ghost btn-sm" onclick={() => background.reset()}
+        >Reset to default</button
+      >
+    {/snippet}
+  </SettingRow>
+</SettingsCard>
+
+<!-- File tree folder icon color -->
+<SettingsCard heading="Folder color" description="Color of folder icons in the file tree.">
+  <SettingRow title="Icon hue" stacked>
+    {#snippet control()}
+      <ColorBubbleRow
+        presets={FOLDER_HUE_PRESETS}
+        hue={folderColor.hue}
+        onSelect={(hue) => (folderColor.hue = hue)}
+        groupLabel="Icon hue"
+      />
+    {/snippet}
+  </SettingRow>
+
+  <SettingRow title="Reset folder color" description="Restore the default folder color.">
+    {#snippet control()}
+      <button class="btn btn-ghost btn-sm" onclick={() => folderColor.reset()}
         >Reset to default</button
       >
     {/snippet}
