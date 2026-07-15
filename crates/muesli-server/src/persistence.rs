@@ -306,6 +306,9 @@ pub struct ApiTokenInfo {
     pub scopes: Vec<String>,
     pub workspace_id: Option<Uuid>,
     pub document_id: Option<Uuid>,
+    /// 'device' (cli_login's OS-Keychain token) or 'delegated' (POST /api/me/tokens);
+    /// migration 0017. See auth::TokenKind for what distinguishes on this.
+    pub kind: String,
 }
 
 /// A document get-or-created by [`Persistence::ensure_document_owned`]. `created` is true
@@ -889,9 +892,12 @@ impl Persistence {
         Ok(row.get("id"))
     }
 
-    /// Mint one api_tokens row. `expires_in_days` None = never expires (the expiry is
-    /// computed in SQL — null * interval = null, the create_share_link convention).
-    /// Returns (token id, expires_at) for the mint response.
+    /// Mint one api_tokens row. `kind` is 'device' for cli_login's OS-Keychain token or
+    /// 'delegated' for an ordinary POST /api/me/tokens key (migration 0017) — the
+    /// distinction the notifications REST surface uses to admit the desktop app's own
+    /// token while still rejecting other delegated keys. `expires_in_days` None = never
+    /// expires (the expiry is computed in SQL — null * interval = null, the
+    /// create_share_link convention). Returns (token id, expires_at) for the mint response.
     pub async fn insert_api_token(
         &self,
         token_hash: &str,
@@ -899,10 +905,11 @@ impl Persistence {
         owner_user_id: Option<Uuid>,
         scopes: &[&str],
         expires_in_days: Option<i64>,
+        kind: &str,
     ) -> Result<(Uuid, Option<String>)> {
         let row = sqlx::query(
-            r#"insert into api_tokens (token_hash, principal_id, owner_user_id, scopes, expires_at)
-               values ($1, $2, $3, $4, now() + $5 * interval '1 day')
+            r#"insert into api_tokens (token_hash, principal_id, owner_user_id, scopes, expires_at, kind)
+               values ($1, $2, $3, $4, now() + $5 * interval '1 day', $6)
                returning id,
                          to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at"#,
         )
@@ -911,6 +918,7 @@ impl Persistence {
         .bind(owner_user_id)
         .bind(scopes.iter().map(|s| s.to_string()).collect::<Vec<_>>())
         .bind(expires_in_days)
+        .bind(kind)
         .fetch_one(&self.pool)
         .await?;
         Ok((row.get("id"), row.get("expires_at")))
@@ -962,7 +970,7 @@ impl Persistence {
 
     pub async fn lookup_api_token(&self, token_hash: &str) -> Result<Option<ApiTokenInfo>> {
         let row = sqlx::query(
-            "select principal_id, owner_user_id, scopes, workspace_id, document_id
+            "select principal_id, owner_user_id, scopes, workspace_id, document_id, kind
              from api_tokens
              where token_hash = $1
                and revoked_at is null
@@ -977,6 +985,7 @@ impl Persistence {
             scopes: r.get("scopes"),
             workspace_id: r.get("workspace_id"),
             document_id: r.get("document_id"),
+            kind: r.get("kind"),
         }))
     }
 
@@ -3406,6 +3415,160 @@ mod tests {
         );
         assert_eq!(a_list[0].id, a_notification_id);
         assert!(!a_list[0].read);
+    }
+
+    /// Migration 0017's `kind` column round-trips through insert_api_token/lookup_api_token,
+    /// and TokenKind::from_db resolves it back to the right variant — the round trip
+    /// account::authorize_notifications depends on to admit the desktop's own device-login
+    /// token while rejecting an ordinary delegated key. Skips unless TEST_DATABASE_URL is set.
+    #[tokio::test]
+    async fn api_token_kind_round_trips_device_vs_delegated() {
+        let Some(p) = test_db().await else {
+            eprintln!(
+                "skipping: set TEST_DATABASE_URL to run api_token_kind_round_trips_device_vs_delegated"
+            );
+            return;
+        };
+        let owner = p.create_agent_user("owner").await.unwrap();
+
+        // Unique per run: the dev docker-compose Postgres persists volumes, so a fixed
+        // hash would violate api_tokens' unique token_hash on the second run.
+        let device_hash = format!("device-hash-{}", uuid::Uuid::new_v4());
+        let delegated_hash = format!("delegated-hash-{}", uuid::Uuid::new_v4());
+
+        let device_agent = p.create_agent_user("device-agent").await.unwrap();
+        let (device_id, _) = p
+            .insert_api_token(
+                &device_hash,
+                device_agent,
+                Some(owner),
+                &["read", "write"],
+                None,
+                crate::auth::TokenKind::Device.as_db(),
+            )
+            .await
+            .unwrap();
+
+        let delegated_agent = p.create_agent_user("delegated-agent").await.unwrap();
+        let (delegated_id, _) = p
+            .insert_api_token(
+                &delegated_hash,
+                delegated_agent,
+                Some(owner),
+                &["read", "write"],
+                None,
+                crate::auth::TokenKind::Delegated.as_db(),
+            )
+            .await
+            .unwrap();
+
+        let device_info = p.lookup_api_token(&device_hash).await.unwrap().unwrap();
+        assert_eq!(device_info.principal_id, device_agent);
+        assert_eq!(
+            crate::auth::TokenKind::from_db(&device_info.kind),
+            crate::auth::TokenKind::Device
+        );
+
+        let delegated_info = p.lookup_api_token(&delegated_hash).await.unwrap().unwrap();
+        assert_eq!(delegated_info.principal_id, delegated_agent);
+        assert_eq!(
+            crate::auth::TokenKind::from_db(&delegated_info.kind),
+            crate::auth::TokenKind::Delegated
+        );
+
+        // Sanity: two distinct rows, not the same one re-read.
+        assert_ne!(device_id, delegated_id);
+    }
+
+    /// Migration 0017's backfill UPDATE flips a cli_login-shaped token (audit event
+    /// WITHOUT a 'token_id' key) to kind='device', leaves a mint_token-shaped key
+    /// (audit event WITH 'token_id') delegated, and survives malformed audit detail.
+    /// The UPDATE is executed straight from the migration file so this test cannot
+    /// drift from the shipped SQL. Skips unless TEST_DATABASE_URL is set.
+    #[tokio::test]
+    async fn api_token_kind_backfill_flips_only_cli_login_tokens() {
+        let Some(p) = test_db().await else {
+            eprintln!(
+                "skipping: set TEST_DATABASE_URL to run api_token_kind_backfill_flips_only_cli_login_tokens"
+            );
+            return;
+        };
+        let migration = include_str!("../migrations/0017_api_token_kind.sql");
+        let backfill = &migration[migration
+            .find("update api_tokens")
+            .expect("backfill UPDATE present in migration 0017")..];
+
+        // cli_login shape: fresh agent, row left at the column default ('delegated', as a
+        // pre-migration token would be), audit detail carrying agent_id but NO token_id.
+        let cli_agent = p.create_agent_user("backfill-cli-agent").await.unwrap();
+        let cli_hash = format!("backfill-cli-{}", uuid::Uuid::new_v4());
+        p.insert_api_token(
+            &cli_hash,
+            cli_agent,
+            None,
+            &["read", "write"],
+            None,
+            crate::auth::TokenKind::Delegated.as_db(),
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "insert into audit_log (action, detail)
+             values ('agent_token_minted', jsonb_build_object('agent_id', $1::text))",
+        )
+        .bind(cli_agent.to_string())
+        .execute(&p.pool)
+        .await
+        .unwrap();
+
+        // mint_token shape: identical except the detail includes a token_id key.
+        let minted_agent = p.create_agent_user("backfill-minted-agent").await.unwrap();
+        let minted_hash = format!("backfill-minted-{}", uuid::Uuid::new_v4());
+        p.insert_api_token(
+            &minted_hash,
+            minted_agent,
+            None,
+            &["read", "write"],
+            None,
+            crate::auth::TokenKind::Delegated.as_db(),
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "insert into audit_log (action, detail)
+             values ('agent_token_minted',
+                     jsonb_build_object('agent_id', $1::text, 'token_id', $2::text))",
+        )
+        .bind(minted_agent.to_string())
+        .bind(uuid::Uuid::new_v4().to_string())
+        .execute(&p.pool)
+        .await
+        .unwrap();
+
+        // Malformed audit rows: the regex guard must keep the ::uuid cast from aborting.
+        sqlx::query(
+            "insert into audit_log (action, detail) values
+             ('agent_token_minted', '{\"agent_id\":\"not-a-uuid\"}'::jsonb),
+             ('agent_token_minted', '{}'::jsonb)",
+        )
+        .execute(&p.pool)
+        .await
+        .unwrap();
+
+        sqlx::query(backfill).execute(&p.pool).await.unwrap();
+
+        let cli_info = p.lookup_api_token(&cli_hash).await.unwrap().unwrap();
+        assert_eq!(
+            crate::auth::TokenKind::from_db(&cli_info.kind),
+            crate::auth::TokenKind::Device,
+            "cli_login-shaped token must be backfilled to device"
+        );
+        let minted_info = p.lookup_api_token(&minted_hash).await.unwrap().unwrap();
+        assert_eq!(
+            crate::auth::TokenKind::from_db(&minted_info.kind),
+            crate::auth::TokenKind::Delegated,
+            "mint_token-shaped key must stay delegated"
+        );
     }
 
     /// The `before` cursor validation (fix ④c): a well-formed timestamp validates, garbage does

@@ -1894,8 +1894,10 @@ async fn list_document_members(c: &Caller<'_>, args: &Value) -> Result<Value, St
     .await
 }
 
-// --- notifications (NOT bridged: the REST inbox is session-only, and an agent
-// must read ITS OWN inbox — recipient = the agent identity — never its owner's) ---
+// --- notifications (NOT bridged: this tool surface deliberately holds agents to a
+// stricter posture than the REST inbox (notifications_api.rs) allows — an MCP agent
+// must read ITS OWN inbox — recipient = the agent identity — never its owner's,
+// since a tool call hands the result straight into an LLM's context) ---
 
 fn inbox_user(c: &Caller<'_>) -> Result<Uuid, String> {
     match &c.principal {

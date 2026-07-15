@@ -1,8 +1,15 @@
 //! Notifications REST surface (sub-project ④c): the inbox (list / unread-count / mark-read /
 //! read-all) and the per-user preference matrix (get / put). All auth-only and scoped to the
 //! CALLING user — every query binds the authenticated user's id, so a caller can only ever
-//! read or modify their OWN notifications and preferences. Guests get 401; agents get 403
-//! (these are a human's personal inbox), mirroring the /api/me* posture via `account::session_ctx`.
+//! read or modify their OWN notifications and preferences. Guests get 401
+//! (`account::caller_ctx`/`caller_ctx_write`); unlike the /api/me* account-mutation posture
+//! (`account::session_ctx`), the desktop app's own device-login Bearer token is accepted here
+//! too — that token is the desktop app's only transport to this server, and reading/updating
+//! one's own mention inbox is not account-mutation. An ordinary delegated key (POST
+//! /api/me/tokens) is still rejected, as is any restricted token, and the mutating handlers
+//! below additionally reject a read-only-scoped token. See `account::authorize_notifications`'s
+//! doc comment for the exact invariant. The MCP tool surface (mcp.rs) is intentionally
+//! stricter still: it keeps an agent to its OWN identity's inbox rather than its owner's.
 
 use std::collections::HashMap;
 
@@ -16,7 +23,7 @@ use serde_json::json;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::account::session_ctx;
+use crate::account::{caller_ctx, caller_ctx_write};
 use crate::notifications::{
     channel_is_toggleable, resolve_channels, ALL_CHANNELS, CHANNEL_EMAIL, CHANNEL_IN_APP,
     EVENT_MENTION,
@@ -47,7 +54,7 @@ pub async fn list_notifications(
     jar: CookieJar,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    let (p, user_id) = match session_ctx(&state, &jar, &headers).await {
+    let (p, user_id) = match caller_ctx(&state, &jar, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -78,7 +85,7 @@ pub async fn unread_count(
     jar: CookieJar,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    let (p, user_id) = match session_ctx(&state, &jar, &headers).await {
+    let (p, user_id) = match caller_ctx(&state, &jar, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -96,7 +103,7 @@ pub async fn mark_read(
     jar: CookieJar,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    let (p, user_id) = match session_ctx(&state, &jar, &headers).await {
+    let (p, user_id) = match caller_ctx_write(&state, &jar, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -113,7 +120,7 @@ pub async fn read_all(
     jar: CookieJar,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    let (p, user_id) = match session_ctx(&state, &jar, &headers).await {
+    let (p, user_id) = match caller_ctx_write(&state, &jar, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -131,7 +138,7 @@ pub async fn get_preferences(
     jar: CookieJar,
     headers: axum::http::HeaderMap,
 ) -> Response {
-    let (p, user_id) = match session_ctx(&state, &jar, &headers).await {
+    let (p, user_id) = match caller_ctx(&state, &jar, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -172,7 +179,7 @@ pub async fn put_preference(
     headers: axum::http::HeaderMap,
     Json(req): Json<PutPreferenceReq>,
 ) -> Response {
-    let (p, user_id) = match session_ctx(&state, &jar, &headers).await {
+    let (p, user_id) = match caller_ctx_write(&state, &jar, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -195,6 +202,7 @@ pub async fn put_preference(
 mod tests {
     use super::*;
     use crate::notifications::default_enabled;
+    use std::sync::Arc;
 
     // The handler builds the settings matrix from resolve_channels; this proves the matrix it
     // emits for a fresh user (no stored prefs) is in-app=on + email=on, both now toggleable.
@@ -209,5 +217,81 @@ mod tests {
         assert!(enabled.iter().any(|c| c == CHANNEL_EMAIL));
         assert!(channel_is_toggleable(CHANNEL_EMAIL));
         assert!(default_enabled(EVENT_MENTION, CHANNEL_EMAIL));
+    }
+
+    /// A live-Postgres test pool from `TEST_DATABASE_URL`, or `None` when unset — same
+    /// skip-if-absent convention as persistence.rs/storage.rs/workspace.rs (CI runs `cargo
+    /// test` with no database configured).
+    async fn test_db() -> Option<crate::persistence::Persistence> {
+        let url = std::env::var("TEST_DATABASE_URL").ok()?;
+        Some(
+            crate::persistence::Persistence::connect(&url)
+                .await
+                .expect("connect TEST_DATABASE_URL"),
+        )
+    }
+
+    /// End-to-end HTTP-wiring check for the read/write split `authorize_notifications`
+    /// (account.rs) enforces on a read-only-scoped device token: this exercises the actual
+    /// axum handlers (`list_notifications`, `read_all`) through `caller_ctx`/
+    /// `caller_ctx_write`, not just the pure `authorize_notifications` unit tests in
+    /// account.rs — proving the split holds at the boundary the desktop app actually calls,
+    /// not merely in the function those handlers happen to delegate to. Skips unless
+    /// TEST_DATABASE_URL is set.
+    #[tokio::test]
+    async fn viewer_scoped_device_token_reads_but_cannot_write_at_the_handler_layer() {
+        let Some(persistence) = test_db().await else {
+            eprintln!(
+                "skipping: set TEST_DATABASE_URL to run \
+                 viewer_scoped_device_token_reads_but_cannot_write_at_the_handler_layer"
+            );
+            return;
+        };
+        let persistence = Arc::new(persistence);
+
+        let owner = persistence.create_agent_user("owner").await.unwrap();
+        let device_agent = persistence.create_agent_user("device-agent").await.unwrap();
+        let secret = format!("test-{}", Uuid::new_v4());
+        persistence
+            .insert_api_token(
+                &crate::auth::hash_token(&secret),
+                device_agent,
+                Some(owner),
+                // Read-only scope preset — Role::Viewer via scope_cap. The desktop's own
+                // cli_login-minted token is always ["read", "write"]; this shape only
+                // arises from POST /api/me/tokens with the read-only preset chosen, but
+                // TokenKind::Device + Viewer role_cap is exactly the combination
+                // authorize_notifications's require_write branch exists to reject.
+                &["read"],
+                None,
+                crate::auth::TokenKind::Device.as_db(),
+            )
+            .await
+            .unwrap();
+
+        let state = AppState {
+            persistence: Some(persistence.clone()),
+            auth: Some(Arc::new(crate::auth::test_ctx(persistence.clone()))),
+            ..Default::default()
+        };
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {secret}").parse().unwrap(),
+        );
+        let jar = CookieJar::new();
+
+        let read_resp = list_notifications(
+            State(state.clone()),
+            Query(HashMap::new()),
+            jar.clone(),
+            headers.clone(),
+        )
+        .await;
+        assert_eq!(read_resp.status(), StatusCode::OK);
+
+        let write_resp = read_all(State(state), jar, headers).await;
+        assert_eq!(write_resp.status(), StatusCode::FORBIDDEN);
     }
 }

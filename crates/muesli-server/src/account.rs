@@ -8,6 +8,15 @@
 //! never the OIDC claim columns (which upsert_oidc_user coalesce-refreshes every login).
 //! Key minting reuses the cli_login plumbing: an agent users row per key, `mua_` +
 //! random secret, SHA-256 hash at rest, the raw secret shown exactly once.
+//!
+//! `caller_ctx`/`caller_ctx_write` below are the more permissive siblings of
+//! `session_ctx`: they accept the desktop app's own device-login Bearer token too
+//! (scoped to the human it delegates for), for endpoints that are personal but not
+//! account-mutation — e.g. the notifications inbox, which the desktop app can only
+//! ever reach over Bearer (its token lives in the OS Keychain, never a browser
+//! session cookie). They still reject an ordinary delegated key (POST
+//! /api/me/tokens), any restricted token, and — for the write variant — a read-only
+//! scoped token; see `authorize_notifications`'s doc comment for the exact invariant.
 
 use std::sync::Arc;
 
@@ -58,8 +67,8 @@ fn err500(e: anyhow::Error) -> Response {
 
 /// The session-only seam shared by every /api/me* mutation: auth mode + DB + an
 /// authenticated NON-agent principal. Returns (persistence, the human user id).
-/// Crate-visible so the notifications inbox/preferences endpoints (auth-only, user-scoped)
-/// reuse the exact same posture — guests get 401, agents get 403.
+/// Profile edits and key minting/revocation stay behind this — a delegated token
+/// must never touch its own owner's account settings.
 pub(crate) async fn session_ctx(
     state: &AppState,
     jar: &CookieJar,
@@ -83,6 +92,109 @@ pub(crate) async fn session_ctx(
         return Err(err(StatusCode::FORBIDDEN, AGENTS_REJECTED));
     };
     Ok((persistence, role_user))
+}
+
+/// Auth mode + DB + a principal that is allowed onto the notifications personal-data
+/// endpoints (list/unread-count/preferences — read access), scoped to `role_user` — the
+/// human behind the request even when a Bearer token's `author` is a separate agent
+/// identity. Crate-visible so notifications_api.rs's read handlers use it. See
+/// `authorize_notifications` for the exact invariant enforced (restriction rejection,
+/// delegated-key rejection); this entry point requires only read access. Mutating
+/// handlers must use [`caller_ctx_write`] instead.
+pub(crate) async fn caller_ctx(
+    state: &AppState,
+    jar: &CookieJar,
+    headers: &axum::http::HeaderMap,
+) -> Result<(Arc<Persistence>, Uuid), Response> {
+    caller_ctx_impl(state, jar, headers, false).await
+}
+
+/// Like [`caller_ctx`], but for the notifications endpoints that MUTATE state
+/// (mark-read, read-all, put-preference): additionally rejects a principal whose
+/// `role_cap` is read-only. See `authorize_notifications`.
+pub(crate) async fn caller_ctx_write(
+    state: &AppState,
+    jar: &CookieJar,
+    headers: &axum::http::HeaderMap,
+) -> Result<(Arc<Persistence>, Uuid), Response> {
+    caller_ctx_impl(state, jar, headers, true).await
+}
+
+async fn caller_ctx_impl(
+    state: &AppState,
+    jar: &CookieJar,
+    headers: &axum::http::HeaderMap,
+    require_write: bool,
+) -> Result<(Arc<Persistence>, Uuid), Response> {
+    let Some(auth) = state.auth.clone() else {
+        return Err(err(StatusCode::SERVICE_UNAVAILABLE, OPEN_MODE));
+    };
+    let Some(persistence) = state.persistence.clone() else {
+        return Err(err(StatusCode::SERVICE_UNAVAILABLE, NO_DB));
+    };
+    let principal = auth.authenticate(jar, headers).await;
+    let user_id = authorize_notifications(principal.as_ref(), require_write)
+        .map_err(|(status, msg)| err(status, msg))?;
+    Ok((persistence, user_id))
+}
+
+/// The authorization decision behind [`caller_ctx`]/[`caller_ctx_write`] — pulled out
+/// pure (no DB, no HTTP extraction, `principal: Option<&Principal>` mirroring exactly
+/// what `AuthCtx::authenticate` returns) so the WHOLE boundary, guest case included, is
+/// unit-tested directly without a database or OIDC provider. Invariant enforced,
+/// mirroring `resolve_access`'s posture (auth.rs) but adapted for an endpoint family
+/// that is personal rather than document-scoped:
+///
+///   - no principal at all (guest) is 401 — same as every other authenticated endpoint.
+///   - a restricted token (`document_restriction`/`workspace_restriction` set) is
+///     refused outright. Those restrictions exist to narrow a token to one document;
+///     the inbox has no document to check the restriction against, so — unlike
+///     `resolve_access`, which can compare the restriction to the document being
+///     opened — there is no way to honor the restriction here except by refusing the
+///     whole endpoint family (the `Some(doc)` branch of `resolve_access`, where it
+///     computes `restricted` before consulting `user_role`, is the load-bearing
+///     precedent this mirrors).
+///   - an agent (Bearer-token) principal is admitted ONLY when its token is the
+///     caller's own device-login token (`TokenKind::Device`, minted by cli_login — the
+///     desktop app's only transport to this server). An ordinary delegated key minted
+///     via POST /api/me/tokens is refused: admitting it would let any third-party agent
+///     holding such a key read the owner's mention inbox and rewrite their preferences
+///     over REST, defeating mcp.rs's `inbox_user` wall, which deliberately holds an
+///     MCP-connected agent to its OWN identity's inbox rather than its owner's.
+///   - when `require_write` is set (mark-read, read-all, put-preference), a principal
+///     whose `role_cap` is `Viewer` — i.e. a token minted with the read-only scope
+///     preset — is refused: it may read the inbox but not mutate it, the same
+///     scope-ceiling `resolve_access` enforces via `r.min(p.role_cap)`.
+///
+/// A browser session always passes every check (`is_agent` false, no restriction,
+/// `role_cap` is always `Editor`).
+pub(crate) fn authorize_notifications(
+    principal: Option<&Principal>,
+    require_write: bool,
+) -> Result<Uuid, (StatusCode, &'static str)> {
+    let Some(principal) = principal else {
+        return Err((StatusCode::UNAUTHORIZED, "sign in"));
+    };
+    if principal.document_restriction.is_some() || principal.workspace_restriction.is_some() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "a restricted API token cannot reach the notifications inbox",
+        ));
+    }
+    if principal.is_agent && principal.token_kind != Some(crate::auth::TokenKind::Device) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "delegated API keys cannot reach the notifications inbox — sign in with a \
+             browser session or the desktop app",
+        ));
+    }
+    if require_write && principal.role_cap == crate::auth::Role::Viewer {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "a read-only token cannot modify notifications",
+        ));
+    }
+    Ok(principal.role_user)
 }
 
 // ---------------------------------------------------------------------------
@@ -395,6 +507,8 @@ pub async fn mint_token(
     let result: anyhow::Result<Response> = async {
         let agent_id = p.create_agent_user(&label).await?;
         let secret = format!("mua_{}", random_token());
+        // kind = "delegated": this is exactly the third-party-key case (settings.md §2.2)
+        // the notifications REST surface must NOT admit — see TokenKind's doc comment.
         let (token_id, expires_at) = p
             .insert_api_token(
                 &hash_token(&secret),
@@ -402,6 +516,7 @@ pub async fn mint_token(
                 Some(user_id),
                 scopes,
                 expires_in_days,
+                crate::auth::TokenKind::Delegated.as_db(),
             )
             .await?;
         info!(%user_id, %agent_id, %token_id, label, "minted delegated agent token (settings)");
@@ -667,5 +782,140 @@ mod tests {
         assert_eq!(validate_onboarded(Some(true)), Ok(()));
         let err = validate_onboarded(Some(false)).unwrap_err();
         assert!(err.contains("only be set to true"), "{err}");
+    }
+
+    // -----------------------------------------------------------------------
+    // authorize_notifications — the notifications inbox/preferences boundary.
+    // -----------------------------------------------------------------------
+
+    use crate::auth::{Role, TokenKind};
+
+    fn session_principal() -> Principal {
+        Principal {
+            role_user: Uuid::nil(),
+            author: Uuid::nil(),
+            role_cap: Role::Editor,
+            document_restriction: None,
+            workspace_restriction: None,
+            is_agent: false,
+            token_kind: None,
+        }
+    }
+
+    fn token_principal(kind: TokenKind, role_cap: Role) -> Principal {
+        Principal {
+            role_user: Uuid::nil(),
+            author: Uuid::nil(),
+            role_cap,
+            document_restriction: None,
+            workspace_restriction: None,
+            is_agent: true,
+            token_kind: Some(kind),
+        }
+    }
+
+    /// A guest (no principal at all) is 401 for both the read and write variants —
+    /// the notifications endpoints require identity like everything else in this file.
+    #[test]
+    fn anonymous_is_rejected_with_401() {
+        assert_eq!(
+            authorize_notifications(None, false).unwrap_err().0,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            authorize_notifications(None, true).unwrap_err().0,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    /// A browser session passes every check, read or write, regardless of role_cap
+    /// (sessions are always Editor — see `AuthCtx::authenticate`).
+    #[test]
+    fn session_is_accepted_for_read_and_write() {
+        let p = session_principal();
+        assert!(authorize_notifications(Some(&p), false).is_ok());
+        assert!(authorize_notifications(Some(&p), true).is_ok());
+    }
+
+    /// The desktop's own device-login token (cli_login, TokenKind::Device) with full
+    /// read+write scope is accepted for both read and write — this is the exact case
+    /// the original fix exists for.
+    #[test]
+    fn device_token_with_write_scope_is_accepted_for_read_and_write() {
+        let p = token_principal(TokenKind::Device, Role::Editor);
+        assert!(authorize_notifications(Some(&p), false).is_ok());
+        assert!(authorize_notifications(Some(&p), true).is_ok());
+    }
+
+    /// A read-scoped device token (role_cap Viewer, from the ["read"] scope preset) may
+    /// GET the inbox/preferences but may NOT mutate them — the scope ceiling
+    /// `resolve_access` enforces via `r.min(p.role_cap)`, mirrored here.
+    #[test]
+    fn read_scoped_device_token_can_read_but_not_write() {
+        let p = token_principal(TokenKind::Device, Role::Viewer);
+        assert!(authorize_notifications(Some(&p), false).is_ok());
+        let err = authorize_notifications(Some(&p), true).unwrap_err();
+        assert_eq!(err.0, StatusCode::FORBIDDEN);
+        assert!(err.1.contains("read-only"), "{}", err.1);
+    }
+
+    /// An ordinary delegated key (POST /api/me/tokens) is rejected outright — for read
+    /// AND write — even with full read+write scope. This is the hole finding #2 closes:
+    /// a third-party agent holding such a key must not reach the owner's inbox over
+    /// REST, matching mcp.rs's `inbox_user` wall.
+    #[test]
+    fn delegated_token_is_rejected_even_with_write_scope() {
+        let p = token_principal(TokenKind::Delegated, Role::Editor);
+        let read_err = authorize_notifications(Some(&p), false).unwrap_err();
+        assert_eq!(read_err.0, StatusCode::FORBIDDEN);
+        let write_err = authorize_notifications(Some(&p), true).unwrap_err();
+        assert_eq!(write_err.0, StatusCode::FORBIDDEN);
+    }
+
+    /// A restricted token (narrowed to one document or workspace) is rejected outright,
+    /// even a device token with full scope — the inbox has no single document to check
+    /// the restriction against, so it is refused entirely rather than silently ignored.
+    #[test]
+    fn restricted_token_is_rejected_even_when_otherwise_eligible() {
+        let mut doc_restricted = token_principal(TokenKind::Device, Role::Editor);
+        doc_restricted.document_restriction = Some(Uuid::nil());
+        assert_eq!(
+            authorize_notifications(Some(&doc_restricted), false)
+                .unwrap_err()
+                .0,
+            StatusCode::FORBIDDEN
+        );
+
+        let mut ws_restricted = token_principal(TokenKind::Device, Role::Editor);
+        ws_restricted.workspace_restriction = Some(Uuid::nil());
+        assert_eq!(
+            authorize_notifications(Some(&ws_restricted), false)
+                .unwrap_err()
+                .0,
+            StatusCode::FORBIDDEN
+        );
+
+        // A restricted SESSION principal cannot occur in practice (sessions never carry
+        // a restriction), but the check is unconditional — proven here for completeness.
+        let mut restricted_session = session_principal();
+        restricted_session.document_restriction = Some(Uuid::nil());
+        assert_eq!(
+            authorize_notifications(Some(&restricted_session), true)
+                .unwrap_err()
+                .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    /// authorize_notifications returns the ROLE_USER (the human whose inbox this is),
+    /// not the author — the same distinction Principal documents for delegated tokens.
+    #[test]
+    fn ok_result_carries_role_user() {
+        let mut p = token_principal(TokenKind::Device, Role::Editor);
+        let human = Uuid::now_v7();
+        let agent = Uuid::now_v7();
+        p.role_user = human;
+        p.author = agent;
+        assert_eq!(authorize_notifications(Some(&p), false), Ok(human));
     }
 }
