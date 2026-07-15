@@ -261,9 +261,9 @@
   <div class="tree-row-label items-center gap-1.5 min-w-0" style="padding: 1px 7px;">
     {#if node.isDir}
       {#if expanded}
-        <FolderOpen size={17} class="shrink-0 text-accent" />
+        <FolderOpen size={17} class="shrink-0 text-[var(--folder-accent)]" />
       {:else}
-        <Folder size={17} class="shrink-0 text-accent" />
+        <Folder size={17} class="shrink-0 text-[var(--folder-accent)]" />
       {/if}
     {:else}
       <FileText size={15} class="shrink-0 text-base-content/50" />

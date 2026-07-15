@@ -35,6 +35,7 @@
   import { installKeymap, escapeFallbackTarget } from "$lib/keymap";
   import { theme } from "$lib/theme.svelte";
   import { background } from "$lib/background.svelte";
+  import { folderColor } from "$lib/folderColor.svelte";
   import { platform } from "$lib/platform.svelte";
   import { docCollab } from "$lib/collab/docCollab.svelte";
   import NotificationsBell from "$lib/notifications/NotificationsBell.svelte";
@@ -215,6 +216,8 @@
     theme.init();
     // Apply persisted background (translucency / hue / tint) CSS vars.
     background.init();
+    // Apply the persisted folder-icon color CSS var.
+    folderColor.init();
 
     // Seamless updates (spec 2026-07-02 §3): launch check after ~10s + every 4h.
     // Dev builds stay idle (one debug line inside the store).

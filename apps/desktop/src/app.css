@@ -89,12 +89,20 @@
 /* Depth vars (--lift / --overlay / --text-muted / --code-bg / --row-hover /
    --shadow-* / --radius-overlay / --arc-border / --inset-card) now come from
    shared/palette.css. Only the macOS-only --floor-l (window-vibrancy tint base
-   lightness) stays here — it has no web equivalent. */
+   lightness) stays here — it has no web equivalent. --folder-l/--folder-c
+   mirror --arc-accent's own light/dark L and C (shared/palette.css) so a
+   user-chosen folder hue stays exactly as legible as the built-in accent does
+   in both themes — only the hue (--folder-h, set by folderColor.svelte.ts)
+   varies per user. */
 [data-theme="arc-light"] {
   --floor-l: 0.92;
+  --folder-l: 0.6;
+  --folder-c: 0.14;
 }
 [data-theme="arc-dark"] {
   --floor-l: 0.15;
+  --folder-l: 0.72;
+  --folder-c: 0.12;
 }
 
 html,
@@ -119,12 +127,22 @@ body {
    alpha default here and are overridden inline on <html> by the background store.
      --floor-a: opacity (lower = more translucent)
      --floor-h: tint hue (0–360)
-     --floor-c: tint chroma (0 = neutral gray) */
+     --floor-c: tint chroma (0 = neutral gray)
+
+   Folder icon color (Settings → Preferences → Folder color) follows the same
+   shape: --folder-h (default 250 = --arc-accent's own hue) is overridden
+   inline by folderColor.svelte.ts; --folder-l/--folder-c are per-theme above.
+   Until init() runs (or if it's ever removed) this composes to exactly
+   --arc-accent's value, so --folder-accent defaults to looking like
+   --color-accent. */
 html {
   --floor-c: 0.018;
   --floor-h: 295;
   --floor-a: 0.3;
   --floor-tint: oklch(var(--floor-l, 0.9) var(--floor-c) var(--floor-h) / var(--floor-a));
+
+  --folder-h: 250;
+  --folder-accent: oklch(var(--folder-l, 0.6) var(--folder-c, 0.14) var(--folder-h));
 }
 
 /* Arc-style file-tree rows: the row (.tree-row-wrap) IS the highlight
