@@ -627,7 +627,10 @@
             onsignin={() => openSignIn(false)}
           />
           {#if workspaces.identity}
-            <NotificationsBell server={workspaces.activeServer} />
+            <NotificationsBell
+              server={workspaces.activeServer}
+              onsignin={() => openSignIn(false)}
+            />
           {/if}
         </div>
 

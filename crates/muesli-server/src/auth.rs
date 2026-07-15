@@ -603,6 +603,7 @@ impl AuthCtx {
                 // API-token principals attribute to an agent identity (users.kind='agent',
                 // created by cli_login / service-account minting).
                 is_agent: true,
+                token_kind: Some(TokenKind::from_db(&info.kind)),
             });
         }
         let user_id = self.session_user(jar).await?;
@@ -613,7 +614,37 @@ impl AuthCtx {
             document_restriction: None,
             workspace_restriction: None,
             is_agent: false,
+            token_kind: None,
         })
+    }
+}
+
+/// Test-only `AuthCtx` construction, crate-visible so handler tests outside this module
+/// (notifications_api.rs) can drive the real `caller_ctx`/`caller_ctx_write` extraction
+/// path end to end. `AuthCtx::connect` isn't usable here: it discovers a real OIDC issuer
+/// over the network (requires dex running, per AGENTS.md's dev stack). None of that is
+/// needed for a Bearer-token request — `authenticate` resolves it entirely from
+/// `persistence.lookup_api_token`, never touching `sessions`/`issuers`/`pending` — so
+/// every field below is either exercised (persistence) or an inert placeholder
+/// (`IssuerHandle` connects its issuer lazily on first use, per its own doc comment, so
+/// constructing one dials nothing).
+#[cfg(test)]
+pub(crate) fn test_ctx(persistence: Arc<Persistence>) -> AuthCtx {
+    AuthCtx {
+        http: reqwest::Client::new(),
+        sessions: SessionStore::Memory(Mutex::new(HashMap::new())),
+        pending: Mutex::new(HashMap::new()),
+        web_origin: "http://localhost:5173".to_string(),
+        persistence,
+        issuers: IssuerRegistry::new(Arc::new(IssuerHandle::new(
+            "https://issuer.invalid",
+            "test-client",
+            "test-secret",
+        ))),
+        redirect_uri: RedirectUrl::new("http://localhost:5173/auth/callback".to_string())
+            .expect("static redirect url parses"),
+        cli_client_id: "muesli-cli".to_string(),
+        cookie_secure: false,
     }
 }
 
@@ -630,6 +661,40 @@ pub struct Principal {
     pub workspace_restriction: Option<Uuid>,
     /// True when the attributed author is an agent identity (users.kind = 'agent').
     pub is_agent: bool,
+    /// None for a browser session. For a Bearer token (is_agent = true), which api_tokens
+    /// `kind` minted it (migration 0017) — the notifications REST surface (account.rs)
+    /// uses this to admit the desktop's own device-login token while still rejecting an
+    /// ordinary delegated key minted via POST /api/me/tokens.
+    pub token_kind: Option<TokenKind>,
+}
+
+/// api_tokens.kind (migration 0017): which flow minted this Bearer token.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TokenKind {
+    /// Minted by the device-code flow (cli_login) into the caller's own OS Keychain —
+    /// the CLI and the desktop app both authenticate this way. This is the caller's own
+    /// credential, not a delegation to a third party.
+    Device,
+    /// Minted via POST /api/me/tokens (settings.md §2.2): a key the owner hands to a
+    /// third party (an MCP-connected agent, a script, ...) to act on their behalf.
+    Delegated,
+}
+
+impl TokenKind {
+    pub(crate) fn from_db(s: &str) -> TokenKind {
+        match s {
+            "device" => TokenKind::Device,
+            // Fail closed: an unrecognized value (or the pre-migration-0017 default) is
+            // treated as the more restricted kind, not the more privileged one.
+            _ => TokenKind::Delegated,
+        }
+    }
+    pub fn as_db(&self) -> &'static str {
+        match self {
+            TokenKind::Device => "device",
+            TokenKind::Delegated => "delegated",
+        }
+    }
 }
 
 /// Effective capability = token scopes ∩ Document role (mcp-and-agent-auth.md).
@@ -1399,6 +1464,9 @@ pub async fn cli_login(
         let label = req.label.as_deref().unwrap_or("muesli-cli");
         let agent_id = auth.persistence.create_agent_user(label).await?;
         let secret = format!("mua_{}", random_token());
+        // kind = "device": every token this device-code flow mints (CLI or desktop) is the
+        // caller's OWN device login, never a third-party delegated key — that is exactly the
+        // distinction the notifications REST surface (account::caller_ctx) keys off of.
         auth.persistence
             .insert_api_token(
                 &hash_token(&secret),
@@ -1406,6 +1474,7 @@ pub async fn cli_login(
                 Some(owner_id),
                 &["read", "write"],
                 None,
+                TokenKind::Device.as_db(),
             )
             .await?;
         info!(%owner_id, %agent_id, label, "minted delegated agent token");
