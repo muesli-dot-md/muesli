@@ -216,12 +216,15 @@
   const isActive = $derived(!node.isDir && node.path === activePath);
 </script>
 
-<!-- Node row: full-width click target; the highlight pill wraps just the name.
-     Draggable to move; folders are drop targets. -->
+<!-- Node row: the row itself is the click target AND the full-width
+     hover/active highlight (rounded, spanning the sidebar width). Draggable to
+     move; folders are drop targets. -->
 <div
   class="tree-row-wrap flex items-center text-sm cursor-pointer select-none"
+  class:active={isActive}
   class:drop-target={dragOver}
-  style="padding-left: {depth * 12}px; padding-top: 2px; padding-bottom: 2px; padding-right: 4px;"
+  style:padding-left="{depth * 12 + 4}px"
+  style="padding-top: 4px; padding-bottom: 4px; padding-right: 8px;"
   draggable={!renaming}
   ondragstart={onDragStart}
   ondragend={onDragEnd}
@@ -243,8 +246,7 @@
     }
   }}
 >
-  <!-- Disclosure chevron (folders) / alignment spacer (files) — OUTSIDE the pill
-       so the highlight wraps only the icon + name. -->
+  <!-- Disclosure chevron (folders) / alignment spacer (files). -->
   {#if node.isDir}
     <span
       class="shrink-0 transition-transform duration-150 text-base-content/45"
@@ -256,16 +258,12 @@
     <span class="shrink-0" style="width: 15px;"></span>
   {/if}
 
-  <div
-    class="tree-row items-center gap-1.5 min-w-0"
-    class:active={isActive}
-    style="padding: 1px 7px;"
-  >
+  <div class="tree-row-label items-center gap-1.5 min-w-0" style="padding: 1px 7px;">
     {#if node.isDir}
       {#if expanded}
-        <FolderOpen size={17} class="shrink-0 text-base-content/60" />
+        <FolderOpen size={17} class="shrink-0 text-accent" />
       {:else}
-        <Folder size={17} class="shrink-0 text-base-content/60" />
+        <Folder size={17} class="shrink-0 text-accent" />
       {/if}
     {:else}
       <FileText size={15} class="shrink-0 text-base-content/50" />
@@ -301,21 +299,25 @@
   </div>
 </div>
 
-<!-- Children (when folder expanded) -->
+<!-- Children (when folder expanded): wrapped so an indent-guide line
+     (.tree-children, positioned under this folder's own chevron) can run
+     down through them, Obsidian-style. -->
 {#if node.isDir && expanded}
-  {#each sortedChildren as child (child.path)}
-    <TreeNode
-      node={child}
-      depth={depth + 1}
-      {activePath}
-      {onOpen}
-      {onContextMenu}
-      {pendingRename}
-      {pendingDelete}
-      {onRenameDone}
-      {onDeleteDone}
-    />
-  {/each}
+  <div class="tree-children" style="--guide-x: {depth * 12 + 15}px;">
+    {#each sortedChildren as child (child.path)}
+      <TreeNode
+        node={child}
+        depth={depth + 1}
+        {activePath}
+        {onOpen}
+        {onContextMenu}
+        {pendingRename}
+        {pendingDelete}
+        {onRenameDone}
+        {onDeleteDone}
+      />
+    {/each}
+  </div>
 {/if}
 
 <!-- Delete confirm modal -->
