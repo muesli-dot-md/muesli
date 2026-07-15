@@ -8,11 +8,40 @@
   import * as Y from "yjs";
   import { t } from "./i18n/index.svelte";
   import { useDocSession } from "./session.svelte";
+  import { gotoDoc } from "./route.svelte";
   import { collabDecorations, commentClickHandler } from "@muesli/editor-core/annotations";
   import { scrollPastEnd } from "@muesli/editor-core/scrollPastEnd";
-  import { fenceLanguage, livePreview } from "./livePreview";
+  import {
+    fenceLanguage,
+    livePreview,
+    type LivePreviewLabels,
+  } from "@muesli/editor-core/livePreview";
   import { mentionAutocomplete } from "./mentionAction.svelte";
   import { toggleInlineMark, type InlineMark } from "@muesli/editor-core/mdCommands";
+
+  // Passed to livePreview() as a getter and re-evaluated by every widget
+  // toDOM/render — the same points where the old in-app copy called t()
+  // directly. So a mid-session setLocale(), or a non-English catalog that
+  // finishes its async load after this editor mounts (i18n/index.svelte.ts
+  // falls back to English until then), reaches every widget built afterwards.
+  const liveLabels = (): LivePreviewLabels => ({
+    toggleTask: t("editor.toggleTask"),
+    mermaid: {
+      zoomIn: t("editor.mermaid.zoomIn"),
+      reset: t("editor.mermaid.reset"),
+      zoomOut: t("editor.mermaid.zoomOut"),
+    },
+    table: {
+      insertRowAbove: t("editor.table.insertRowAbove"),
+      insertRowBelow: t("editor.table.insertRowBelow"),
+      insertColumnLeft: t("editor.table.insertColumnLeft"),
+      insertColumnRight: t("editor.table.insertColumnRight"),
+      deleteRow: t("editor.table.deleteRow"),
+      deleteColumn: t("editor.table.deleteColumn"),
+      resizeColumn: t("editor.table.resizeColumn"),
+      formulaError: t("editor.table.formulaError"),
+    },
+  });
 
   // DocApp is keyed on the doc id, so this whole component (EditorView, undo
   // manager, CRDT binding) remounts against the new session on doc switch.
@@ -96,7 +125,7 @@
           // layer, so they win where ranges overlap.
           collabDecorations,
           commentClickHandler((threadId) => collab.revealThread(threadId)),
-          livePreview(),
+          livePreview({ labels: liveLabels, onNavigateWikilink: gotoDoc }),
           // VSCode/Atom "scroll beyond last line": bottom padding so the last
           // line can scroll up near the top. Visual only — no document text.
           scrollPastEnd(),

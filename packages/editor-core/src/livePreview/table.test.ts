@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { fenceLanguage, livePreview } from "./index";
+import { defaultLivePreviewOptions, fenceLanguage, livePreview } from "./index";
 
 function mkView(doc: string): { view: EditorView; host: HTMLElement } {
   const host = document.createElement("div");
@@ -24,7 +24,7 @@ function mkView(doc: string): { view: EditorView; host: HTMLElement } {
       selection: { anchor: 0 }, // cursor far from the table → widget renders
       extensions: [
         markdown({ base: markdownLanguage, codeLanguages: fenceLanguage }),
-        livePreview(),
+        livePreview(defaultLivePreviewOptions),
       ],
     }),
     parent: host,

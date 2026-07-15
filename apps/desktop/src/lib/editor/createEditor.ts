@@ -5,7 +5,11 @@ import { search, searchKeymap } from "@codemirror/search";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { scrollPastEnd } from "@muesli/editor-core/scrollPastEnd";
 import { muesliTheme } from "./theme";
-import { livePreview, fenceLanguage } from "$lib/editor/livePreview";
+import {
+  defaultLivePreviewLabels,
+  livePreview,
+  fenceLanguage,
+} from "@muesli/editor-core/livePreview";
 
 export interface CreateEditorOpts {
   parent: HTMLElement;
@@ -82,9 +86,11 @@ export function createEditor(opts: CreateEditorOpts): EditorView {
 
   // Live-preview decorations go BEFORE the collab extension so that yCollab's
   // remote-cursor/selection decorations layer on top, and both decoration sets
-  // coexist cleanly.
+  // coexist cleanly. Desktop is not localized (AGENTS.md) — literal English
+  // labels — and has no onNavigateWikilink yet: [[wikilink]] cmd/ctrl+click is
+  // a no-op until wikilink navigation ships here.
   if (useLivePreview) {
-    extensions.push(...livePreview());
+    extensions.push(...livePreview({ labels: () => defaultLivePreviewLabels }));
   }
 
   if (collab) {

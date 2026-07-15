@@ -17,7 +17,7 @@ stays canonical — nothing is ever converted.
 - `crates/muesli-cli` — the `muesli` binary: file/folder sync bridge, device-code login, MCP stdio proxy
 - `apps/web` — web editor (Vite + Svelte 5 + daisyUI + CodeMirror 6)
 - `apps/desktop` — Tauri 2 + SvelteKit desktop app; its Rust crate `apps/desktop/src-tauri` is **outside** the cargo workspace
-- `packages/editor-core` — shared editor library (render, tables, mermaid, annotations, mdCommands)
+- `packages/editor-core` — shared editor library (render, livePreview, tables, mermaid, annotations, mdCommands)
 - `packages/workspace-setup` — shared onboarding/creation-wizard flow machine
 - `integrations/vscode` — presence-only VS Code extension
 - `internal/` — gitignored design docs and ADRs. **Read these**: they are the

@@ -1,5 +1,5 @@
 // Headless test for the live-preview transform layer
-// (src/livePreview/transform.ts — pure, DOM-free by design).
+// (packages/editor-core/src/livePreview/transform.ts — pure, DOM-free by design).
 //
 // Run from apps/web:  node scripts/live-preview-test.mjs
 // (Node >= 22.18 strips the TypeScript types natively, same as render-test.)
@@ -25,7 +25,7 @@ import {
   hiddenRanges,
   parseTableMarkdown,
   spanRevealed,
-} from "../src/livePreview/transform.ts";
+} from "../../../packages/editor-core/src/livePreview/transform.ts";
 
 let passed = 0;
 function check(name, cond, detail) {

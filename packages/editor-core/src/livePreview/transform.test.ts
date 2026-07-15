@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseTableMarkdown, frontmatterRange } from "$lib/editor/livePreview/transform";
+import { parseTableMarkdown, frontmatterRange } from "./transform";
 
 describe("transform", () => {
   it("parseTableMarkdown parses header + rows", () => {

@@ -11,6 +11,7 @@ import { renderMermaidDiagrams } from "@muesli/editor-core/mermaid";
 import { attachMermaidInteraction } from "@muesli/editor-core/mermaidInteraction";
 import { KATEX_TRUST, renderMarkdown, sanitize } from "@muesli/editor-core/render";
 import { buildTableWidget } from "@muesli/editor-core/tableInteraction";
+import { livePreviewOptions } from "./options";
 import type { ParsedTable } from "./transform";
 
 // --- render caches (keyed by source text) -----------------------------------
@@ -58,12 +59,14 @@ export class CheckboxWidget extends WidgetType {
   override eq(other: CheckboxWidget): boolean {
     return other.checked === this.checked;
   }
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = this.checked;
     input.className = "cm-live-task checkbox checkbox-xs";
-    input.setAttribute("aria-label", "Toggle task");
+    // labels is a getter, called here (toDOM time) so every widget build picks
+    // up the app's current locale — never cached across builds.
+    input.setAttribute("aria-label", view.state.facet(livePreviewOptions).labels().toggleTask);
     return input;
   }
   // Let the editor see events: index.ts's mousedown handler dispatches the
@@ -158,15 +161,17 @@ export class MermaidWidget extends WidgetType {
   override eq(other: MermaidWidget): boolean {
     return other.source === this.source;
   }
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const div = blockContainer("cm-live-mermaid");
     const cached = mermaidCache.get(this.source);
     const holder = document.createElement("div");
     holder.dataset.diagram = "mermaid";
     holder.className = "mermaid-block";
-    // Desktop uses literal strings (no i18n layer); webapp localizes these.
-    const labels = { zoomIn: "Zoom in", reset: "Reset view", zoomOut: "Zoom out" };
+    const labels = view.state.facet(livePreviewOptions).labels().mermaid;
     if (cached !== undefined) {
+      // `cached` is holder.innerHTML captured after renderMermaidDiagrams(),
+      // which DOMPurify-sanitizes the SVG before injection — so the cache
+      // replay is sanitized-at-source.
       holder.innerHTML = cached;
       holder.dataset.rendered = "svg";
       div.appendChild(holder);
@@ -242,7 +247,7 @@ export class TableWidget extends WidgetType {
   override eq(other: TableWidget): boolean {
     return other.source === this.source;
   }
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const div = blockContainer("cm-live-table");
     const source = this.source;
     buildTableWidget(
@@ -254,22 +259,15 @@ export class TableWidget extends WidgetType {
         // root maps to the block start via posAtDOM; the original source length
         // bounds the range exactly (the widget is cached by source text).
         onCommit: (markdown) => {
-          const view = EditorView.findFromDOM(div);
-          if (!view || view.state.readOnly) return; // suggest mode pauses editing
-          const from = view.posAtDOM(div);
+          // onCommit fires long after toDOM() returns, so the view must be
+          // re-derived from the DOM rather than closed over.
+          const commitView = EditorView.findFromDOM(div);
+          if (!commitView || commitView.state.readOnly) return; // suggest mode pauses editing
+          const from = commitView.posAtDOM(div);
           const to = from + source.length;
-          view.dispatch({ changes: { from, to, insert: markdown }, userEvent: "input" });
+          commitView.dispatch({ changes: { from, to, insert: markdown }, userEvent: "input" });
         },
-        labels: {
-          insertRowAbove: "Insert row above",
-          insertRowBelow: "Insert row below",
-          insertColumnLeft: "Insert column left",
-          insertColumnRight: "Insert column right",
-          deleteRow: "Delete row",
-          deleteColumn: "Delete column",
-          resizeColumn: "Resize column",
-          formulaError: "Formula error",
-        },
+        labels: view.state.facet(livePreviewOptions).labels().table,
       },
       this.widths,
     );
