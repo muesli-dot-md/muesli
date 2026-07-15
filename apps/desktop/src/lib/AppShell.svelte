@@ -83,9 +83,12 @@
   let showPalette = $state(false);
   let showSwitcher = $state(false);
   let showSettings = $state(false);
-  // Section SettingsPanel lands on when it next mounts; the onboarding server
-  // fork deep-links to Sync, every other open path uses the default (Profile).
-  let settingsSection = $state<"sync" | undefined>(undefined);
+  // Section SettingsPanel lands on when it next mounts. A failed sign-in
+  // (confirmSignIn below) deep-links to Profile — the one surface that shows
+  // BOTH the retry control and the error message together; every other open
+  // path uses the default (also Profile), so this is mostly documentation of
+  // intent rather than a functional override.
+  let settingsSection = $state<"profile" | undefined>(undefined);
   let showSearch = $state(false);
   // Graph view replaces the editor pane in the main area when toggled on. Opening
   // a document (handleOpen) flips it back off so the editor returns to focus.
@@ -389,9 +392,10 @@
   });
 
   /** Close Settings and reset its deep-link section — the ONLY way Settings
-   *  should be closed. The server-fork onboarding deep-links to Sync
-   *  (settingsSection = 'sync'); every other Settings close must clear that
-   *  so a later, unrelated Settings open doesn't land back on Sync. */
+   *  should be closed. A failed sign-in deep-links to Profile (settingsSection
+   *  = 'profile', see confirmSignIn); every other Settings close must clear
+   *  that so a later, unrelated Settings open doesn't land back there instead
+   *  of the default. */
   function closeSettings() {
     showSettings = false;
     settingsSection = undefined;
@@ -477,7 +481,7 @@
 
   /** Sign-in dialog "Not now": close only; nothing else happens (spec §2) —
    *  in particular the onboarding fork does NOT fall through to Settings →
-   *  Sync on a cancel; that fallback is reserved for a login that RAN and
+   *  Profile on a cancel; that fallback is reserved for a login that RAN and
    *  produced no identity. */
   function cancelSignIn() {
     showSignIn = false;
@@ -494,11 +498,16 @@
    *  re-stamp so their first web login doesn't show onboarding again) and open
    *  the shared create-workspace wizard. No identity (login failed — wrong
    *  server, network error — or the keychain consent was declined = quiet
-   *  abort) → Settings → Sync REGARDLESS of entry point, the existing surface
-   *  where the server address, login button, and error message live. Every
-   *  sign-in entry point funnels through here, so this is the only place a
-   *  failure needs handling — without it, non-onboarding sign-ins (the
-   *  sidebar dropdown, Settings → Profile) failed completely silently. */
+   *  abort) → Settings → Profile REGARDLESS of entry point: the primary
+   *  account surface, which renders both the Sign in retry button AND
+   *  workspaces.error right below it, so a failed attempt always lands
+   *  somewhere with a working retry control next to the reason it failed.
+   *  (Sync used to host this — see its own header comment — but its login
+   *  button is gone, so deep-linking there would strand the user with an
+   *  error and nothing to click.) Every sign-in entry point funnels through
+   *  here, so this is the only place a failure needs handling — without it,
+   *  non-onboarding sign-ins (the sidebar dropdown, Settings → Profile) failed
+   *  completely silently. */
   async function confirmSignIn() {
     showSignIn = false;
     const fromOnboarding = signInFromOnboarding;
@@ -511,7 +520,7 @@
       }
       return;
     }
-    settingsSection = "sync";
+    settingsSection = "profile";
     showSettings = true;
     showGraph = false;
   }

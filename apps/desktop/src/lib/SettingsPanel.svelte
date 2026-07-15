@@ -20,8 +20,8 @@
     /** Close the settings view and return to the editor/last document. */
     onclose: () => void;
     /** Section to land on when the panel mounts (defaults to Profile). Lets
-     *  callers deep-link, e.g. the onboarding server fork opens straight at
-     *  Sync where the server address / login / error UI lives. */
+     *  callers deep-link, e.g. a failed sign-in opens straight at Profile,
+     *  the one Settings surface with the sign-in control and error text. */
     initialSection?: Section;
   }
 
@@ -152,7 +152,7 @@
           {:else if section === "notifications"}
             <NotificationsSection />
           {:else if section === "sync"}
-            <SyncSection {statusLabel} />
+            <SyncSection {statusLabel} onNavigateToProfile={() => (section = "profile")} />
           {:else}
             <AboutSection appVersion={APP_VERSION} {statusLabel} />
           {/if}
