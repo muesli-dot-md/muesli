@@ -55,7 +55,7 @@
     {#if stack.overflow > 0}
       <button
         type="button"
-        class="-ml-1.5 flex h-10 min-w-10 items-center justify-center rounded-full ring-2 ring-base-100 transition-transform active:scale-[0.96]"
+        class="-ml-1.5 flex h-7 min-w-7 items-center justify-center rounded-full ring-2 ring-base-100 transition-transform active:scale-[0.96]"
         title={`${stack.overflow} more`}
         aria-haspopup="true"
         aria-expanded={rosterOpen}
