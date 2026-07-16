@@ -46,10 +46,11 @@
    ║  Two daisyUI 5 themes: "muesli" (light, the default) and "muesli-dark"   ║
    ║  (applied when the OS prefers dark, or when the user picks Dark in the   ║
    ║  account menu — see theme.svelte.ts; index.html sets data-theme before   ║
-   ║  first paint). Every component color derives from these tokens, which     ║
-   ║  resolve to the shared "arc" palette (periwinkle/lavender + layered      ║
-   ║  depth). If you change --arc-base-200 in the shared file, also update     ║
-   ║  the first-paint pins in index.html so a hard refresh doesn't flash.     ║
+   ║  first paint). Every component color derives from these tokens, which    ║
+   ║  resolve to the shared "arc" palette (brand-blue accents on neutral      ║
+   ║  gray + layered depth). If you change --arc-base-200 in the shared file, ║
+   ║  also update the first-paint pins in index.html so a hard refresh        ║
+   ║  doesn't flash.                                                          ║
    ════════════════════════════════════════════════════════════════════════════ */
 
 @plugin "daisyui/theme" {
@@ -130,13 +131,14 @@ html {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Webapp accent override (item 2). The shared palette ships periwinkle as
-   --arc-primary (the desktop keeps it). The webapp instead points its
-   --color-primary at a user-selectable accent that DEFAULTS to a restrained
-   neutral slate gray. accent.svelte.ts sets --accent-primary* on the document
-   root from the chosen preset; the static defaults below (gray) avoid a flash
-   before the store applies. This layer comes after the theme blocks and shares
-   their selector specificity, so source order makes it win.
+   Webapp accent override (item 2). The shared palette ships the brand blue as
+   --arc-primary (the desktop defaults to it via the "blue" preset). The webapp
+   instead points its --color-primary at a user-selectable accent that DEFAULTS
+   to a restrained neutral slate gray. accent.svelte.ts sets --accent-primary*
+   on the document root from the chosen preset; the static defaults below
+   (gray) avoid a flash before the store applies. This layer comes after the
+   theme blocks and shares their selector specificity, so source order makes
+   it win.
    ────────────────────────────────────────────────────────────────────────── */
 :root {
   /* Default accent = gray (matches the "gray" preset in accent.svelte.ts). */
@@ -155,15 +157,15 @@ html {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Neutral-gray background floor (item 2 addendum). The shared arc palette tints
-   every neutral with the periwinkle hue (~285), which made the floor and the
-   (formerly periwinkle) buttons blend into one purple. The webapp strips that
-   tint from its BACKGROUND surfaces — base-200 (floor) and base-300 (borders),
-   plus the hue-carrying depth tokens — to a clean neutral gray, while base-100
-   cards stay white. The button accent stays its own thing (gray default or the
-   chosen preset) and reads distinct from the floor; soft --shadow-* separates
-   surfaces instead of the tint. Scoped to the muesli themes so the desktop
-   (arc-light/arc-dark) keeps its lavender.
+   Neutral-gray background floor (item 2 addendum). The shared arc palette's
+   neutrals carry only a whisper of the brand hue (~262, near-zero chroma); the
+   webapp goes one step further and strips its BACKGROUND surfaces — base-200
+   (floor) and base-300 (borders), plus the hue-carrying depth tokens — to a
+   fully neutral gray, while base-100 cards stay white. The button accent stays
+   its own thing (gray default or the chosen preset) and reads distinct from
+   the floor; soft --shadow-* separates surfaces instead of a tint. Scoped to
+   the muesli themes so the desktop (arc-light/arc-dark) keeps the shared
+   values.
    ────────────────────────────────────────────────────────────────────────── */
 [data-theme="muesli"] {
   --color-base-100: oklch(1 0 0); /* cards stay pure white */
@@ -182,32 +184,32 @@ html {
      fallbacks make --floor compute to exactly --color-base-200. */
   --floor: oklch(0.967 var(--floor-c, 0) var(--floor-h, 0));
   --color-base-300: oklch(0.9 0 0); /* borders / recessed = neutral */
-  --color-base-content: oklch(0.25 0.004 285);
+  --color-base-content: oklch(0.25 0.004 262);
   --lift: oklch(1 0 0); /* active pill = white, lifted by shadow */
   --arc-border: oklch(0.9 0 0);
-  --text-muted: oklch(0.52 0.004 285);
+  --text-muted: oklch(0.52 0.004 262);
   --code-bg: oklch(0.965 0 0);
   --row-hover: oklch(0.93 0 0); /* opaque neutral veil over the gray floor */
 }
 [data-theme="muesli-dark"] {
-  --color-base-100: oklch(0.215 0.002 285); /* cards (lightest neutral) */
-  --color-base-200: oklch(0.165 0.001 285); /* floor / near-black neutral */
+  --color-base-100: oklch(0.215 0.002 262); /* cards (lightest neutral) */
+  --color-base-200: oklch(0.165 0.001 262); /* floor / near-black neutral */
   /* Tinted floor — see the muesli block above for the scoping invariant. The
-     fallbacks keep the floor's original whisper of chroma (0.001@285), so at
+     fallbacks keep the floor's original whisper of chroma (0.001@262), so at
      tint 0 --floor computes to exactly --color-base-200. */
-  --floor: oklch(0.165 var(--floor-c, 0.001) var(--floor-h, 285));
-  --color-base-300: oklch(0.3 0.002 285); /* borders / recessed */
-  --color-base-content: oklch(0.92 0.003 285);
-  --lift: oklch(0.315 0.003 285);
-  --arc-border: oklch(0.3 0.002 285);
-  --text-muted: oklch(0.64 0.003 285);
-  --code-bg: oklch(0.25 0.002 285);
+  --floor: oklch(0.165 var(--floor-c, 0.001) var(--floor-h, 262));
+  --color-base-300: oklch(0.3 0.002 262); /* borders / recessed */
+  --color-base-content: oklch(0.92 0.003 262);
+  --lift: oklch(0.315 0.003 262);
+  --arc-border: oklch(0.3 0.002 262);
+  --text-muted: oklch(0.64 0.003 262);
+  --code-bg: oklch(0.25 0.002 262);
   --row-hover: rgba(255, 255, 255, 0.06);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
    Folder icon color (Settings → Preferences → Folder color) — mirrors the
-   desktop's app.css exactly: --folder-h (default 250 = --arc-accent's own hue)
+   desktop's app.css exactly: --folder-h (default 262 = --arc-accent's own hue)
    is overridden inline by folderColor.svelte.ts; --folder-l/--folder-c stay
    per-theme, tracking --arc-accent's own light/dark L and C so a user-chosen
    hue stays exactly as legible as the built-in accent. Until the store runs
@@ -215,7 +217,7 @@ html {
    from text-accent to --folder-accent changes nothing by default.
    ────────────────────────────────────────────────────────────────────────── */
 html {
-  --folder-h: 250;
+  --folder-h: 262;
   --folder-accent: oklch(var(--folder-l, 0.6) var(--folder-c, 0.14) var(--folder-h));
 }
 [data-theme="muesli"] {

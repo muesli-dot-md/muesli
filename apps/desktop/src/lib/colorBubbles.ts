@@ -42,9 +42,10 @@ export function swatchColor(hue: number, l = SWATCH_L, c = SWATCH_C): string {
   return `oklch(${l} ${c} ${hue})`;
 }
 
-// 7 hues around the wheel, anchored on the tint's existing default (295,
-// violet — background.svelte.ts DEFAULTS.hue) so existing users' saved value
-// is exactly one of the bubbles. Not evenly spaced: the two greens (Lime,
+// 7 hues around the wheel, anchored on the tint's default (244, Blue —
+// background.svelte.ts DEFAULTS.hue) so the default is exactly one of the
+// bubbles; Violet 295, the pre-brand-blue default, stays in the palette as a
+// choice. Not evenly spaced: the two greens (Lime,
 // Green) sit closer together than the ~51° an even 360/7 split would give,
 // so they're pulled apart from each other and pushed away from their Amber
 // and Teal neighbors to keep every adjacent pair >= ~30° apart — at bubble
@@ -55,16 +56,16 @@ export function swatchColor(hue: number, l = SWATCH_L, c = SWATCH_C): string {
 // anywhere on the wheel, so — unlike the Folder palette below — hue choice
 // here isn't constrained by a muddy/desaturated band.
 export const TINT_HUE_PRESETS: HuePreset[] = [
+  { hue: 244, label: "Blue" },
   { hue: 295, label: "Violet" },
   { hue: 346, label: "Rose" },
   { hue: 38, label: "Amber" },
   { hue: 100, label: "Lime" },
   { hue: 140, label: "Green" },
   { hue: 192, label: "Teal" },
-  { hue: 244, label: "Blue" },
 ];
 
-// Same spacing pattern, anchored on the tree's existing folder-icon hue (250
+// Same spacing pattern, anchored on the tree's default folder-icon hue (262
 // — --arc-accent in shared/palette.css) so the current look is the first
 // bubble. Chartreuse and Green are pulled apart to keep every adjacent pair
 // >= ~30° (the original 132°/147° pair was only 15° apart — read as
@@ -74,7 +75,7 @@ export const TINT_HUE_PRESETS: HuePreset[] = [
 // mustard/olive that hues in the ~65°-115° and ~160°-235° gamut-clipped
 // bands (see the gamut note on hueToHex below) would produce at this L/C.
 export const FOLDER_HUE_PRESETS: HuePreset[] = [
-  { hue: 250, label: "Blue" },
+  { hue: 262, label: "Blue" },
   { hue: 301, label: "Purple" },
   { hue: 353, label: "Rose" },
   { hue: 44, label: "Amber" },

@@ -6,7 +6,7 @@
 const KEY = "muesli:background";
 const MAX_CHROMA = 0.05; // tint=100 → this much chroma
 
-const DEFAULTS = { translucency: 70, hue: 295, tint: 36 };
+const DEFAULTS = { translucency: 70, hue: 244, tint: 36 };
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, Math.round(v)));

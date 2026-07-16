@@ -8,7 +8,7 @@
 // Sync model (owner spec):
 //   - The server object is SPARSE: a key exists only once the user has picked
 //     something, so each app keeps its own local default until then (web
-//     defaults accent "gray", desktop periwinkle — neither must be yanked).
+//     defaults accent "gray", desktop blue — neither must be yanked).
 //   - refresh() (boot + window focus) applies every PRESENT key to the local
 //     stores and re-baselines; absent keys leave local state untouched. A key
 //     that is locally DIRTY — edited while the GET was in flight, or left

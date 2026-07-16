@@ -1,5 +1,5 @@
 // Pins the desktop's "nothing changes until the user picks" invariant: the
-// default periwinkle preset must equal the stock --arc-primary /
+// default blue preset must equal the stock --arc-primary /
 // --arc-primary-content tokens EXACTLY, light and dark, because app.css falls
 // back to those whenever the accent vars are unset. The values are parsed out
 // of shared/palette.css itself, so a palette retune can no longer drift away
@@ -29,19 +29,19 @@ function oklch(value: string): [number, number, number] {
   return [Number(m[1]), Number(m[2]), Number(m[3])];
 }
 
-describe("periwinkle preset vs shared palette", () => {
+describe("blue preset vs shared palette", () => {
   it("equals --arc-primary/--arc-primary-content exactly, light and dark", () => {
-    const periwinkle = ACCENT_PRESETS.find((p) => p.id === "periwinkle");
-    expect(periwinkle).toBeDefined();
+    const blue = ACCENT_PRESETS.find((p) => p.id === "blue");
+    expect(blue).toBeDefined();
 
     const primary = tokenValues("arc-primary");
     const content = tokenValues("arc-primary-content");
     expect(primary).toHaveLength(2);
     expect(content).toHaveLength(2);
 
-    expect(oklch(periwinkle!.light)).toEqual(oklch(primary[0]));
-    expect(oklch(periwinkle!.lightContent)).toEqual(oklch(content[0]));
-    expect(oklch(periwinkle!.dark)).toEqual(oklch(primary[1]));
-    expect(oklch(periwinkle!.darkContent)).toEqual(oklch(content[1]));
+    expect(oklch(blue!.light)).toEqual(oklch(primary[0]));
+    expect(oklch(blue!.lightContent)).toEqual(oklch(content[0]));
+    expect(oklch(blue!.dark)).toEqual(oklch(primary[1]));
+    expect(oklch(blue!.darkContent)).toEqual(oklch(content[1]));
   });
 });

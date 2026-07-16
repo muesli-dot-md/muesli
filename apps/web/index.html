@@ -29,20 +29,21 @@
     </script>
     <style>
       /* First paint before the JS/CSS bundles load: pin the background to the
-         theme's base-200 (both screens render on bg-base-200) so a hard refresh
-         never flashes white. Values mirror --arc-base-200 in shared/palette.css
-         (light/dark) — keep them in sync. Once app.css loads, html follows
-         var(--color-base-200) instead. */
+         floor each theme actually renders so a hard refresh never flashes a
+         different shade. Values mirror what html's background-color resolves
+         to once app.css loads (var(--floor) at zero tint): the muesli theme's
+         neutral base-200 override in light, the shared --arc-base-200 with
+         the floor's fallback chroma in dark — keep them in sync with app.css. */
       html {
-        background-color: oklch(90.5% 0.028 285);
+        background-color: oklch(96.7% 0 0);
       }
       html[data-theme="muesli-dark"] {
-        background-color: oklch(16.5% 0.006 285);
+        background-color: oklch(16.5% 0.001 262);
       }
       /* no-JS fallback (the script above didn't set data-theme) */
       @media (prefers-color-scheme: dark) {
         html:not([data-theme]) {
-          background-color: oklch(16.5% 0.006 285);
+          background-color: oklch(16.5% 0.001 262);
         }
       }
     </style>
