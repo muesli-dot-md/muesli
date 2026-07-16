@@ -58,6 +58,13 @@ describe("ProfileSection", () => {
     expect(buttons.some((b) => b.textContent?.includes("Sign out"))).toBe(true);
   });
 
+  it("renders no sign-in-method row (the IdP is the server's concern, not the user's)", () => {
+    workspaces.identity = identity;
+    const el = render();
+    expect(el.textContent).not.toContain("Single sign-on");
+    expect(el.textContent).not.toContain("signed in through your server's identity provider");
+  });
+
   it("treats a sub-only OIDC identity (no email/display_name) as signed in", () => {
     workspaces.identity = { ...identity, email: null, display_name: null };
     const el = render();

@@ -33,13 +33,18 @@ export const settingsSections = [
   "connections",
   "shortcuts",
   "about",
-  "general",
-  "members",
+  "workspace",
 ] as const;
 export type SettingsSection = (typeof settingsSections)[number];
 
-// "appearance" was the pre-Multica name for "preferences"; keep old hashes alive.
-const SECTION_ALIASES: Record<string, SettingsSection> = { appearance: "preferences" };
+// Renamed sections keep their old hashes alive: "appearance" was the
+// pre-Multica name for "preferences"; "general" and "members" were the two
+// separate workspace pages before they merged into the single "workspace" page.
+const SECTION_ALIASES: Record<string, SettingsSection> = {
+  appearance: "preferences",
+  general: "workspace",
+  members: "workspace",
+};
 
 export type Route =
   | { kind: "home"; view: HomeView; folderId: string | null }

@@ -5,16 +5,14 @@
   // A left grouped category sub-sidebar (small-caps GROUP headers + icon items)
   // and a right scrollable, card-based content column. Each section is its own
   // component under lib/settings/. Literal strings (desktop has no i18n).
-  import { User, SlidersHorizontal, Bell, Info, Cable, X } from "lucide-svelte";
-  import { syncStatus } from "$lib/sync/status.svelte";
+  import { User, SlidersHorizontal, Bell, Info, X } from "lucide-svelte";
   import { workspaces } from "$lib/workspaces.svelte";
   import ProfileSection from "$lib/settings/ProfileSection.svelte";
   import PreferencesSection from "$lib/settings/PreferencesSection.svelte";
   import NotificationsSection from "$lib/settings/NotificationsSection.svelte";
-  import SyncSection from "$lib/settings/SyncSection.svelte";
   import AboutSection from "$lib/settings/AboutSection.svelte";
 
-  type Section = "profile" | "preferences" | "notifications" | "about" | "sync";
+  type Section = "profile" | "preferences" | "notifications" | "about";
 
   interface Props {
     /** Close the settings view and return to the editor/last document. */
@@ -35,10 +33,11 @@
   let section = $state<Section>(initialSection ?? "profile");
 
   type NavItem = { id: Section; label: string; Icon: typeof User };
-  // Mirrors the webapp's Multica two-level layout: a "My Account" group over a
-  // workspace/connection group. Mapped to what the desktop actually has — no API
-  // keys / Members / workspace-General (the desktop lacks that backend), so those
-  // are omitted rather than stubbed.
+  // Mirrors the webapp's Multica layout: a "My Account" group, mapped to what
+  // the desktop actually has — no API keys / Members / workspace-General (the
+  // desktop lacks that backend), so those are omitted rather than stubbed.
+  // There is no Sync page: sync is active iff signed in AND the open workspace
+  // is server-linked (never a toggle), and the server URL lives in About.
   const groups: { title: string; items: NavItem[] }[] = [
     {
       title: "My Account",
@@ -49,19 +48,7 @@
         { id: "about", label: "About", Icon: Info },
       ],
     },
-    { title: "Connections", items: [{ id: "sync", label: "Sync", Icon: Cable }] },
   ];
-
-  // The runtime sync status published by EditorPane's active session. `null`
-  // means there is no live session (sync off, or no note open), which we render
-  // as "disconnected" so the indicator always shows one of the three states.
-  const statusLabel = $derived<"disconnected" | "connecting" | "connected">(
-    syncStatus.status === "connected"
-      ? "connected"
-      : syncStatus.status === "connecting"
-        ? "connecting"
-        : "disconnected",
-  );
 
   // Refresh the workspace list once when the panel mounts (the webapp refreshes
   // on open; here the panel only mounts when settings is shown).
@@ -161,10 +148,8 @@
             <PreferencesSection />
           {:else if section === "notifications"}
             <NotificationsSection />
-          {:else if section === "sync"}
-            <SyncSection {statusLabel} onNavigateToProfile={() => (section = "profile")} />
           {:else}
-            <AboutSection appVersion={APP_VERSION} {statusLabel} />
+            <AboutSection appVersion={APP_VERSION} />
           {/if}
         </div>
       </div>

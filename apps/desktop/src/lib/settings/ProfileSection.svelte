@@ -13,8 +13,10 @@
   const identity = $derived(workspaces.identity);
   // A signed-in OIDC user (has a name/email/avatar, or at least a "sub" claim,
   // to show). Open-mode servers and signed-out states get their own honest
-  // empty states below. Shared with SyncSection's read-only summary so the
-  // two surfaces can't disagree about whether the user is signed in.
+  // empty states below. `isSignedIn` is a UI predicate only — the sync gate is
+  // workspaces.identity + workspace linkage (workspaces.activeLinked), which
+  // diverges here on open-mode servers: their identity-less placeholder can
+  // sync without an account to show.
   const signedIn = $derived(isSignedIn(identity));
   const shownAvatar = $derived(identity?.avatar_url ?? null);
   const initial = $derived(
@@ -61,7 +63,7 @@
   </SettingsCard>
 {:else}
   <!-- identity card: avatar + display name. Sign-out lives here (the primary
-       account flow) rather than duplicated in Sync settings. -->
+       account flow) and nowhere else in Settings. -->
   <SettingsCard>
     <SettingRow
       title={identity?.display_name ?? "Signed in"}
@@ -94,14 +96,6 @@
     <SettingRow title="Display name">
       {#snippet control()}
         <span class="text-sm">{identity?.display_name ?? "—"}</span>
-      {/snippet}
-    </SettingRow>
-    <SettingRow
-      title="Sign-in"
-      description="You're signed in through your server's identity provider."
-    >
-      {#snippet control()}
-        <span class="text-sm">{identity?.mode === "oidc" ? "Single sign-on" : "Server"}</span>
       {/snippet}
     </SettingRow>
     {#if identity?.id}

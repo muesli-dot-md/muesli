@@ -31,6 +31,28 @@ class WorkspacesStore {
     return settings.wsBase;
   }
 
+  /**
+   * True when the OPEN folder (workspace.root) is a server-linked workspace:
+   * its registry row carries a non-null `server` — the exact field
+   * openFolderWithSync keys the daemon on. Local-only rows
+   * (registerLocalWorkspace stores no server) and unregistered bare-folder
+   * opens (openByPath's fallback) have none and stay false. This is the
+   * workspace half of the sync gate (identity is the other half); EditorPane
+   * must never route a local-only workspace onto a sync path.
+   *
+   * A $derived boolean, NOT a getter: `list` is reassigned wholesale on every
+   * refresh(), so a getter read inside EditorPane's mount effect would remount
+   * the editor per refresh — the derived only propagates when the value flips.
+   */
+  activeLinked = $derived.by(() => {
+    const root = workspace.root;
+    if (!root) return false;
+    // Trailing-slash tolerance mirrors relocateWorkspace's path compare.
+    const norm = (p: string) => p.replace(/\/+$/, "");
+    const view = this.list.find((v) => v.local_path != null && norm(v.local_path) === norm(root));
+    return !!view?.server;
+  });
+
   async refresh(): Promise<void> {
     this.loading = true;
     this.error = null;
@@ -44,9 +66,10 @@ class WorkspacesStore {
       // ever appears from a user-initiated sign-in (login()).
       const gateOpen = await keychainGateAtLaunch();
       // Identity + the server workspace list are gated on whether we're logged
-      // in (a token exists), NOT on the editor's per-note `syncEnabled` flag —
-      // those are independent. `has_token` is a local Keychain check (no
-      // network), so a never-logged-in launch makes zero server calls.
+      // in (a token exists) — the identity half of the sync gate (sync is
+      // active iff signed in AND the open workspace is server-linked; there is
+      // no user toggle). `has_token` is a local Keychain check (no network),
+      // so a never-logged-in launch makes zero server calls.
       if (gateOpen && (await hasToken(this.activeServer))) {
         this.identity = await currentIdentity(this.activeServer).catch(() => null);
         this.list = await listWorkspacesMerged(this.activeServer);
@@ -94,8 +117,12 @@ class WorkspacesStore {
     } catch (e) {
       this.error = String(e);
     }
-    await daemon.stop();
+    // identity nulls BEFORE the daemon stops: daemon.stop() flushes an effect
+    // pass with daemonRunning=false while a stale identity would still satisfy
+    // the legacy-sync gate, mounting (then instantly tearing down) a spurious
+    // unauthenticated websocket session on every sign-out.
     this.identity = null;
+    await daemon.stop();
     await this.refresh();
   }
 
