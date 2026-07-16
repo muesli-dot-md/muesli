@@ -236,10 +236,14 @@ html {
    CSS, off the same --folder-accent composition, and therefore tracks a hue
    change live exactly like the stroke. 18% toward transparent reads as a soft
    tint over both the light and dark floors without swallowing the outline.
-   FolderOpen must stay stroke-only (no .folder-glyph): its path has no
+   Lucide's FolderOpen cannot take this treatment directly: its path has no
    closepath, so a CSS fill implicitly closes it from its endpoint and the
-   shape self-intersects — a visible diagonal seam across every expanded row. */
-.folder-glyph path {
+   shape self-intersects — a visible diagonal seam across every expanded row.
+   FolderOpenGlyph.svelte instead draws a separate CLOSED front-flap subpath
+   (.folder-open-flap) under the stock outline; it takes the same fill via
+   this rule so both glyphs stay one color definition. */
+.folder-glyph path,
+.folder-open-flap {
   fill: color-mix(in oklch, var(--folder-accent) 18%, transparent);
 }
 

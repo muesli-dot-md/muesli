@@ -32,6 +32,8 @@ describe("settingsNav", () => {
   it("flattens items in group order", () => {
     const flat = settingsNavItems(true).map((i) => i.section);
     expect(flat[0]).toBe("profile");
+    // Language sits directly after the Appearance page it was split from.
+    expect(flat.indexOf("language")).toBe(flat.indexOf("preferences") + 1);
     expect(flat.slice(-2)).toEqual(["general", "members"]);
   });
 

@@ -310,8 +310,7 @@ export const en = {
   "settings.nav.profile": "Profile",
   "settings.nav.apiKeys": "API keys",
   "settings.nav.connections": "Connected storage",
-  "settings.nav.appearance": "Appearance",
-  "settings.nav.preferences": "Preferences",
+  "settings.nav.preferences": "Appearance",
   "settings.nav.notifications": "Notifications",
   "settings.nav.shortcuts": "Keyboard shortcuts",
   "settings.nav.about": "About",
@@ -320,7 +319,7 @@ export const en = {
   // Multica-style grouped sub-sidebar headers.
   "settings.group.account": "My Account",
   "settings.group.workspace": "Workspace",
-  // Preferences page hints.
+  // Appearance and Language page hints.
   "settings.accent.hint": "Used for buttons, links and selection.",
   "settings.defaultView.hint": "How the home screen lists your documents.",
   "settings.language.hint": "Changes the interface language in this browser.",

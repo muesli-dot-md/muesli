@@ -301,7 +301,7 @@
       <div class="my-1 h-px bg-base-300/70" aria-hidden="true"></div>
 
       <!-- settings (opens the desktop settings view in the main panel; theme
-           selection lives there — Preferences → Theme cards — by user choice,
+           selection lives there — Appearance → Theme cards — by user choice,
            no quick toggle here) -->
       <button
         class="arc-tap flex h-8 w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm hover:bg-base-200"

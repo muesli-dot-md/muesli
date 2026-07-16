@@ -27,6 +27,7 @@ export type HomeView = "root" | "folder" | "recent" | "starred" | "shared" | "tr
 export const settingsSections = [
   "profile",
   "preferences",
+  "language",
   "notifications",
   "api-keys",
   "connections",
