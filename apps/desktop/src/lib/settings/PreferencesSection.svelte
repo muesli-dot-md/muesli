@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Settings → Preferences (My Account): the desktop's look & feel — a
+  // Settings → Appearance (My Account): the desktop's look & feel — a
   // Multica-style Theme card (Light/Dark/System preview cards), the accent
   // picker (ported from the webapp), the window background floor controls
   // (translucency / tint / hue), and the file tree's folder icon color. All
@@ -27,7 +27,7 @@
 </script>
 
 <header class="mb-5">
-  <h2 class="text-lg font-semibold tracking-tight">Preferences</h2>
+  <h2 class="text-lg font-semibold tracking-tight">Appearance</h2>
   <p class="mt-1 text-sm text-[var(--text-muted)]" style="text-wrap: pretty;">
     Theme, accent, window background, and file tree colors. Signed in, everything but translucency
     follows your account across apps; otherwise it stays on this machine.

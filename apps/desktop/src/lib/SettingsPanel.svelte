@@ -44,7 +44,7 @@
       title: "My Account",
       items: [
         { id: "profile", label: "Profile", Icon: User },
-        { id: "preferences", label: "Preferences", Icon: SlidersHorizontal },
+        { id: "preferences", label: "Appearance", Icon: SlidersHorizontal },
         { id: "notifications", label: "Notifications", Icon: Bell },
         { id: "about", label: "About", Icon: Info },
       ],
@@ -72,8 +72,16 @@
 
 <!-- Embedded panel: fills the main content card. No modal backdrop / centered
      dialog chrome — Escape-to-close is handled by AppShell's keymap, and a
-     close button in the header returns to the editor. -->
-<div class="flex h-full min-h-0 flex-col">
+     close button in the header returns to the editor.
+
+     `@container`: the narrow-layout switch below must key off the PANEL's own
+     width, not the viewport — the file-tree sidebar shares the window, so a
+     viewport breakpoint would keep the category rail open while the content
+     column is already crushed. `@3xl` (48rem) is the webapp's `md:` threshold
+     (SettingsPage.svelte) applied to the settings surface itself: the web page
+     IS the viewport there, so both apps collapse the rail at the same surface
+     width. -->
+<div class="@container flex h-full min-h-0 flex-col">
   <!-- Header inside the card: title + close (back to the editor). -->
   <header class="flex h-14 shrink-0 items-center gap-3 px-5">
     <h1 class="text-xl font-semibold tracking-tight">Settings</h1>
@@ -89,7 +97,9 @@
 
   <div class="flex min-h-0 flex-1">
     <!-- left category sub-sidebar: small-caps group headers + icon items -->
-    <aside class="hidden w-64 shrink-0 overflow-y-auto px-3 pb-6 pt-1 sm:block">
+    <aside
+      class="hidden w-64 shrink-0 overflow-y-auto overscroll-contain px-3 pb-6 pt-1 @3xl:block"
+    >
       <nav class="flex flex-col gap-5" aria-label="Settings">
         {#each groups as group (group.title)}
           <div class="flex flex-col gap-0.5">
@@ -123,9 +133,9 @@
       </nav>
     </aside>
 
-    <!-- mobile/narrow: groups collapse to a single top tab strip -->
+    <!-- narrow panel: groups collapse to a single top tab strip -->
     <main class="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <nav class="flex gap-1 overflow-x-auto px-4 pb-2 sm:hidden" aria-label="Settings">
+      <nav class="flex gap-1 overflow-x-auto px-4 pb-2 @3xl:hidden" aria-label="Settings">
         {#each groups.flatMap((g) => g.items) as item (item.id)}
           <button
             class="arc-tap flex min-h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-field px-3 py-2 text-sm {section ===
@@ -143,7 +153,7 @@
         {/each}
       </nav>
 
-      <div class="min-w-0 flex-1 overflow-y-auto px-4 pb-12 sm:px-8">
+      <div class="min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-12 @3xl:px-8">
         <div class="mx-auto w-full max-w-2xl">
           {#if section === "profile"}
             <ProfileSection />

@@ -1,9 +1,9 @@
 <script lang="ts">
-  // Settings → Preferences (Multica's "Preferences" page): a Multica-style
+  // Settings → Appearance (né Preferences): a Multica-style
   // Theme card (Light/Dark/System preview cards), the accent picker, the
   // background tint and folder-color controls (ported from the desktop app —
-  // same palettes/ColorBubbleRow, minus its window translucency), the default
-  // home view, and a Language selector. Everything is localStorage-backed;
+  // same palettes/ColorBubbleRow, minus its window translucency), and the default
+  // home view (how the home renders — appearance in the broad sense). Everything is localStorage-backed;
   // theme/accent/tint/folder-color additionally sync per-user through the
   // server when signed in (prefsSync.svelte.ts). Cards mirror the new card
   // chrome: small-caps section title above a bordered, shadow-card surface.
@@ -20,13 +20,7 @@
     TINT_SWATCH_C,
   } from "../colorBubbles";
   import { folderColor } from "../folderColor.svelte";
-  import {
-    availableLocales,
-    currentLocale,
-    setLocale,
-    t,
-    type LocaleCode,
-  } from "../i18n/index.svelte";
+  import { t } from "../i18n/index.svelte";
   import { prefs } from "../prefs.svelte";
   import { resetBackground, resetFolderColor } from "../prefsSync.svelte";
   import ColorBubbleRow from "./ColorBubbleRow.svelte";
@@ -184,23 +178,6 @@
       <button class="btn btn-ghost btn-sm" onclick={() => resetFolderColor()}
         >{t("settings.resetToDefault")}</button
       >
-    {/snippet}
-  </SettingRow>
-</SettingsCard>
-
-<!-- Language -->
-<SettingsCard heading={t("settings.language")}>
-  <SettingRow title={t("settings.language")} description={t("settings.language.hint")}>
-    {#snippet control()}
-      <select
-        class="select select-sm w-52 max-w-full"
-        value={currentLocale()}
-        onchange={(e) => setLocale(e.currentTarget.value as LocaleCode)}
-      >
-        {#each availableLocales as l (l.code)}
-          <option value={l.code}>{l.label}</option>
-        {/each}
-      </select>
     {/snippet}
   </SettingRow>
 </SettingsCard>

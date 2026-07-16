@@ -8,7 +8,7 @@
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import FileText from "@lucide/svelte/icons/file-text";
   import Folder from "@lucide/svelte/icons/folder";
-  import FolderOpen from "@lucide/svelte/icons/folder-open";
+  import FolderOpenGlyph from "./FolderOpenGlyph.svelte";
   import Star from "@lucide/svelte/icons/star";
   import { t } from "./i18n/index.svelte";
   import type { InfoTarget } from "./InfoPanel.svelte";
@@ -109,12 +109,13 @@
   </span>
   <div class="tree-row-label items-center gap-1.5 min-w-0" style="padding: 1px 7px;">
     <!-- --folder-accent (app.css) composes to exactly --arc-accent until the
-         user picks a folder hue in Settings → Preferences; .folder-glyph adds
-         the soft same-hue interior wash to the CLOSED glyph only — filling
-         FolderOpen's non-closed lucide path self-intersects into a diagonal
-         seam (see app.css). Mirrors the desktop's TreeNode. -->
+         user picks a folder hue in Settings → Appearance; both glyphs carry
+         the soft same-hue interior wash: .folder-glyph fills the CLOSED
+         lucide Folder, and FolderOpenGlyph's closed flap subpath takes the
+         same fill (lucide's own FolderOpen path cannot be filled — see
+         app.css). Mirrors the desktop's TreeNode. -->
     {#if isOpen}
-      <FolderOpen size={17} class="shrink-0 text-[var(--folder-accent)]" aria-hidden="true" />
+      <FolderOpenGlyph size={17} class="shrink-0 text-[var(--folder-accent)]" />
     {:else}
       <Folder
         size={17}

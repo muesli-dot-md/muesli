@@ -14,7 +14,7 @@ import type { MessageKey } from "../i18n/en";
 import type { SettingsSection } from "../route.svelte";
 
 export type SettingsIconKey =
-  "user" | "sliders" | "bell" | "keyRound" | "cable" | "info" | "settings" | "users";
+  "user" | "sliders" | "languages" | "bell" | "keyRound" | "cable" | "info" | "settings" | "users";
 
 export type SettingsNavItem = {
   section: SettingsSection;
@@ -43,6 +43,7 @@ export const ACCOUNT_GROUP: SettingsNavGroup = {
       labelKey: "settings.nav.preferences",
       icon: "sliders",
     },
+    { section: "language", labelKey: "settings.language", icon: "languages" },
     {
       section: "notifications",
       labelKey: "settings.nav.notifications",

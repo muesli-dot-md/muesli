@@ -105,11 +105,27 @@
   --folder-c: 0.12;
 }
 
+/* Fixed-viewport app: the webview root must never scroll — every scrollable
+   region is an inner container (tree, settings, editor). The shell lays out to
+   exactly 100vh, but macOS WKWebView still rubber-bands the ROOT scroller on
+   any wheel/trackpad delta that inner scrollers don't consume (e.g. over the
+   sidebar), sliding the whole window content off the vibrancy floor.
+   `overflow: hidden` removes the root's scroll range; `overscroll-behavior:
+   none` disables the elastic bounce itself. (The webapp is a normal scrolling
+   page — this lock is desktop-only by design.)
+   overscroll-behavior needs WebKit >= Safari 16; on older macOS the root
+   lock degrades to overflow:hidden alone (no scroll range, bounce possible).
+   Policy: this root lock is the backstop for every inner scroller —
+   overscroll-contain on individual containers (tree, settings, search) is
+   defense-in-depth where chaining was actually observed, not a requirement
+   for new scrollers. */
 html,
 body {
   height: 100%;
   margin: 0;
   background: transparent;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 /* Crisper text on macOS — the window is translucent over the desktop, so the
    default sub-pixel smoothing reads as heavy/fuzzy against the vibrancy. */
@@ -152,10 +168,14 @@ html {
    CSS, off the same --folder-accent composition, and therefore tracks a hue
    change live exactly like the stroke. 18% toward transparent reads as a soft
    tint over both the light and dark floors without swallowing the outline.
-   FolderOpen must stay stroke-only (no .folder-glyph): its path has no
+   Lucide's FolderOpen cannot take this treatment directly: its path has no
    closepath, so a CSS fill implicitly closes it from its endpoint and the
-   shape self-intersects — a visible diagonal seam across every expanded row. */
-.folder-glyph path {
+   shape self-intersects — a visible diagonal seam across every expanded row.
+   FolderOpenGlyph.svelte instead draws a separate CLOSED front-flap subpath
+   (.folder-open-flap) under the stock outline; it takes the same fill via
+   this rule so both glyphs stay one color definition. */
+.folder-glyph path,
+.folder-open-flap {
   fill: color-mix(in oklch, var(--folder-accent) 18%, transparent);
 }
 
@@ -442,6 +462,9 @@ html {
 .tree-scroll {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--color-base-content) 22%, transparent) transparent;
+  /* End-of-scroll deltas stop here instead of chaining toward the root — the
+     root lock above is then a backstop, not the only line of defense. */
+  overscroll-behavior: contain;
 }
 .tree-scroll::-webkit-scrollbar {
   width: 5px;

@@ -1,5 +1,5 @@
 // User-adjustable color for folder icons in the file tree (Settings →
-// Preferences → Folder color) — web port of the desktop's
+// Appearance → Folder color) — web port of the desktop's
 // apps/desktop/src/lib/folderColor.svelte.ts, same shape and localStorage key:
 // persist a single OKLCH hue (0–360) and apply it as a CSS var (--folder-h) on
 // <html>. Only hue is stored; the per-theme lightness/chroma (--folder-l /

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { ChevronRight, Folder, FolderOpen, FileText } from "lucide-svelte";
+  import { ChevronRight, Folder, FileText } from "lucide-svelte";
+  import FolderOpenGlyph from "$lib/FolderOpenGlyph.svelte";
   import type { WorkspaceNode } from "$lib/tauri";
   import { workspace } from "$lib/workspace.svelte";
   import { tabs } from "$lib/tabs.svelte";
@@ -260,12 +261,13 @@
 
   <div class="tree-row-label items-center gap-1.5 min-w-0" style="padding: 1px 7px;">
     {#if node.isDir}
-      <!-- .folder-glyph (app.css) fills the CLOSED glyph's interior with a
-           soft wash of the same --folder-accent hue the stroke carries.
-           FolderOpen stays stroke-only: filling its non-closed lucide path
-           self-intersects into a diagonal seam (see app.css). -->
+      <!-- Both glyphs carry the soft same-hue interior wash the stroke's
+           --folder-accent sets: .folder-glyph (app.css) fills the CLOSED
+           lucide Folder; the open state renders FolderOpenGlyph, whose closed
+           flap subpath takes the same fill (lucide's own FolderOpen path
+           cannot be filled — see app.css). -->
       {#if expanded}
-        <FolderOpen size={17} class="shrink-0 text-[var(--folder-accent)]" />
+        <FolderOpenGlyph size={17} class="shrink-0 text-[var(--folder-accent)]" />
       {:else}
         <Folder size={17} class="folder-glyph shrink-0 text-[var(--folder-accent)]" />
       {/if}

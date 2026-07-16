@@ -1,5 +1,5 @@
 // User-adjustable color for folder icons in the file tree (Settings →
-// Preferences → Folder color). Follows the exact same shape as
+// Appearance → Folder color). Follows the exact same shape as
 // background.svelte.ts's hue control: persist a single OKLCH hue (0–360) to
 // localStorage and apply it as a CSS var (--folder-h) on <html>. Unlike the
 // tint, there's no separate "strength" — the color always shows, so only hue

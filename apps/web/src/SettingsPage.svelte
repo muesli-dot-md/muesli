@@ -11,6 +11,7 @@
   import Info from "@lucide/svelte/icons/info";
   import KeyRound from "@lucide/svelte/icons/key-round";
   import Settings from "@lucide/svelte/icons/settings";
+  import Languages from "@lucide/svelte/icons/languages";
   import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
   import User from "@lucide/svelte/icons/user";
   import Users from "@lucide/svelte/icons/users";
@@ -25,6 +26,7 @@
   import ConnectionsSection from "./settings/ConnectionsSection.svelte";
   import MembersSection from "./settings/MembersSection.svelte";
   import NotificationsSection from "./settings/NotificationsSection.svelte";
+  import LanguageSection from "./settings/LanguageSection.svelte";
   import PreferencesSection from "./settings/PreferencesSection.svelte";
   import ProfileSection from "./settings/ProfileSection.svelte";
   import {
@@ -45,6 +47,7 @@
   const ICONS: Record<SettingsIconKey, typeof User> = {
     user: User,
     sliders: SlidersHorizontal,
+    languages: Languages,
     bell: Bell,
     keyRound: KeyRound,
     cable: Cable,
@@ -268,6 +271,8 @@
           />
         {:else if section === "preferences"}
           <PreferencesSection />
+        {:else if section === "language"}
+          <LanguageSection />
         {:else if section === "notifications"}
           <NotificationsSection {auth} toast={showToast} />
         {:else if section === "api-keys"}
