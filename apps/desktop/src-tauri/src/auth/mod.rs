@@ -113,8 +113,9 @@ pub async fn current_identity(server: String) -> Result<Option<Identity>, String
 }
 
 /// Cheap local check (no network): is a token stored for this server? Lets the
-/// frontend decide whether to fetch server identity/workspaces, independent of
-/// the editor's per-note `syncEnabled` flag.
+/// frontend decide whether to fetch server identity/workspaces. (Sync is
+/// active iff the user is signed in and the open workspace is server-linked —
+/// there is no per-note toggle.)
 #[tauri::command]
 pub fn has_token(server: String) -> bool {
     store::load_token(&server).is_some()

@@ -228,7 +228,12 @@
     if (mode === "read") {
       editorState.activeView = null;
       // Keep the collab context current so the panels stay correct in read mode.
-      const syncing = (daemonRunning || settings.syncEnabled) && !!workspaces.identity;
+      // Same sync gate as the edit-mode mount below (identity AND workspace
+      // linkage — see the truth table there): signed out, or signed in with a
+      // local-only workspace, the doc is non-remote and the panels show the
+      // local empty state; only a server-linked workspace (daemon or legacy
+      // path) is collab-capable.
+      const syncing = !!workspaces.identity && (daemonRunning || workspaces.activeLinked);
       docCollab.set({
         ...docContext(path, workspace.root, syncing),
         server: workspaces.activeServer,
@@ -248,14 +253,32 @@
     // Tier-2 (Plan 3): when the daemon owns this workspace, attach the open editor to its
     // replica over IPC for live cursors. Legacy per-note websocket sync only when the daemon
     // is NOT running (local-server dev mode). `daemonRunning` is the value-stable $derived
-    // above — NOT a direct `daemon.status` read — so the poll never remounts the editor.
+    // above — NOT a direct `daemon.status` read — so the poll never remounts the editor
+    // (workspaces.activeLinked is a store-level $derived boolean, stable the same way).
+    //
+    // Sync gate truth table — identity AND workspace linkage, never a user toggle:
+    //   signed out                        → local-only (identity null; the daemon
+    //                                       can't run either — it needs a token)
+    //   signed in + local-only workspace  → local-only: a local vault must never
+    //                                       ride the legacy path — its rooms are
+    //                                       keyed only by deriveSlug(relPath), so
+    //                                       they collide across vaults, and a
+    //                                       non-empty room would replace on-disk
+    //                                       content (seedFromDiskIfNeeded seeds
+    //                                       only empty rooms) which the
+    //                                       mirror-to-disk saver then writes back
+    //   signed in + linked, daemon up     → Tier-2 IPC sync via the daemon
+    //   signed in + linked, daemon down   → legacy per-note websocket
+    //                                       (local-server dev mode)
     const useTauriSync = daemonRunning; // synced workspace is open
-    const useWsSync = !daemonRunning && settings.syncEnabled; // legacy path
+    const useWsSync = !daemonRunning && !!workspaces.identity && workspaces.activeLinked;
 
     // Publish the open doc's collab context for the RightSidebar panels. A doc
-    // is "remote" (collab-capable) only when it syncs through a workspace AND a
-    // server token exists (workspaces.identity is non-null when logged in).
-    // Local-only vault files stay non-remote → panels show the empty state.
+    // is "remote" (collab-capable) only when it syncs through a server-linked
+    // workspace AND a server token exists — the exact gate above, so isRemote,
+    // the comment affordance, Suggest mode and wireCollab can never disagree
+    // with the sync path chosen. Local-only vault files stay non-remote →
+    // panels show the empty state.
     const syncing = (useTauriSync || useWsSync) && !!workspaces.identity;
     docCollab.set({
       ...docContext(path, workspace.root, syncing),
@@ -451,7 +474,7 @@
             if (!destroyed) docCollab.markWireFailed();
           });
       } else {
-        // Legacy websocket path (daemon not running, syncEnabled=true).
+        // Legacy websocket path (daemon not running, signed in).
         const slug = deriveSlug(relativeToWorkspace(path));
         session = createSession({ slug, wsBase: settings.wsBase, identity: presenceIdentity });
         const sess = session;

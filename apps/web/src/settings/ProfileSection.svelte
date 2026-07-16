@@ -1,14 +1,16 @@
 <script lang="ts">
   // Settings → Profile (settings.md §2.1): avatar + display-name OVERRIDES
   // (PATCH /api/me writes the custom_* columns, never the OIDC claim columns),
-  // read-only identity rows, and the danger-zone
+  // the read-only email row, and the danger-zone
   // stubs. The avatar never touches blob storage: it is cover-cropped and
-  // resized to 128px on a canvas and sent as a ≤64 KB data URL.
-  import Copy from "@lucide/svelte/icons/copy";
+  // resized to 128px on a canvas and sent as a ≤64 KB data URL. Picking an
+  // avatar PATCHes immediately — there is no local preview state that a
+  // closed settings page could silently discard.
   import { createAccountApi, type AccountUser } from "../accountApi";
   import { errMsg } from "../apiError";
   import { t } from "../i18n/index.svelte";
   import { httpBase, loginUrl, type AuthInfo } from "../identity";
+  import { resizeToDataUrl } from "./avatarResize";
   import SettingRow from "./SettingRow.svelte";
   import SettingsCard from "./SettingsCard.svelte";
 
@@ -37,12 +39,21 @@
 
   let savingName = $state(false);
   let savingAvatar = $state(false);
-  /** A picked-but-unsaved avatar data URL (the preview state). */
-  let pendingAvatar: string | null = $state(null);
   let fileInput: HTMLInputElement | undefined = $state();
 
-  async function patch(body: { display_name?: string | null; avatar_url?: string | null }) {
+  // PATCH /api/me answers a FULL user snapshot, and a name save can interleave
+  // with an avatar pick — if the earlier-issued response lands last, applying
+  // it would revert the newer change on screen (and in the host via onupdated).
+  // Invariant: only the response of the LATEST-issued PATCH is applied and
+  // forwarded; stale resolutions return null and callers skip local state.
+  let patchSeq = 0;
+  async function patch(body: {
+    display_name?: string | null;
+    avatar_url?: string | null;
+  }): Promise<AccountUser | null> {
+    const seq = ++patchSeq;
     const user = await api.patchMe(body);
+    if (seq !== patchSeq) return null;
     onupdated(user);
     return user;
   }
@@ -52,7 +63,7 @@
     try {
       const trimmed = nameDraft.trim();
       const user = await patch({ display_name: trimmed === "" ? null : trimmed });
-      nameDraft = user.display_name ?? "";
+      if (user) nameDraft = user.display_name ?? "";
       toast(t("settings.profile.saved"));
     } catch (e) {
       toast(errMsg(e), "warning");
@@ -65,7 +76,7 @@
     savingName = true;
     try {
       const user = await patch({ display_name: null });
-      nameDraft = user.display_name ?? "";
+      if (user) nameDraft = user.display_name ?? "";
       toast(t("settings.profile.saved"));
     } catch (e) {
       toast(errMsg(e), "warning");
@@ -74,66 +85,20 @@
     }
   }
 
-  /** Cover-crop to a 128px square and encode small. WebP where the canvas
-   *  supports encoding it; toDataURL silently falls back to PNG elsewhere
-   *  (both accepted server-side), with a JPEG retry if PNG lands over 64 KB. */
-  async function resizeToDataUrl(file: File): Promise<string> {
-    const objectUrl = URL.createObjectURL(file);
-    try {
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error(t("settings.profile.avatarReadFailed")));
-        img.src = objectUrl;
-      });
-      const size = 128;
-      const canvas = document.createElement("canvas");
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error(t("settings.profile.avatarReadFailed"));
-      const s = Math.min(img.naturalWidth, img.naturalHeight);
-      ctx.drawImage(
-        img,
-        (img.naturalWidth - s) / 2,
-        (img.naturalHeight - s) / 2,
-        s,
-        s,
-        0,
-        0,
-        size,
-        size,
-      );
-      let dataUrl = canvas.toDataURL("image/webp", 0.85);
-      if (dataUrl.length > 64 * 1024) dataUrl = canvas.toDataURL("image/jpeg", 0.8);
-      if (dataUrl.length > 64 * 1024) throw new Error(t("settings.profile.avatarTooLarge"));
-      return dataUrl;
-    } finally {
-      URL.revokeObjectURL(objectUrl);
-    }
-  }
-
+  /** Picking a file saves it right away: a picked avatar that only lived in
+   *  component state until a separate Save click was silently discarded when
+   *  settings closed — the PATCH must be the moment the pick takes effect. */
   async function pickAvatar(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     input.value = ""; // re-picking the same file must fire change again
     if (!file) return;
-    try {
-      pendingAvatar = await resizeToDataUrl(file);
-    } catch (err) {
-      toast(errMsg(err), "warning");
-    }
-  }
-
-  async function saveAvatar() {
-    if (!pendingAvatar) return;
     savingAvatar = true;
     try {
-      await patch({ avatar_url: pendingAvatar });
-      pendingAvatar = null;
+      await patch({ avatar_url: await resizeToDataUrl(file) });
       toast(t("settings.profile.saved"));
-    } catch (e) {
-      toast(errMsg(e), "warning");
+    } catch (err) {
+      toast(errMsg(err), "warning");
     } finally {
       savingAvatar = false;
     }
@@ -143,7 +108,6 @@
     savingAvatar = true;
     try {
       await patch({ avatar_url: null });
-      pendingAvatar = null;
       toast(t("settings.profile.saved"));
     } catch (e) {
       toast(errMsg(e), "warning");
@@ -152,17 +116,7 @@
     }
   }
 
-  async function copyUserId() {
-    if (!auth.user) return;
-    try {
-      await navigator.clipboard.writeText(auth.user.id);
-      toast(t("common.copiedToClipboard"));
-    } catch {
-      toast(t("ws.notAllowed"), "warning");
-    }
-  }
-
-  const shownAvatar = $derived(pendingAvatar ?? auth.user?.avatar_url ?? null);
+  const shownAvatar = $derived(auth.user?.avatar_url ?? null);
   const initial = $derived(
     (auth.user?.display_name ?? auth.user?.email ?? "?").trim().charAt(0).toUpperCase(),
   );
@@ -186,10 +140,7 @@
 
   <SettingsCard>
     <!-- avatar -->
-    <SettingRow
-      title={t("settings.profile.changeAvatar")}
-      description={t("settings.profile.avatarHint")}
-    >
+    <SettingRow title={t("settings.profile.changeAvatar")}>
       {#snippet leading()}
         {#if shownAvatar}
           <img src={shownAvatar} alt="" class="h-16 w-16 rounded-full object-cover" />
@@ -202,31 +153,19 @@
         {/if}
       {/snippet}
       {#snippet control()}
-        {#if pendingAvatar}
-          <button class="btn btn-primary btn-sm" disabled={savingAvatar} onclick={saveAvatar}>
-            {t("common.save")}
+        <button class="btn btn-sm" disabled={savingAvatar} onclick={() => fileInput?.click()}>
+          {t("settings.profile.changeAvatar")}
+        </button>
+        {#if auth.user?.avatar_url}
+          <button class="btn btn-ghost btn-sm" disabled={savingAvatar} onclick={removeAvatar}>
+            {t("settings.profile.removeAvatar")}
           </button>
-          <button class="btn btn-ghost btn-sm" onclick={() => (pendingAvatar = null)}>
-            {t("common.cancel")}
-          </button>
-        {:else}
-          <button class="btn btn-sm" disabled={savingAvatar} onclick={() => fileInput?.click()}>
-            {t("settings.profile.changeAvatar")}
-          </button>
-          {#if auth.user?.avatar_url}
-            <button class="btn btn-ghost btn-sm" disabled={savingAvatar} onclick={removeAvatar}>
-              {t("settings.profile.removeAvatar")}
-            </button>
-          {/if}
         {/if}
       {/snippet}
     </SettingRow>
 
     <!-- display name -->
-    <SettingRow
-      title={t("settings.profile.displayName")}
-      description={t("settings.profile.displayNameHint")}
-    >
+    <SettingRow title={t("settings.profile.displayName")}>
       {#snippet control()}
         <form
           class="flex flex-wrap items-center justify-end gap-2"
@@ -260,7 +199,7 @@
     </SettingRow>
   </SettingsCard>
 
-  <!-- read-only identity rows -->
+  <!-- read-only identity row -->
   <SettingsCard>
     <SettingRow
       title={t("settings.profile.email")}
@@ -268,24 +207,6 @@
     >
       {#snippet control()}
         <span class="text-sm">{auth.user?.email ?? "—"}</span>
-      {/snippet}
-    </SettingRow>
-    <SettingRow title={t("account.signInSection")} description={t("account.oidcNote")}>
-      {#snippet control()}
-        <span class="text-sm">{t("account.oidc")}</span>
-      {/snippet}
-    </SettingRow>
-    <SettingRow title={t("account.userId")}>
-      {#snippet control()}
-        <code class="font-mono text-xs text-[var(--text-muted)]">{auth.user?.id}</code>
-        <button
-          class="btn btn-ghost btn-xs"
-          title={t("settings.profile.copyId")}
-          aria-label={t("settings.profile.copyId")}
-          onclick={copyUserId}
-        >
-          <Copy class="h-3.5 w-3.5 opacity-70" aria-hidden="true" />
-        </button>
       {/snippet}
     </SettingRow>
   </SettingsCard>

@@ -51,12 +51,6 @@ export type ServerMeta = {
   mode: "open" | "oidc";
 };
 
-/** Drive-style storage usage for the About meter. quota_bytes is a server placeholder. */
-export type StorageUsage = {
-  used_bytes: number;
-  quota_bytes: number;
-};
-
 export class AccountApiError extends Error {
   status: number;
   bodyText: string;
@@ -110,9 +104,6 @@ export function createAccountApi(cfg: AccountApiConfig) {
 
     /** Unauthenticated version probe for the About section. */
     getMeta: () => req<ServerMeta>("/api/meta"),
-
-    /** Drive-style storage usage for the About meter (session only). */
-    getStorageUsage: () => req<StorageUsage>("/api/me/storage"),
   };
 }
 

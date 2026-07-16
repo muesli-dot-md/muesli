@@ -1,11 +1,11 @@
 <script lang="ts">
-  // Full-page settings shell at #~settings/<section>, redesigned to the Multica
-  // two-level layout: a settings sub-sidebar with small-caps GROUP headers
-  // ("My Account" + the active workspace name) over neutral-gray icon rows, and
-  // a right card-based content column. The shell owns auth, the toast, the
-  // OAuth-return notice, AND the shared workspace selection (the workspace group
-  // + its General/Members pages all read the same loaded list/detail). Each
-  // section is its own component under settings/.
+  // Full-page settings shell at #~settings/<section>, in the Multica layout: a
+  // settings sub-sidebar with a small-caps "My Account" header over
+  // neutral-gray icon rows, and a right card-based content column. The shell
+  // owns auth, the toast, the OAuth-return notice, AND the workspace selection
+  // for the single Workspace page (its selector + General/Members content all
+  // read the same loaded list/detail). Each section is its own component under
+  // settings/.
   import Bell from "@lucide/svelte/icons/bell";
   import Cable from "@lucide/svelte/icons/cable";
   import Info from "@lucide/svelte/icons/info";
@@ -14,12 +14,11 @@
   import Languages from "@lucide/svelte/icons/languages";
   import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
   import User from "@lucide/svelte/icons/user";
-  import Users from "@lucide/svelte/icons/users";
   import X from "@lucide/svelte/icons/x";
   import { onMount } from "svelte";
   import AccountMenu from "./AccountMenu.svelte";
   import { t } from "./i18n/index.svelte";
-  import { fetchMe, httpBase, logout, type AuthInfo } from "./identity";
+  import { fetchMe, httpBase, logout, type AuthInfo, type Me } from "./identity";
   import { gotoHome, gotoSettings, type SettingsSection } from "./route.svelte";
   import AboutSection from "./settings/AboutSection.svelte";
   import ApiKeysSection from "./settings/ApiKeysSection.svelte";
@@ -30,8 +29,6 @@
   import PreferencesSection from "./settings/PreferencesSection.svelte";
   import ProfileSection from "./settings/ProfileSection.svelte";
   import {
-    groupForSection,
-    settingsNavGroups,
     settingsNavItems,
     type SettingsIconKey,
     type SettingsNavItem,
@@ -40,9 +37,24 @@
   import WorkspaceGeneralSection from "./settings/WorkspaceGeneralSection.svelte";
   import { createWorkspaceApi, type WorkspaceDetail, type WorkspaceSummary } from "./workspaceApi";
 
-  let { section, embedded = false }: { section: SettingsSection; embedded?: boolean } = $props();
+  let {
+    section,
+    embedded = false,
+    onuserchanged,
+  }: {
+    section: SettingsSection;
+    embedded?: boolean;
+    /** Profile edits (display name / avatar) also flow up to the host so its
+     *  own copy of the signed-in user — e.g. Home's sidebar chip — follows
+     *  live instead of reverting to a stale fetch when settings closes. */
+    onuserchanged?: (user: Me) => void;
+  } = $props();
 
   let auth: AuthInfo = $state({ mode: "open", user: null });
+  // True once the initial fetchMe + loadWorkspaces have settled. Until then
+  // `showWorkspace` is false for the wrong reason (nothing has loaded yet),
+  // so it must not drive navigation.
+  let loaded = $state(false);
 
   const ICONS: Record<SettingsIconKey, typeof User> = {
     user: User,
@@ -53,16 +65,15 @@
     cable: Cable,
     info: Info,
     settings: Settings,
-    users: Users,
   };
 
-  // --- shared workspace context (the workspace group + General/Members) ---------
+  // --- shared workspace context (the Workspace page's selector + content) --------
   const wsApi = createWorkspaceApi({ httpBase });
   let workspaces: WorkspaceSummary[] = $state([]);
   let selectedWsId: string | null = $state(null);
   let wsDetail: WorkspaceDetail | null = $state(null);
   const selectedWs = $derived(workspaces.find((w) => w.id === selectedWsId) ?? null);
-  // The workspace group needs a real, signed-in workspace to act on.
+  // The workspace page needs a real, signed-in workspace to act on.
   const showWorkspace = $derived(auth.mode === "oidc" && !!auth.user && workspaces.length > 0);
 
   async function loadWorkspaces() {
@@ -72,7 +83,7 @@
       if (!workspaces.some((w) => w.id === selectedWsId)) selectedWsId = workspaces[0]?.id ?? null;
       if (selectedWsId) await loadWsDetail(selectedWsId);
     } catch {
-      // Open mode (503) / signed out (401): the workspace group just stays hidden.
+      // Open mode (503) / signed out (401): the workspace page just stays hidden.
       workspaces = [];
       selectedWsId = null;
       wsDetail = null;
@@ -81,8 +92,13 @@
 
   async function loadWsDetail(id: string) {
     try {
-      wsDetail = await wsApi.getWorkspace(id);
+      const detail = await wsApi.getWorkspace(id);
+      // A slow response for a workspace the user has already switched away
+      // from must not clobber the newer selection's detail.
+      if (selectedWsId !== id) return;
+      wsDetail = detail;
     } catch {
+      if (selectedWsId !== id) return;
       wsDetail = null;
     }
   }
@@ -96,13 +112,10 @@
 
   async function reloadWorkspace() {
     // After a rename/leave/member change: refresh the list (name/membership may
-    // have changed) and re-pin the selection, then reload detail.
-    const prev = selectedWsId;
+    // have changed) and re-pin the selection, then reload detail. Leaving or
+    // deleting the selected workspace falls back to the first (personal) one
+    // via loadWorkspaces' re-pin — the page itself stays valid.
     await loadWorkspaces();
-    if (prev && !workspaces.some((w) => w.id === prev)) {
-      // We left the selected workspace — fall back to the first (personal) one.
-      if (section === "general" || section === "members") gotoSettings("general");
-    }
   }
 
   let toast = $state("");
@@ -115,14 +128,23 @@
     toastTimer = setTimeout(() => (toast = ""), 4000);
   }
 
-  // Flat list for the mobile tab strip (groups collapse there).
-  const flatNav = $derived(settingsNavItems(showWorkspace));
-  const groups = $derived(settingsNavGroups(showWorkspace));
+  // One flat list drives both the sidebar rail and the mobile tab strip. The
+  // rail additionally splits it into two visual groups — the account pages
+  // under the "My Account" header, the workspace item under its own small-caps
+  // header — matching the old two-group rhythm without resurrecting the group
+  // machinery. The mobile strip stays one flat row (it has no headers).
+  const nav = $derived(settingsNavItems(showWorkspace));
+  const accountNav = $derived(nav.filter((i) => i.section !== "workspace"));
+  const workspaceNav = $derived(nav.filter((i) => i.section === "workspace"));
 
-  // If the route points at a workspace page but the group isn't available
-  // (open mode / signed out), bounce to Profile so we never render an empty pane.
+  // If the route points at the workspace page but none is available (open
+  // mode / signed out), bounce to Profile so we never render an empty pane.
+  // Gated on `loaded`: on a fresh mount at #~settings/workspace (or an aliased
+  // #general/#members deep link) this effect fires before fetchMe/
+  // loadWorkspaces resolve, and bouncing then would permanently kick
+  // signed-in users off their deep link.
   $effect(() => {
-    if (!showWorkspace && groupForSection(section) === "workspace") gotoSettings("profile");
+    if (loaded && !showWorkspace && section === "workspace") gotoSettings("profile");
   });
 
   function close() {
@@ -140,10 +162,16 @@
   }
 
   onMount(() => {
-    fetchMe().then((a) => {
-      auth = a;
-      void loadWorkspaces();
-    });
+    // fetchMe never rejects (it falls back to open mode), and loadWorkspaces
+    // catches internally — but `loaded` landing must not depend on that prose
+    // invariant: the finally makes the bounce guard structurally unable to
+    // wedge shut.
+    fetchMe()
+      .then(async (a) => {
+        auth = a;
+        await loadWorkspaces();
+      })
+      .finally(() => (loaded = true));
     // Google Drive OAuth return: gdrive::callback redirects to
     // {web_origin}/?storage=connected|error#~settings/connections.
     const params = new URLSearchParams(location.search);
@@ -156,13 +184,6 @@
       else showToast(t("settings.conn.driveError"), "warning");
     }
   });
-
-  /** The header text for a group: static for "My Account", the live workspace
-   *  name for the workspace group (Multica shows the workspace name there). */
-  function groupHeader(id: "account" | "workspace"): string {
-    if (id === "workspace") return selectedWs?.name ?? t("settings.group.workspace");
-    return t("settings.group.account");
-  }
 </script>
 
 {#snippet navItem(item: SettingsNavItem, rail: boolean)}
@@ -220,44 +241,35 @@
     </header>
   {/if}
 
-  <!-- mobile: groups collapse to a single top tab strip -->
+  <!-- mobile: the rail collapses to a single top tab strip -->
   <nav class="flex gap-1 overflow-x-auto px-4 pb-2 md:hidden" aria-label={t("common.settings")}>
-    {#each flatNav as item (item.section)}
+    {#each nav as item (item.section)}
       {@render navItem(item, false)}
     {/each}
   </nav>
 
   <div class="flex min-h-0 flex-1">
-    <!-- settings sub-sidebar: small-caps group headers + neutral-gray icon rows -->
+    <!-- settings sub-sidebar: a small-caps header + neutral-gray icon rows -->
     <aside class="hidden w-64 shrink-0 overflow-y-auto px-3 pt-1 pb-6 md:block">
-      <nav class="flex flex-col gap-5" aria-label={t("common.settings")}>
-        {#each groups as group (group.id)}
-          <div class="flex flex-col gap-0.5">
-            <p
-              class="mb-1 truncate px-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]"
-            >
-              {groupHeader(group.id)}
-            </p>
-            <!-- workspace switcher (only when the user has more than one) -->
-            {#if group.id === "workspace" && workspaces.length > 1}
-              <select
-                class="select select-xs mx-1 mb-1 w-[calc(100%-0.5rem)]"
-                value={selectedWsId}
-                onchange={(e) => selectWorkspace(e.currentTarget.value)}
-                aria-label={t("settings.conn.workspaceLabel")}
-              >
-                {#each workspaces as w (w.id)}
-                  <option value={w.id}
-                    >{w.name}{w.is_personal ? ` · ${t("ws.personalBadge")}` : ""}</option
-                  >
-                {/each}
-              </select>
-            {/if}
-            {#each group.items as item (item.section)}
-              {@render navItem(item, true)}
-            {/each}
-          </div>
+      <nav class="flex flex-col gap-0.5" aria-label={t("common.settings")}>
+        <p
+          class="mb-1 truncate px-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]"
+        >
+          {t("settings.group.account")}
+        </p>
+        {#each accountNav as item (item.section)}
+          {@render navItem(item, true)}
         {/each}
+        {#if workspaceNav.length > 0}
+          <p
+            class="mb-1 mt-5 truncate px-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]"
+          >
+            {t("settings.nav.workspace")}
+          </p>
+          {#each workspaceNav as item (item.section)}
+            {@render navItem(item, true)}
+          {/each}
+        {/if}
       </nav>
     </aside>
 
@@ -267,7 +279,10 @@
           <ProfileSection
             {auth}
             toast={showToast}
-            onupdated={(user) => (auth = { ...auth, user })}
+            onupdated={(user) => {
+              auth = { ...auth, user };
+              onuserchanged?.(user);
+            }}
           />
         {:else if section === "preferences"}
           <PreferencesSection />
@@ -281,8 +296,31 @@
           <ConnectionsSection {auth} toast={showToast} />
         {:else if section === "shortcuts"}
           <ShortcutsSection />
-        {:else if section === "general"}
+        {:else if section === "workspace"}
           {#if showWorkspace && selectedWs && auth.user}
+            <!-- One page per ALL workspace settings: the selector on top picks
+                 which workspace is being edited; the General and Members
+                 content stack below it as sections. -->
+            <header class="mb-5">
+              <h2 class="text-lg font-semibold tracking-tight">{t("settings.nav.workspace")}</h2>
+            </header>
+            <div class="mb-8">
+              <label class="mb-1.5 block text-sm font-medium" for="settings-workspace-select">
+                {t("settings.conn.workspaceLabel")}
+              </label>
+              <select
+                id="settings-workspace-select"
+                class="select select-sm w-full max-w-md"
+                value={selectedWsId}
+                onchange={(e) => selectWorkspace(e.currentTarget.value)}
+              >
+                {#each workspaces as w (w.id)}
+                  <option value={w.id}
+                    >{w.name}{w.is_personal ? ` · ${t("ws.personalBadge")}` : ""}</option
+                  >
+                {/each}
+              </select>
+            </div>
             <WorkspaceGeneralSection
               user={auth.user}
               workspace={selectedWs}
@@ -290,16 +328,15 @@
               toast={showToast}
               onchanged={reloadWorkspace}
             />
-          {/if}
-        {:else if section === "members"}
-          {#if showWorkspace && selectedWs && auth.user}
-            <MembersSection
-              user={auth.user}
-              workspace={selectedWs}
-              detail={wsDetail}
-              toast={showToast}
-              onchanged={reloadWorkspace}
-            />
+            <div class="mt-8">
+              <MembersSection
+                user={auth.user}
+                workspace={selectedWs}
+                detail={wsDetail}
+                toast={showToast}
+                onchanged={reloadWorkspace}
+              />
+            </div>
           {/if}
         {:else}
           <AboutSection />

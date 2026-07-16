@@ -1,6 +1,12 @@
-// App-wide sync settings, persisted to localStorage. A runes singleton so any
-// component can read `settings.wsBase` / `settings.syncEnabled` reactively and
-// the EditorPane can branch its open-flow on `syncEnabled`.
+// App-wide settings, persisted to localStorage. A runes singleton so any
+// component can read `settings.wsBase` reactively.
+//
+// There is deliberately NO sync toggle here: sync is active iff the user is
+// signed in (workspaces.identity non-null) AND the open workspace is
+// server-linked (workspaces.activeLinked) — never a user preference. The old
+// persisted `syncEnabled` key is simply ignored on load and dropped on the
+// next persist(); signed-out users and local-only workspaces keep the
+// local-only open flow.
 
 const STORAGE_KEY = "muesli:settings";
 
@@ -8,16 +14,10 @@ const DEFAULTS = {
   // Fresh installs point at the public server (sign-in server picker spec
   // 2026-07-02, Decision 3). Persisted values always win (load() prefers a
   // stored string), so existing installs are untouched; self-hosters change
-  // it in the sign-in dialog's Change… flow or Settings → Sync. Sign-in
+  // it in the sign-in dialog's Change… flow or Settings → About. Sign-in
   // against a not-yet-live app.muesli.md fails gracefully via the existing
   // workspaces.error surface; local-only use never touches it.
   wsBase: "wss://app.muesli.md/ws",
-  // Local-first by default: with no collab server running (Phase 2 not built
-  // yet), the sync open-path mounts an empty CRDT doc and blocks on the
-  // seed-fallback timer before showing the file. The local path mounts the
-  // editor with disk content immediately. Sync becomes opt-in in the collab
-  // phase, where offline-open is made fast via connection-error seeding.
-  syncEnabled: false,
   // First-launch onboarding (BYO storage phase 3): true once completed or
   // skipped — or set silently when a logged-in identity is already onboarded
   // on the server (spec §2's silence rule).
@@ -35,7 +35,6 @@ const DEFAULTS = {
 
 interface PersistedSettings {
   wsBase: string;
-  syncEnabled: boolean;
   onboarded: boolean;
   keychainConsent: boolean;
   autoUpdate: boolean;
@@ -49,8 +48,6 @@ function load(): PersistedSettings {
     const parsed = JSON.parse(raw) as Partial<PersistedSettings>;
     return {
       wsBase: typeof parsed.wsBase === "string" ? parsed.wsBase : DEFAULTS.wsBase,
-      syncEnabled:
-        typeof parsed.syncEnabled === "boolean" ? parsed.syncEnabled : DEFAULTS.syncEnabled,
       onboarded: typeof parsed.onboarded === "boolean" ? parsed.onboarded : DEFAULTS.onboarded,
       keychainConsent:
         typeof parsed.keychainConsent === "boolean"
@@ -65,7 +62,6 @@ function load(): PersistedSettings {
 
 class SettingsStore {
   wsBase = $state(DEFAULTS.wsBase);
-  syncEnabled = $state(DEFAULTS.syncEnabled);
   onboarded = $state(DEFAULTS.onboarded);
   keychainConsent = $state(DEFAULTS.keychainConsent);
   autoUpdate = $state(DEFAULTS.autoUpdate);
@@ -73,7 +69,6 @@ class SettingsStore {
   constructor() {
     const initial = load();
     this.wsBase = initial.wsBase;
-    this.syncEnabled = initial.syncEnabled;
     this.onboarded = initial.onboarded;
     this.keychainConsent = initial.keychainConsent;
     this.autoUpdate = initial.autoUpdate;
@@ -86,7 +81,6 @@ class SettingsStore {
         STORAGE_KEY,
         JSON.stringify({
           wsBase: this.wsBase,
-          syncEnabled: this.syncEnabled,
           onboarded: this.onboarded,
           keychainConsent: this.keychainConsent,
           autoUpdate: this.autoUpdate,
@@ -99,11 +93,6 @@ class SettingsStore {
 
   setWsBase(value: string): void {
     this.wsBase = value;
-    this.persist();
-  }
-
-  setSyncEnabled(value: boolean): void {
-    this.syncEnabled = value;
     this.persist();
   }
 

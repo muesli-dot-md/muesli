@@ -31,7 +31,7 @@
   } = $props();
 
   /** Workspace settings: open the host modal when given, else go to the page. */
-  const openWorkspace = () => (onworkspace ? onworkspace() : gotoSettings("general"));
+  const openWorkspace = () => (onworkspace ? onworkspace() : gotoSettings("workspace"));
 
   let ssoEmail = $state("");
 

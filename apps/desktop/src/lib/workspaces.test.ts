@@ -99,6 +99,62 @@ describe("workspaces store — Plan 5 promotion", () => {
   });
 });
 
+describe("workspaces store — activeLinked (the workspace half of the sync gate)", () => {
+  // The mocked workspace.root is a plain (non-reactive) field, so the derived
+  // is re-triggered by reassigning `list` after each root change.
+  const setRoot = async (root: string | null) => {
+    const { workspace } = await import("$lib/workspace.svelte");
+    (workspace as { root: string | null }).root = root;
+  };
+  const linked: WorkspaceView = {
+    id: "W1",
+    server: "ws://localhost:8787/ws",
+    name: "Notes",
+    local_path: "/Users/me/Notes",
+    local_only: false,
+    state: "cloned",
+  };
+  const localOnly: WorkspaceView = {
+    id: "/Users/me/Vault",
+    server: null,
+    name: "Vault",
+    local_path: "/Users/me/Vault",
+    local_only: true,
+    state: "local-only",
+  };
+
+  it("is true only when the OPEN folder's registry row carries a server", async () => {
+    await setRoot("/Users/me/Notes");
+    workspaces.list = [linked, localOnly];
+    expect(workspaces.activeLinked).toBe(true);
+
+    // A local-only registry row (registerLocalWorkspace stores no server)
+    // must NOT count as linked — this is what keeps a signed-in user's local
+    // vault off the legacy websocket path.
+    await setRoot("/Users/me/Vault");
+    workspaces.list = [linked, localOnly];
+    expect(workspaces.activeLinked).toBe(false);
+
+    // Unregistered bare-folder open (openByPath's fallback): not linked.
+    await setRoot("/Users/me/Elsewhere");
+    workspaces.list = [linked, localOnly];
+    expect(workspaces.activeLinked).toBe(false);
+
+    // Trailing-slash spelling of the same folder still matches its row.
+    await setRoot("/Users/me/Notes/");
+    workspaces.list = [linked, localOnly];
+    expect(workspaces.activeLinked).toBe(true);
+
+    // No open folder → nothing can be linked.
+    await setRoot(null);
+    workspaces.list = [linked, localOnly];
+    expect(workspaces.activeLinked).toBe(false);
+
+    await setRoot("");
+    workspaces.list = [];
+  });
+});
+
 describe("workspaces store — keychain consent (spec 2026-07-02 §3)", () => {
   it("refresh(): launch gate closed → no token read, logged-out list — and NEVER the dialog chokepoint", async () => {
     launchGate.mockResolvedValueOnce(false);

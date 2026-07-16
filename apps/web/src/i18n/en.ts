@@ -316,9 +316,9 @@ export const en = {
   "settings.nav.about": "About",
   "settings.nav.general": "General",
   "settings.nav.members": "Members",
-  // Multica-style grouped sub-sidebar headers.
+  "settings.nav.workspace": "Workspace",
+  // Multica-style sub-sidebar header.
   "settings.group.account": "My Account",
-  "settings.group.workspace": "Workspace",
   // Appearance and Language page hints.
   "settings.accent.hint": "Used for buttons, links and selection.",
   "settings.defaultView.hint": "How the home screen lists your documents.",
@@ -386,18 +386,14 @@ export const en = {
   // --- settings → profile ----------------------------------------------------------------
   "settings.profile.changeAvatar": "Change",
   "settings.profile.removeAvatar": "Remove",
-  "settings.profile.avatarHint": "Square images work best — stored as a 128 px thumbnail.",
   "settings.profile.avatarTooLarge":
     "That image is too large even after resizing — try a smaller one.",
   "settings.profile.avatarReadFailed": "Couldn't read that image.",
   "settings.profile.displayName": "Display name",
-  "settings.profile.displayNameHint":
-    "Overrides the name from your identity provider. Leave empty to use theirs.",
   "settings.profile.useIdpName": "Use my identity provider's name",
   "settings.profile.saved": "Profile updated.",
   "settings.profile.email": "Email",
   "settings.profile.emailManaged": "Managed by your identity provider.",
-  "settings.profile.copyId": "Copy user ID",
   "settings.profile.workspaces": "Workspaces & members",
   "settings.profile.workspacesHint":
     "Membership, roles, invites and the audit log live in workspace settings.",
@@ -532,9 +528,6 @@ export const en = {
   "settings.about.docs": "Documentation",
   "settings.about.selfHost":
     "Muesli is self-hostable — run your own server and your .md files stay yours.",
-  "settings.about.storage": "Storage",
-  "settings.about.storageUsage": "{used} of {quota} used",
-  "settings.about.storageFailed": "Couldn't load storage usage.",
 
   "theme.light": "Light",
   "theme.dark": "Dark",
@@ -550,10 +543,6 @@ export const en = {
   "account.signInWithOrg": "Sign in with your organization",
   "account.noSsoForDomain": "No organization SSO is configured for that email domain.",
   "account.orgSsoLabel": "Use organization SSO",
-  "account.signInSection": "Sign-in",
-  "account.oidc": "OpenID Connect (organization SSO)",
-  "account.oidcNote": "— name, email and avatar come from your identity provider.",
-  "account.userId": "User ID",
 
   // --- dedicated auth page (signed-out shell, Commit 1) ----------------------------------
   "auth.tagline":

@@ -1049,7 +1049,14 @@
                the left stays put). SettingsPage is imported dynamically so the
                home screen never eagerly loads the settings sections. -->
           {#await import("./SettingsPage.svelte") then { default: SettingsPage }}
-            <SettingsPage section={settingsSection} embedded />
+            <!-- onuserchanged: profile edits (avatar/display name) update Home's
+                 auth copy too, so the sidebar chip follows live instead of
+                 showing the stale mount-time fetch after settings closes. -->
+            <SettingsPage
+              section={settingsSection}
+              embedded
+              onuserchanged={(user) => (auth = { ...auth, user })}
+            />
           {/await}
         {:else if mainPanel === "graph"}
           <GraphView embedded {selectedWorkspaceId} {personalWorkspaceId} />

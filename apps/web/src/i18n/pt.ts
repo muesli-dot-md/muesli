@@ -159,10 +159,6 @@ export const pt: Record<keyof Messages, string> = {
   "account.signInWithOrg": "Iniciar sessão com a tua organização",
   "account.noSsoForDomain": "Não existe SSO configurado para esse domínio de e-mail.",
   "account.orgSsoLabel": "Usar SSO da organização",
-  "account.signInSection": "Início de sessão",
-  "account.oidc": "OpenID Connect (SSO da organização)",
-  "account.oidcNote": "— nome, e-mail e avatar são fornecidos pelo teu fornecedor de identidade.",
-  "account.userId": "ID de utilizador",
 
   // --- dedicated auth page (signed-out shell, Commit 1) ----------------------------------
   "auth.tagline":
@@ -432,8 +428,8 @@ export const pt: Record<keyof Messages, string> = {
   "settings.nav.preferences": "Aparência",
   "settings.nav.general": "Geral",
   "settings.nav.members": "Membros",
+  "settings.nav.workspace": "Espaço de trabalho",
   "settings.group.account": "A minha conta",
-  "settings.group.workspace": "Espaço de trabalho",
   "settings.accent.hint": "Usado para botões, ligações e seleção.",
   "settings.defaultView.hint": "Como o ecrã inicial lista os teus documentos.",
   "settings.language.hint": "Altera o idioma da interface neste navegador.",
@@ -497,19 +493,14 @@ export const pt: Record<keyof Messages, string> = {
   "settings.comingSoon": "Em breve",
   "settings.profile.changeAvatar": "Alterar",
   "settings.profile.removeAvatar": "Remover",
-  "settings.profile.avatarHint":
-    "Imagens quadradas funcionam melhor — guardadas como miniatura de 128 px.",
   "settings.profile.avatarTooLarge":
     "Essa imagem é demasiado grande mesmo após redimensionamento — tenta uma mais pequena.",
   "settings.profile.avatarReadFailed": "Não foi possível ler a imagem.",
   "settings.profile.displayName": "Nome a apresentar",
-  "settings.profile.displayNameHint":
-    "Substitui o nome do teu fornecedor de identidade. Deixa vazio para usar o deles.",
   "settings.profile.useIdpName": "Usar o nome do meu fornecedor de identidade",
   "settings.profile.saved": "Perfil atualizado.",
   "settings.profile.email": "E-mail",
   "settings.profile.emailManaged": "Gerido pelo teu fornecedor de identidade.",
-  "settings.profile.copyId": "Copiar ID de utilizador",
   "settings.profile.workspaces": "Espaços de trabalho e membros",
   "settings.profile.workspacesHint":
     "Filiação, funções, convites e o registo de auditoria encontram-se nas definições do espaço de trabalho.",
@@ -637,9 +628,6 @@ export const pt: Record<keyof Messages, string> = {
   "settings.about.docs": "Documentação",
   "settings.about.selfHost":
     "O Muesli é auto-hospedável — executa o teu próprio servidor e os teus ficheiros .md ficam teus.",
-  "settings.about.storage": "⟦TODO⟧ Storage",
-  "settings.about.storageUsage": "⟦TODO⟧ {used} of {quota} used",
-  "settings.about.storageFailed": "⟦TODO⟧ Couldn't load storage usage.",
   "home.treeView": "Vista em árvore",
   "home.workspaces": "Espaços de trabalho",
   "home.newWorkspace": "Novo espaço de trabalho",

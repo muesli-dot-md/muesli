@@ -5,9 +5,8 @@
   // repository field, no homepage) — swap SOURCE_URL/DOCS_URL when one exists.
   import BookOpen from "@lucide/svelte/icons/book-open";
   import ExternalLink from "@lucide/svelte/icons/external-link";
-  import HardDrive from "@lucide/svelte/icons/hard-drive";
   import { onMount } from "svelte";
-  import { createAccountApi, type ServerMeta, type StorageUsage } from "../accountApi";
+  import { createAccountApi, type ServerMeta } from "../accountApi";
   import { t } from "../i18n/index.svelte";
   import { httpBase } from "../identity";
   import SettingRow from "./SettingRow.svelte";
@@ -20,34 +19,11 @@
   let meta: ServerMeta | null = $state(null);
   let failed = $state(false);
 
-  let storage: StorageUsage | null = $state(null);
-  let storageFailed = $state(false);
-
-  /** Human-readable bytes (binary units): 0 B, 12 KB, 3.4 MB, 1.2 GB. */
-  function formatBytes(bytes: number): string {
-    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    const exp = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-    const value = bytes / 1024 ** exp;
-    // No decimals for bytes; one decimal otherwise (trimmed when whole).
-    const text = exp === 0 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, "");
-    return `${text} ${units[exp]}`;
-  }
-
-  function usedPercent(s: StorageUsage): number {
-    if (s.quota_bytes <= 0) return 0;
-    return Math.min(100, Math.round((s.used_bytes / s.quota_bytes) * 100));
-  }
-
   onMount(() => {
     api
       .getMeta()
       .then((m) => (meta = m))
       .catch(() => (failed = true));
-    api
-      .getStorageUsage()
-      .then((s) => (storage = s))
-      .catch(() => (storageFailed = true));
   });
 </script>
 
@@ -93,37 +69,6 @@
       {/snippet}
     </SettingRow>
   {/if}
-</SettingsCard>
-
-<!-- storage usage -->
-<SettingsCard>
-  <SettingRow title={t("settings.about.storage")} stacked>
-    {#snippet leading()}
-      <HardDrive class="h-4 w-4 opacity-70" aria-hidden="true" />
-    {/snippet}
-    {#snippet control()}
-      {#if storageFailed}
-        <p class="text-sm text-[var(--text-muted)]">{t("settings.about.storageFailed")}</p>
-      {:else if !storage}
-        <p class="text-sm text-[var(--text-muted)]">{t("common.loading")}</p>
-      {:else}
-        <div class="w-full">
-          <progress
-            class="progress progress-primary w-full"
-            value={usedPercent(storage)}
-            max="100"
-            aria-label={t("settings.about.storage")}
-          ></progress>
-          <p class="mt-2 text-sm text-[var(--text-muted)]">
-            {t("settings.about.storageUsage", {
-              used: formatBytes(storage.used_bytes),
-              quota: formatBytes(storage.quota_bytes),
-            })}
-          </p>
-        </div>
-      {/if}
-    {/snippet}
-  </SettingRow>
 </SettingsCard>
 
 <!-- source / docs links -->
