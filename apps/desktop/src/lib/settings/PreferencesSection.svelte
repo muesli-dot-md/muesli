@@ -42,7 +42,7 @@
 </SettingsCard>
 
 <!-- Accent picker: the webapp's row (same presets/swatches/selected state),
-     English strings from its en locale. The default periwinkle preset equals
+     English strings from its en locale. The default blue preset equals
      the stock --arc-primary, so nothing changes until the user picks. -->
 <SettingsCard>
   <SettingRow title="Accent color" description="Used for buttons, links and selection.">

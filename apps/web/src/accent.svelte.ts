@@ -1,7 +1,9 @@
-// Webapp accent color (item 2). The shared arc palette ships periwinkle as the
-// base --arc-primary, but the webapp defaults its ACCENT to a restrained neutral
-// slate gray instead — decoupled from the desktop, which keeps periwinkle. The
-// user can pick from a small set of presets in Settings → Appearance; the choice
+// Webapp accent color (item 2). The shared arc palette ships the brand blue as
+// the base --arc-primary, but the webapp defaults its ACCENT to a restrained
+// neutral slate gray instead — decoupled from the desktop, which defaults to
+// the "blue" preset (equal to --arc-primary, so its default look IS the stock
+// palette). The user can pick from a small set of presets in Settings →
+// Appearance; the choice
 // persists under "muesli:accent" and is applied by overriding --accent-primary /
 // --accent-primary-content on the document root (app.css points
 // --color-primary at those). Yjs-free, self-applying like theme.svelte.ts.
@@ -17,7 +19,9 @@ export type AccentPreset = {
     | "settings.accent.blue"
     | "settings.accent.green"
     | "settings.accent.amber";
-  /** Swatch + applied --color-primary (light). AA-checked on white (≥4.5:1). */
+  /** Swatch + applied --color-primary (light). Contrast-checked on white:
+   * every preset clears 4.5:1 except amber, the ramp's one compromise at
+   * ~4.4:1 (large-text/UI-component AA only). */
   light: string;
   lightContent: string;
   /** Applied --color-primary in dark mode (brighter so it reads on graphite). */
@@ -26,7 +30,8 @@ export type AccentPreset = {
 };
 
 // Default is "gray": a neutral slate that meets WCAG AA on white for button
-// labels and links. The periwinkle preset reuses the shared arc primary.
+// labels and links. The blue preset reuses the shared arc primary; periwinkle
+// keeps the pre-brand-blue primary values as a selectable choice.
 export const ACCENT_PRESETS: readonly AccentPreset[] = [
   {
     id: "gray",
@@ -47,10 +52,10 @@ export const ACCENT_PRESETS: readonly AccentPreset[] = [
   {
     id: "blue",
     labelKey: "settings.accent.blue",
-    light: "oklch(0.54 0.16 259.5)",
-    lightContent: "oklch(0.99 0.01 259)",
-    dark: "oklch(0.74 0.12 259.5)",
-    darkContent: "oklch(0.18 0.04 259)",
+    light: "oklch(0.546 0.215 262.9)",
+    lightContent: "oklch(0.98 0.01 262)",
+    dark: "oklch(0.714 0.143 254.6)",
+    darkContent: "oklch(0.16 0.02 262)",
   },
   {
     id: "green",

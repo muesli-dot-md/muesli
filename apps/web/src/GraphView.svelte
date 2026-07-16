@@ -309,7 +309,7 @@
 
     <!-- Embedded in Home's white card surface: paint the canvas on base-100 so
          the graph sits on the same surface as the rest of the main space (the
-         arc base-200 is the lavender floor and made the graph look unhosted). -->
+         arc base-200 is the gray floor and made the graph look unhosted). -->
     <div class="min-h-0 flex-1 overflow-hidden {embedded ? 'bg-base-100' : 'bg-base-200'}">
       {#if loading}
         <div class="flex h-full items-center justify-center">

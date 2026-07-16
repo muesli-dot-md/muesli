@@ -10,29 +10,36 @@
    ║  edit reskins both apps. The light values are :root defaults; the dark    ║
    ║  values override under [data-theme$="-dark"] (matches both -dark themes). ║
    ║                                                                          ║
-   ║  "arc" look: periwinkle/lavender accent (hue ~277) on lavender neutrals,  ║
+   ║  "arc" look: brand-blue accents on neutral gray surfaces, light and dark, ║
    ║  with a layered-depth system (--lift / --overlay / --shadow-*). The       ║
-   ║  macOS-only window-vibrancy --floor-tint is intentionally NOT here — it   ║
-   ║  is desktop-only and stays in apps/desktop/src/app.css.                   ║
+   ║  accents follow the Tailwind blue ramp behind the logo's gradient         ║
+   ║  (#cfe8ff -> #3b82f6): the logo keeps blue-500 #3b82f6, the UI primary    ║
+   ║  uses blue-600/blue-400 (see --arc-primary below). The macOS-only         ║
+   ║  window-vibrancy --floor-tint is intentionally NOT here — it is           ║
+   ║  desktop-only and stays in apps/desktop/src/app.css.                      ║
    ════════════════════════════════════════════════════════════════════════════ */
 
 :root {
   /* ── daisyUI color tokens (light) ──────────────────────────────────────── */
   --arc-base-100: oklch(1 0 0); /* L1 floating card = pure white (measured) */
-  --arc-base-200: oklch(0.905 0.028 285); /* L0 floor / window bg = #E1DEEE lavender */
-  --arc-base-300: oklch(0.86 0.025 285); /* borders / recessed tab track */
-  --arc-base-content: oklch(0.25 0.035 285);
-  --arc-primary: oklch(0.585 0.22 277); /* #686CF4 periwinkle (measured) */
-  --arc-primary-content: oklch(0.98 0.01 285);
+  --arc-base-200: oklch(0.905 0.005 262); /* L0 floor / window bg = #DEE0E3 neutral gray */
+  --arc-base-300: oklch(0.86 0.005 262); /* borders / recessed tab track */
+  --arc-base-content: oklch(0.25 0.012 262);
+  /* UI primary is Tailwind blue-600 #2563eb, NOT the logo's blue-500 #3b82f6:
+     this token colors link text and btn-primary with white-ish content, and
+     white on #3b82f6 is only ~3.7:1 while white on #2563eb is ~5.2:1 (AA).
+     Same ramp as the brand mark, one step darker for contrast. */
+  --arc-primary: oklch(0.546 0.215 262.9); /* #2563eb blue-600 */
+  --arc-primary-content: oklch(0.98 0.01 262);
   /* secondary/accent: arc has no dedicated tokens in the desktop theme blocks;
-     define quiet periwinkle-family values so both apps share one accent for
+     define quiet blue-family values so both apps share one accent for
      wikilinks and secondary actions. */
-  --arc-secondary: oklch(0.46 0.05 285);
-  --arc-secondary-content: oklch(0.98 0.01 285);
-  --arc-accent: oklch(0.6 0.14 250);
-  --arc-accent-content: oklch(0.98 0.01 285);
-  --arc-neutral: oklch(0.31 0.035 285);
-  --arc-neutral-content: oklch(0.98 0.01 285);
+  --arc-secondary: oklch(0.46 0.03 262);
+  --arc-secondary-content: oklch(0.98 0.01 262);
+  --arc-accent: oklch(0.6 0.14 262);
+  --arc-accent-content: oklch(0.98 0.01 262);
+  --arc-neutral: oklch(0.31 0.015 262);
+  --arc-neutral-content: oklch(0.98 0.01 262);
   --arc-info: oklch(0.7 0.14 235);
   --arc-info-content: oklch(0.98 0.02 235);
   --arc-success: oklch(0.7 0.15 150);
@@ -43,12 +50,12 @@
   --arc-error-content: oklch(0.98 0.02 25);
 
   /* ── depth system (light) ──────────────────────────────────────────────── */
-  --lift: oklch(0.986 0.004 295); /* #FBFAFE — Arc near-white active pill */
+  --lift: oklch(0.986 0.004 262); /* #F9FAFD — Arc near-white active pill */
   --overlay: oklch(1 0 0);
-  --arc-border: oklch(0.86 0.025 285);
-  --text-muted: oklch(0.53 0.03 285);
-  --code-bg: oklch(0.955 0.002 285); /* near-neutral gray code surface */
-  --row-hover: rgba(255, 255, 255, 0.55); /* translucent white veil on the lavender floor */
+  --arc-border: oklch(0.86 0.005 262);
+  --text-muted: oklch(0.53 0.02 262);
+  --code-bg: oklch(0.955 0.002 262); /* near-neutral gray code surface */
+  --row-hover: rgba(255, 255, 255, 0.55); /* translucent white veil on the gray floor */
   --shadow-card:
     0 1px 2px rgba(30, 27, 46, 0.04), 0 8px 24px rgba(30, 27, 46, 0.08),
     0 0 0 1px rgba(30, 27, 46, 0.04);
@@ -61,18 +68,23 @@
 
 [data-theme$="-dark"] {
   /* ── daisyUI color tokens (dark) — neutral graphite ladder ─────────────── */
-  --arc-base-100: oklch(0.215 0.007 285); /* card (deeper, more neutral) */
-  --arc-base-200: oklch(0.165 0.006 285); /* floor / near-black */
-  --arc-base-300: oklch(0.3 0.01 285); /* borders / recessed */
-  --arc-base-content: oklch(0.92 0.007 285);
-  --arc-primary: oklch(0.7 0.15 280);
-  --arc-primary-content: oklch(0.16 0.02 285);
-  --arc-secondary: oklch(0.72 0.04 285);
-  --arc-secondary-content: oklch(0.2 0.02 285);
-  --arc-accent: oklch(0.72 0.12 250);
-  --arc-accent-content: oklch(0.18 0.04 250);
-  --arc-neutral: oklch(0.34 0.012 285);
-  --arc-neutral-content: oklch(0.95 0.008 285);
+  --arc-base-100: oklch(0.215 0.007 262); /* card (deeper, more neutral) */
+  --arc-base-200: oklch(0.165 0.006 262); /* floor / near-black */
+  --arc-base-300: oklch(0.3 0.01 262); /* borders / recessed */
+  --arc-base-content: oklch(0.92 0.007 262);
+  /* The ramp's dark-mode step: blue-400 #60a5fa, brighter than the light
+     primary so it reads on the graphite card (~6.9:1 vs base-100). This is
+     the sRGB-exact conversion of the hex — Tailwind v4's own oklch table
+     lists the wide-gamut P3 value (C 0.165), which is outside sRGB at this
+     L/H and would gamut-clip differently per browser. */
+  --arc-primary: oklch(0.714 0.143 254.6); /* #60a5fa blue-400 */
+  --arc-primary-content: oklch(0.16 0.02 262);
+  --arc-secondary: oklch(0.72 0.04 262);
+  --arc-secondary-content: oklch(0.2 0.02 262);
+  --arc-accent: oklch(0.72 0.12 262);
+  --arc-accent-content: oklch(0.18 0.04 262);
+  --arc-neutral: oklch(0.34 0.012 262);
+  --arc-neutral-content: oklch(0.95 0.008 262);
   --arc-info: oklch(0.7 0.14 235);
   --arc-info-content: oklch(0.16 0.03 235);
   --arc-success: oklch(0.7 0.15 150);
@@ -83,11 +95,11 @@
   --arc-error-content: oklch(0.98 0.02 25);
 
   /* ── depth system (dark) ───────────────────────────────────────────────── */
-  --lift: oklch(0.315 0.009 285); /* active pill — lightest in the ladder */
-  --overlay: oklch(0.25 0.009 285);
-  --arc-border: oklch(0.3 0.01 285);
-  --text-muted: oklch(0.64 0.01 285);
-  --code-bg: oklch(0.25 0.005 285); /* near-neutral gray code surface */
+  --lift: oklch(0.315 0.009 262); /* active pill — lightest in the ladder */
+  --overlay: oklch(0.25 0.009 262);
+  --arc-border: oklch(0.3 0.01 262);
+  --text-muted: oklch(0.64 0.01 262);
+  --code-bg: oklch(0.25 0.005 262); /* near-neutral gray code surface */
   --row-hover: rgba(255, 255, 255, 0.05); /* faint light veil over the dark floor */
   --shadow-card:
     0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.38),

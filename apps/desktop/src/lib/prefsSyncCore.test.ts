@@ -36,8 +36,8 @@ const DEFAULTS: Prefs = {
   theme: "system",
   accent: "gray",
   tint_strength: 0,
-  tint_hue: 295,
-  folder_hue: 250,
+  tint_hue: 244,
+  folder_hue: 262,
 };
 
 beforeEach(() => {

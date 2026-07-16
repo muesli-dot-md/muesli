@@ -7,7 +7,7 @@
 // accent in both themes. Yjs-free, self-applying like accent.svelte.ts.
 
 const KEY = "muesli:folderColor";
-export const FOLDER_DEFAULT_HUE = 250; // matches --arc-accent's hue (shared/palette.css)
+export const FOLDER_DEFAULT_HUE = 262; // matches --arc-accent's hue (shared/palette.css)
 
 function clampHue(v: number): number {
   // Guard against corrupted localStorage (e.g. `{"hue":"blue"}` — a string,

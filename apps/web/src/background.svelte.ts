@@ -15,10 +15,10 @@ const KEY = "muesli:background";
 // (background.svelte.ts) so a synced tint_strength reads equally strong.
 const MAX_CHROMA = 0.05;
 
-// Hue matches the desktop's default (295, violet); tint defaults 0 — the web
+// Hue matches the desktop's default (244, blue); tint defaults 0 — the web
 // ships untinted today, and the synced prefs object is sparse, so this default
 // holds until the user actually picks a strength.
-const DEFAULTS = { hue: 295, tint: 0 };
+const DEFAULTS = { hue: 244, tint: 0 };
 
 function clamp(v: number, lo: number, hi: number): number {
   if (!Number.isFinite(v)) return lo;

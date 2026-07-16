@@ -63,11 +63,11 @@ describe("hueToHex / hexToHue round trip", () => {
 
 describe("matchesPreset", () => {
   it("is true for an exact preset hue", () => {
-    expect(matchesPreset(250, FOLDER_HUE_PRESETS)).toBe(true);
+    expect(matchesPreset(262, FOLDER_HUE_PRESETS)).toBe(true);
   });
 
   it("is true within floating-point tolerance", () => {
-    expect(matchesPreset(249.6, FOLDER_HUE_PRESETS)).toBe(true);
+    expect(matchesPreset(261.6, FOLDER_HUE_PRESETS)).toBe(true);
   });
 
   it("is false for a hue that isn't a preset (custom)", () => {
@@ -83,8 +83,8 @@ describe("swatchColor", () => {
 
 describe("preset palettes", () => {
   it.each([
-    ["TINT_HUE_PRESETS", TINT_HUE_PRESETS, 295],
-    ["FOLDER_HUE_PRESETS", FOLDER_HUE_PRESETS, 250],
+    ["TINT_HUE_PRESETS", TINT_HUE_PRESETS, 244],
+    ["FOLDER_HUE_PRESETS", FOLDER_HUE_PRESETS, 262],
   ])(
     "%s has 7 distinct in-range hues with the current default first",
     (_name, presets, defaultHue) => {

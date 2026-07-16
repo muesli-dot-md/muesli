@@ -5,9 +5,9 @@ import { folderColor, FOLDER_DEFAULT_HUE } from "./folderColor.svelte";
 // FOLDER_DEFAULT_HUE and persist() is a guarded no-op — same pattern as
 // settings.test.ts / theme.test.ts.
 describe("folderColor default", () => {
-  it("defaults to the current --arc-accent hue (250)", () => {
+  it("defaults to the current --arc-accent hue (262)", () => {
     expect(folderColor.hue).toBe(FOLDER_DEFAULT_HUE);
-    expect(FOLDER_DEFAULT_HUE).toBe(250);
+    expect(FOLDER_DEFAULT_HUE).toBe(262);
   });
 });
 
