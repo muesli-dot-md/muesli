@@ -149,11 +149,17 @@ mod tests {
         assert_eq!(dir, parent.path().join("Notes-2"));
     }
 
+    /// A hostile `name` is sanitized to a single leaf and can never traverse out
+    /// of the parent. Since the command now picks the parent via a Rust-owned
+    /// dialog, the clone folder is always a direct child of a user-chosen dir —
+    /// the renderer controls neither the parent nor an escaping leaf.
     #[test]
     fn prepare_clone_dir_survives_a_hostile_name() {
         let parent = tempfile::tempdir().unwrap();
         let dir = prepare_clone_dir(parent.path(), "../..//:*?").unwrap();
         assert_eq!(dir, parent.path().join("workspace"));
+        // The result is a DIRECT child of the parent (no traversal escaped it).
+        assert_eq!(dir.parent(), Some(parent.path()));
     }
 
     fn doc(slug: &str, ws: Option<&str>) -> DocInfo {

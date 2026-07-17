@@ -31,7 +31,13 @@ class WorkspaceStore {
     }
     editorState.currentText = "";
 
-    const [tree, recents] = await Promise.all([readWorkspaceTree(path), addRecentWorkspace(path)]);
+    // Admit/activate the target FIRST, then read its tree. read_workspace_tree
+    // confines `root` to a known workspace, and addRecentWorkspace is what
+    // promotes this path to known/active — so the order must be sequential, not
+    // Promise.all: reading the tree before admitting could race a switch to a
+    // workspace that has aged out of the recents list.
+    const recents = await addRecentWorkspace(path);
+    const tree = await readWorkspaceTree(path);
     this.root = path;
     this.tree = tree;
     this.recents = recents;

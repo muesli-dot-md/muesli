@@ -74,9 +74,11 @@ export const readNote = (path: string): Promise<string> => invoke("read_note", {
 export const writeNote = (path: string, contents: string): Promise<void> =>
   invoke("write_note", { path, contents });
 
-/** Write an export (e.g. HTML) to an absolute `path` chosen via the save dialog. */
-export const writeExportFile = (path: string, contents: string): Promise<void> =>
-  invoke("write_export_file", { path, contents });
+/** Save an export (e.g. HTML) to a location the user picks in a native save
+ *  dialog owned by Rust; resolves with the saved path, or null if cancelled.
+ *  The destination is never a webview-supplied path. */
+export const exportFile = (name: string, contents: string): Promise<string | null> =>
+  invoke("export_file", { name, contents });
 
 /** Write `contents` to a temp `<name>.html` and open it in the default browser
  *  (the "Export → PDF" path — the browser prints where the webview can't). */
@@ -126,13 +128,23 @@ export const setLastWorkspace = (path: string): Promise<void> =>
 
 export const getLastWorkspace = (): Promise<string | null> => invoke("get_last_workspace");
 
-// Folder picker
+// Folder picker for a PARENT directory (e.g. where to place a clone). This is a
+// plain location choice; it never becomes an active workspace root on its own.
 export const pickFolder = async (): Promise<string | null> => {
   const result = await open({ directory: true });
   if (result === null || result === undefined) return null;
   if (Array.isArray(result)) return result[0] ?? null;
   return result;
 };
+
+/**
+ * Open a NEW workspace folder via a native directory dialog owned by Rust. The
+ * chosen path is admitted as a known workspace root Rust-side and returned (null
+ * on cancel). This is the only way the renderer can introduce a new active root:
+ * the path comes from the OS/user, so it cannot re-point note-IO confinement at
+ * an arbitrary location the way a webview-supplied path could.
+ */
+export const pickWorkspace = (): Promise<string | null> => invoke("pick_workspace");
 
 export interface Identity {
   server: string;
@@ -233,18 +245,19 @@ export const cloneWorkspace = (
   path: string,
 ): Promise<number> => invoke("clone_workspace", { server, workspaceId, path });
 
-/** Create `<parent>/<workspace name>` (sanitized, collision-suffixed) and return it —
- *  the folder picker chooses the parent; the workspace always gets its own folder. */
-export const prepareCloneDir = (parent: string, name: string): Promise<string> =>
-  invoke("prepare_clone_dir", { parent, name });
+/** Pick the destination parent via a Rust-owned native folder dialog, create
+ *  `<parent>/<workspace name>` (sanitized, collision-suffixed) under it, and
+ *  return the new folder path — or null if the user cancelled. The parent is
+ *  never a webview-supplied string. */
+export const prepareCloneDir = (name: string): Promise<string | null> =>
+  invoke("prepare_clone_dir", { name });
 
-/** Move a cloned workspace's folder under a new parent dir; rewrites the link
- *  index and registry. Returns the new root path. Same-volume moves only. */
-export const relocateWorkspace = (
-  id: string,
-  oldPath: string,
-  newParent: string,
-): Promise<string> => invoke("relocate_workspace", { id, oldPath, newParent });
+/** Move workspace `id`'s folder under a new parent chosen via a Rust-owned
+ *  native folder dialog (the source path is derived from `id`, never passed in).
+ *  Rewrites the link index and registry. Returns the new root path, or null if
+ *  the user cancelled. Same-volume moves only. */
+export const relocateWorkspace = (id: string): Promise<string | null> =>
+  invoke("relocate_workspace", { id });
 
 export const startWorkspaceSync = (
   server: string,

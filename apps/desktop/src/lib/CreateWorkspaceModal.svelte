@@ -16,7 +16,7 @@
   } from "@muesli/workspace-setup/capabilities";
   import { apiRequest } from "$lib/collab/apiRequest";
   import { httpBaseOf } from "$lib/httpBase";
-  import { pickFolder, prepareCloneDir } from "$lib/tauri";
+  import { prepareCloneDir } from "$lib/tauri";
   import { workspaces } from "$lib/workspaces.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -77,9 +77,10 @@
       }
     },
     onDone: async (workspaceId: string) => {
-      const parent = await pickFolder();
-      if (!parent) return; // stay on the done screen; the user can retry
-      const path = await prepareCloneDir(parent, pendingName);
+      // prepareCloneDir opens the Rust-owned folder dialog for the destination
+      // parent; null = the user cancelled, so stay on the done screen to retry.
+      const path = await prepareCloneDir(pendingName);
+      if (!path) return;
       onclose();
       await workspaces.finishRemoteWorkspace(workspaceId, pendingName, path);
     },

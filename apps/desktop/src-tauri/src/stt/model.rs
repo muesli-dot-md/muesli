@@ -20,6 +20,18 @@ pub const MODEL_DIR_NAME: &str = "parakeet-tdt-0.6b-v3";
 /// Source tarball for the int8 ONNX artifact set (same build Handy ships).
 pub const MODEL_TARBALL_URL: &str = "https://blob.handy.computer/parakeet-v3-int8.tar.gz";
 
+/// Expected SHA-256 of [`MODEL_TARBALL_URL`], hex-encoded. `None` means the
+/// digest has not been pinned yet, so the download proceeds without an integrity
+/// check (only the zip-slip containment in `extract_tarball_into` protects the
+/// extraction).
+///
+/// FOLLOW-UP (integrity hardening): pin the real digest here — computed from a
+/// trusted copy of the tarball — so a compromised third-party host or a TLS
+/// interception cannot swap in a tampered artifact set before first-run
+/// extraction. This value must be a verified hash, never a guessed one; once it
+/// is `Some`, [`verify_tarball_integrity`] enforces it.
+const EXPECTED_TARBALL_SHA256: Option<&str> = None;
+
 /// The ONNX/tokenizer files the `transcribe-rs` Parakeet engine expects to find
 /// inside the model directory.
 const REQUIRED_FILES: &[&str] = &[
@@ -386,6 +398,14 @@ pub fn ensure(app_data: &Path, progress: impl Fn(u64, u64)) -> Result<ParakeetPa
     download_with_progress(MODEL_TARBALL_URL, &tmp, &progress)
         .with_context(|| format!("downloading {}", MODEL_TARBALL_URL))?;
 
+    // Integrity gate before extraction: reject a tampered tarball when a digest
+    // is pinned (no-op while `EXPECTED_TARBALL_SHA256` is `None`).
+    verify_tarball_integrity(&tmp)
+        .inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })
+        .with_context(|| format!("verifying {}", MODEL_TARBALL_URL))?;
+
     extract_tarball_into(&tmp, &paths.dir)
         .with_context(|| format!("extracting tarball into {}", paths.dir.display()))?;
 
@@ -430,10 +450,65 @@ fn download_with_progress(url: &str, dest: &Path, progress: &impl Fn(u64, u64)) 
     Ok(())
 }
 
+/// Verify the downloaded tarball matches [`EXPECTED_TARBALL_SHA256`]. A no-op
+/// (returns `Ok`) while the digest is unpinned (`None`); otherwise the file is
+/// streamed through SHA-256 and compared, failing on any mismatch.
+fn verify_tarball_integrity(tarball: &Path) -> Result<()> {
+    let expected = match EXPECTED_TARBALL_SHA256 {
+        Some(hex) => hex,
+        None => return Ok(()),
+    };
+
+    use sha2::{Digest, Sha256};
+    let mut file =
+        std::fs::File::open(tarball).with_context(|| format!("opening {}", tarball.display()))?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)?;
+    let got: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    if !got.eq_ignore_ascii_case(expected) {
+        anyhow::bail!("model tarball checksum mismatch: expected {expected}, got {got}");
+    }
+    Ok(())
+}
+
+/// Join `rel` onto `dest`, guaranteeing the result stays inside `dest`.
+///
+/// Purely lexical (the parent directories may not exist yet, so canonicalization
+/// is not an option): every component must be a `Normal` name. A `..`, an
+/// absolute root, or a Windows prefix is rejected, so the join can never escape
+/// `dest`; bare `.` components are ignored. This is the zip-slip guard for
+/// [`extract_tarball_into`].
+fn contained_join(dest: &Path, rel: &Path) -> Result<PathBuf> {
+    use std::path::Component;
+    let mut out = dest.to_path_buf();
+    for comp in rel.components() {
+        match comp {
+            Component::Normal(part) => out.push(part),
+            Component::CurDir => {}
+            other => anyhow::bail!("tar entry path escapes destination: {other:?}"),
+        }
+    }
+    // Defense in depth: the component check above already guarantees this holds.
+    if !out.starts_with(dest) {
+        anyhow::bail!("tar entry path escapes destination");
+    }
+    Ok(out)
+}
+
 /// Extract a `.tar.gz` into `dest`. The Handy tarball wraps the files in a
 /// `parakeet-tdt-0.6b-v3-int8/` directory; we strip that leading component so the
 /// artifacts land directly in our `dest` dir. AppleDouble (`._*`) sidecar entries
 /// are skipped.
+///
+/// Zip-slip containment: the artifact set is only regular files and directories,
+/// and every entry must resolve (via [`contained_join`]) to a location inside
+/// `dest`. Any entry with a `..`/absolute path, or a symlink/hardlink (whose
+/// target could redirect a write outside `dest`), is rejected — a tampered or
+/// hand-crafted tarball cannot write outside the model directory.
 fn extract_tarball_into(tarball: &Path, dest: &Path) -> Result<()> {
     let file =
         std::fs::File::open(tarball).with_context(|| format!("opening {}", tarball.display()))?;
@@ -460,16 +535,48 @@ fn extract_tarball_into(tarball: &Path, dest: &Path) -> Result<()> {
             continue;
         }
 
-        let out_path = dest.join(&stripped);
-        if entry.header().entry_type().is_dir() {
+        // Only regular files and directories are part of the artifact set;
+        // refuse links (symlink/hardlink) whose targets could escape `dest`.
+        let entry_type = entry.header().entry_type();
+        if !(entry_type.is_file() || entry_type.is_dir()) {
+            anyhow::bail!(
+                "refusing tar entry with unexpected type {:?}: {}",
+                entry_type,
+                path.display()
+            );
+        }
+
+        let out_path = contained_join(dest, &stripped)
+            .with_context(|| format!("unsafe tar entry: {}", path.display()))?;
+
+        if entry_type.is_dir() {
             std::fs::create_dir_all(&out_path)?;
+            normalize_mode(&out_path, 0o755)?;
         } else {
             if let Some(parent) = out_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
             entry.unpack(&out_path)?;
+            // `unpack` preserves the archive's mode bits, so a tampered tarball
+            // could carry setuid/setgid or exec bits. The artifact set is plain
+            // data, so force a benign mode.
+            normalize_mode(&out_path, 0o644)?;
         }
     }
+    Ok(())
+}
+
+/// Force `path` to a benign permission `mode` (Unix only; a no-op elsewhere),
+/// stripping any setuid/setgid/exec bits a malicious archive might set.
+#[cfg(unix)]
+fn normalize_mode(path: &Path, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+        .with_context(|| format!("setting mode on {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn normalize_mode(_path: &Path, _mode: u32) -> Result<()> {
     Ok(())
 }
 
@@ -556,5 +663,120 @@ mod tests {
             std::fs::write(p.dir.join(f), b"x").unwrap();
         }
         assert!(!p.is_present());
+    }
+
+    // -----------------------------------------------------------------------
+    // extract_tarball_into — zip-slip containment
+    // -----------------------------------------------------------------------
+
+    /// Build a gzip-compressed tar from a builder closure operating on the
+    /// in-memory tar bytes, and write it to `path`.
+    fn write_tar_gz(path: &Path, build: impl FnOnce(&mut tar::Builder<Vec<u8>>)) {
+        let mut builder = tar::Builder::new(Vec::new());
+        build(&mut builder);
+        let tar_bytes = builder.into_inner().unwrap();
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(&mut gz, &tar_bytes).unwrap();
+        let gz_bytes = gz.finish().unwrap();
+        std::fs::write(path, gz_bytes).unwrap();
+    }
+
+    /// Append a regular file entry with a valid (traversal-free) path.
+    fn append_file(builder: &mut tar::Builder<Vec<u8>>, name: &str, data: &[u8]) {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_mode(0o644);
+        header.set_path(name).unwrap();
+        header.set_cksum();
+        builder.append(&header, data).unwrap();
+    }
+
+    /// Legitimate tarball: the leading `parakeet-…/` component is stripped and
+    /// files land directly (including a nested subdir) inside `dest`.
+    #[test]
+    fn extract_strips_prefix_and_places_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tarball = tmp.path().join("model.tar.gz");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        write_tar_gz(&tarball, |b| {
+            append_file(b, "parakeet-tdt-0.6b-v3-int8/config.json", b"{}");
+            append_file(b, "parakeet-tdt-0.6b-v3-int8/sub/vocab.txt", b"hi");
+        });
+
+        extract_tarball_into(&tarball, &dest).unwrap();
+        assert_eq!(std::fs::read(dest.join("config.json")).unwrap(), b"{}");
+        assert_eq!(std::fs::read(dest.join("sub/vocab.txt")).unwrap(), b"hi");
+    }
+
+    /// A `..` entry (crafted by writing the header name field directly, since
+    /// `Header::set_path` refuses `..`) must be rejected and must not write
+    /// outside `dest`.
+    #[test]
+    fn extract_rejects_parent_dir_traversal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tarball = tmp.path().join("evil.tar.gz");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        // After the leading-component strip this becomes `../evil.txt`.
+        let evil_name = "parakeet-tdt-0.6b-v3-int8/../evil.txt";
+        write_tar_gz(&tarball, |b| {
+            let data = b"pwned";
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_entry_type(tar::EntryType::Regular);
+            header.set_mode(0o644);
+            // Bypass set_path's `..` rejection by writing the GNU name field.
+            let bytes = header.as_mut_bytes();
+            bytes[..evil_name.len()].copy_from_slice(evil_name.as_bytes());
+            header.set_cksum();
+            builder_append(b, &header, &data[..]);
+        });
+
+        let err = extract_tarball_into(&tarball, &dest);
+        assert!(err.is_err(), "traversal entry must be rejected");
+        // The sibling of `dest` (where `../evil.txt` would land) stays empty.
+        assert!(!tmp.path().join("evil.txt").exists());
+    }
+
+    /// A symlink entry (whose link target could escape `dest`) must be rejected;
+    /// no symlink is created.
+    #[test]
+    fn extract_rejects_symlink_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tarball = tmp.path().join("link.tar.gz");
+        let dest = tmp.path().join("dest");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        write_tar_gz(&tarball, |b| {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(0);
+            header.set_entry_type(tar::EntryType::Symlink);
+            header
+                .set_path("parakeet-tdt-0.6b-v3-int8/evil-link")
+                .unwrap();
+            // Link names may legitimately contain `..`, so this is accepted by
+            // the writer — extraction must be the thing that refuses it.
+            header.set_link_name("../../../../etc/evil").unwrap();
+            header.set_cksum();
+            builder_append(b, &header, std::io::empty());
+        });
+
+        let err = extract_tarball_into(&tarball, &dest);
+        assert!(err.is_err(), "symlink entry must be rejected");
+        assert!(!dest.join("evil-link").exists());
+    }
+
+    /// Thin wrapper so the raw-header tests can call `Builder::append` without
+    /// re-importing the trait bound at each call site.
+    fn builder_append<R: std::io::Read>(
+        builder: &mut tar::Builder<Vec<u8>>,
+        header: &tar::Header,
+        data: R,
+    ) {
+        builder.append(header, data).unwrap();
     }
 }

@@ -105,19 +105,32 @@ fn walk(dir: &Path, root: &Path, q: &str, out: &mut Vec<SearchHit>) {
 /// Search the workspace rooted at `root` for `query` across note filenames and
 /// contents. Returns up to 200 hits, filename matches first, then by content
 /// match count, then alphabetically. An empty/whitespace query returns no hits.
+///
+/// `root` must be a known workspace root (recents or registry); an unknown path
+/// is rejected — this command reads `.md` contents, so an unconfined root would
+/// let a compromised renderer grep arbitrary files on disk.
 #[tauri::command]
-pub fn search_workspace(root: String, query: String) -> Result<Vec<SearchHit>, String> {
+pub fn search_workspace(
+    app: tauri::AppHandle,
+    root: String,
+    query: String,
+) -> Result<Vec<SearchHit>, String> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Ok(vec![]);
     }
-    let root_path = Path::new(&root);
+    let root_path = super::require_known_workspace_root(&app, &root)?;
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
+    Ok(search_in(&root_path, &q))
+}
 
+/// Root-confined body of [`search_workspace`], separated for unit testing.
+/// `q` is already trimmed/lowercased and non-empty; `root` is a confined dir.
+fn search_in(root: &Path, q: &str) -> Vec<SearchHit> {
     let mut hits: Vec<SearchHit> = Vec::new();
-    walk(root_path, root_path, &q, &mut hits);
+    walk(root, root, q, &mut hits);
 
     hits.sort_by(|a, b| {
         b.name_match
@@ -126,8 +139,7 @@ pub fn search_workspace(root: String, query: String) -> Result<Vec<SearchHit>, S
             .then(a.display.to_lowercase().cmp(&b.display.to_lowercase()))
     });
     hits.truncate(200);
-
-    Ok(hits)
+    hits
 }
 
 #[cfg(test)]
@@ -152,8 +164,7 @@ mod tests {
         mkfile(root, "notes/groceries.md", "buy apples\nand RECIPE ideas");
         mkfile(root, ".hidden/secret.md", "recipe");
 
-        let root_s = root.to_string_lossy().into_owned();
-        let hits = search_workspace(root_s, "recipe".into()).unwrap();
+        let hits = search_in(root, "recipe");
 
         // Recipes.md (name match) + groceries.md (content match); hidden excluded.
         assert_eq!(hits.len(), 2);
@@ -168,12 +179,13 @@ mod tests {
         assert!(g.snippet.as_deref().unwrap().contains("RECIPE"));
     }
 
+    /// A query that matches no filename or content yields no hits (the
+    /// whitespace/empty-query short-circuit lives in the command wrapper, which
+    /// trims to empty before reaching `search_in`).
     #[test]
-    fn empty_query_returns_nothing() {
+    fn no_matches_returns_nothing() {
         let tmp = TempDir::new().unwrap();
         mkfile(tmp.path(), "a.md", "hello");
-        let hits =
-            search_workspace(tmp.path().to_string_lossy().into_owned(), "  ".into()).unwrap();
-        assert!(hits.is_empty());
+        assert!(search_in(tmp.path(), "nonexistent-token").is_empty());
     }
 }

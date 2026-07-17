@@ -12,9 +12,8 @@
 //           webview open-path, so this all happens Rust-side.
 
 import { buildHtmlExport } from "@muesli/editor-core/docExport";
-import { save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { printExport, writeExportFile } from "$lib/tauri";
+import { exportFile, printExport } from "$lib/tauri";
 
 /** Drop a trailing extension so a suggested export filename doesn't become
  *  "note.md.html": tab names carry their ".md" (see FileTree), and that name
@@ -24,22 +23,19 @@ function baseName(title: string): string {
 }
 
 /**
- * Export the document as a standalone `.html` file. Prompts the user for a
- * destination with a native save dialog (defaulting to `<name>.html`); a
- * cancel (null) is a no-op. Writes through the `write_export_file` Rust command
- * (the webview can't write files itself), then reveals the saved file.
+ * Export the document as a standalone `.html` file. The native save dialog is
+ * opened Rust-side by the `export_file` command (defaulting to `<name>.html`),
+ * which writes the render to the chosen location and returns its path; a cancel
+ * (null) is a no-op. The path is owned by the OS/user, never supplied by the
+ * webview. Reveals the saved file afterwards.
  */
 export async function exportHtmlFile(title: string, markdownSrc: string): Promise<void> {
   const base = baseName(title);
-  const path = await save({
-    defaultPath: `${base}.html`,
-    filters: [{ name: "HTML", extensions: ["html"] }],
-  });
-  if (!path) return;
-  await writeExportFile(path, buildHtmlExport(base, markdownSrc));
+  const savedPath = await exportFile(base, buildHtmlExport(base, markdownSrc));
+  if (!savedPath) return;
   // Confirm the export landed by revealing it; non-fatal if the OS refuses.
   try {
-    await revealItemInDir(path);
+    await revealItemInDir(savedPath);
   } catch {
     /* reveal is a courtesy — the file is already written */
   }
