@@ -1437,6 +1437,16 @@ pub async fn set_workspace_sso(
             "issuer, client_id, and client_secret are required",
         );
     }
+    // A workspace may bring its OWN IdP, never the operator's shared primary issuer:
+    // registering the primary would (via the login-time membership path) harvest every
+    // primary-realm user into this workspace (CWE-863). The registry already refuses to
+    // shadow the primary; reject it here too so the config never reaches the DB.
+    if issuer == auth.issuers.primary().issuer {
+        return err(
+            StatusCode::BAD_REQUEST,
+            "issuer must be your own identity provider, not the deployment's primary issuer",
+        );
+    }
     let domains: Vec<String> = req
         .email_domains
         .iter()
