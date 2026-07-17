@@ -385,8 +385,22 @@ pub(crate) fn domain_of(email: &str) -> Option<String> {
     Some(domain.to_ascii_lowercase())
 }
 
+/// Does a workspace SSO config's `email_domains` allow `domain`? A leading dot in a
+/// configured domain is forgiven (".corp.example" == "corp.example"); comparison is
+/// case-insensitive. This is the single definition of the allowlist test — both login
+/// routing ([`issuer_for_domain`]) and the membership-grant boundary
+/// ([`ensure_sso_memberships`]) read it, so routing and enforcement can never diverge.
+pub(crate) fn cfg_allows_domain(cfg: &Value, domain: &str) -> bool {
+    cfg.get("email_domains")
+        .and_then(Value::as_array)
+        .is_some_and(|ds| {
+            ds.iter()
+                .filter_map(Value::as_str)
+                .any(|d| d.trim_start_matches('.').eq_ignore_ascii_case(domain))
+        })
+}
+
 /// Which configured issuer claims this email domain (workspaces.sso email_domains).
-/// A leading dot in a configured domain is forgiven (".corp.example" == "corp.example").
 pub(crate) fn issuer_for_domain<'a>(
     configs: impl IntoIterator<Item = &'a Value>,
     domain: &str,
@@ -395,15 +409,7 @@ pub(crate) fn issuer_for_domain<'a>(
         let Some(issuer) = cfg.get("issuer").and_then(Value::as_str) else {
             continue;
         };
-        let claims_domain = cfg
-            .get("email_domains")
-            .and_then(Value::as_array)
-            .is_some_and(|ds| {
-                ds.iter()
-                    .filter_map(Value::as_str)
-                    .any(|d| d.trim_start_matches('.').eq_ignore_ascii_case(domain))
-            });
-        if claims_domain {
+        if cfg_allows_domain(cfg, domain) {
             return Some(normalize_issuer(issuer));
         }
     }
@@ -1136,11 +1142,10 @@ async fn finish_login(
         .upsert_oidc_user(iss, subject, email, name, picture)
         .await?;
     // Invites (ADR 0011): unclaimed invites matching this email become memberships now.
-    if let Some(email) = email {
-        claim_and_audit_invites(auth, user_id, email).await;
-    }
-    // The per-workspace IdP invariant (Phase 5): this issuer's workspaces gain a member.
-    ensure_sso_memberships(auth, iss, user_id).await;
+    claim_invites_if_verified(auth, user_id, email, claims.email_verified(), iss).await;
+    // The per-workspace IdP invariant (Phase 5): this issuer's workspaces gain a member,
+    // gated on the email's domain being in that workspace's email_domains allowlist.
+    ensure_sso_memberships(auth, iss, user_id, email, claims.email_verified()).await;
     audit::record(
         &auth.persistence,
         AuditEvent::new("login")
@@ -1163,10 +1168,59 @@ async fn finish_login(
     Ok((session_token, pending.next))
 }
 
+/// Gate invite claiming on a VERIFIED email. An unverified or absent `email_verified` must
+/// never grant access — an attacker-registered issuer (Phase 5 lets any workspace admin
+/// register one) could otherwise assert a victim's address. The skip is logged, not silent:
+/// an operator whose primary IdP omits `email_verified` would otherwise see invites quietly
+/// never claim with no diagnostic.
+async fn claim_invites_if_verified(
+    auth: &AuthCtx,
+    user_id: Uuid,
+    email: Option<&str>,
+    email_verified: Option<bool>,
+    iss: &str,
+) {
+    match email {
+        Some(email) if email_verified == Some(true) => {
+            claim_and_audit_invites(auth, user_id, email, iss).await;
+        }
+        Some(_) => {
+            warn!(
+                %user_id, issuer = iss,
+                "id token email is unverified (email_verified missing or false); not claiming invites"
+            );
+        }
+        None => {}
+    }
+}
+
 /// Claim pending invites (ADR 0011) and audit each claim against its workspace.
 /// Best-effort: an invite failure must not fail the login.
-async fn claim_and_audit_invites(auth: &AuthCtx, user_id: Uuid, email: &str) {
-    match auth.persistence.claim_invites(user_id, email).await {
+///
+/// Invite claiming is an authorization grant, so it is bound to an issuer trusted to
+/// assert `email`: only the operator's PRIMARY issuer may claim deployment-wide; a
+/// tenant-registered per-workspace issuer may claim only invites belonging to the
+/// workspaces that registered it. This keeps a hostile issuer's blast radius inside its
+/// own tenant (the caller is already that workspace's admin), closing the cross-tenant
+/// invite-hijack path (CWE-290). The email is presumed already email_verified by the
+/// caller.
+async fn claim_and_audit_invites(auth: &AuthCtx, user_id: Uuid, email: &str, iss: &str) {
+    let deployment_wide = normalize_issuer(iss) == auth.issuers.primary().issuer;
+    let only_workspaces = if deployment_wide {
+        Vec::new()
+    } else {
+        workspaces_for_issuer(auth, iss).await
+    };
+    // A non-primary issuer authoritative for no workspace can claim nothing — skip the
+    // query rather than run it with an empty allowlist.
+    if !deployment_wide && only_workspaces.is_empty() {
+        return;
+    }
+    match auth
+        .persistence
+        .claim_invites(user_id, email, deployment_wide, &only_workspaces)
+        .await
+    {
         Ok(claimed) => {
             for (workspace_id, role) in claimed {
                 info!(%user_id, %workspace_id, "claimed workspace invite");
@@ -1183,11 +1237,66 @@ async fn claim_and_audit_invites(auth: &AuthCtx, user_id: Uuid, email: &str) {
     }
 }
 
+/// The workspaces that registered `iss` as their SSO issuer — the only tenants a
+/// non-primary issuer is authoritative for when claiming invites. Matching mirrors
+/// [`ensure_sso_memberships`] (normalized issuer equality). A load failure yields an empty
+/// set (claim nothing), never a wider scope.
+async fn workspaces_for_issuer(auth: &AuthCtx, iss: &str) -> Vec<Uuid> {
+    let iss = normalize_issuer(iss);
+    match auth.persistence.workspace_sso_configs().await {
+        Ok(configs) => configs
+            .into_iter()
+            .filter(|(_, cfg)| {
+                cfg.get("issuer")
+                    .and_then(Value::as_str)
+                    .map(normalize_issuer)
+                    .as_deref()
+                    == Some(&iss)
+            })
+            .map(|(id, _)| id)
+            .collect(),
+        Err(e) => {
+            warn!(%e, "loading workspace sso configs for invite scoping failed");
+            Vec::new()
+        }
+    }
+}
+
 /// THE per-workspace IdP invariant (Phase 5): a user who authenticated via workspace W's
 /// issuer is auto-ensured as a member of W (role 'member') — that is the point of a
-/// workspace bringing its own IdP. Best-effort: a failure logs but never fails the login.
-async fn ensure_sso_memberships(auth: &AuthCtx, iss: &str, user_id: Uuid) {
+/// workspace bringing its own IdP.
+///
+/// Membership is granted only when the token's VERIFIED email domain is one of W's
+/// configured `email_domains`. That allowlist is an ACCESS-CONTROL boundary, not merely
+/// login routing: an issuer can vouch for addresses outside W's domains (a multi-tenant or
+/// attacker-registered IdP), and without this check any such address would mint a W member.
+/// A missing/unverified email, or a domain outside the allowlist, grants nothing. Matching
+/// is exact-domain (like login routing), so subdomains need their own allowlist entry. This
+/// never removes existing memberships — it only gates NEW auto-grants. Best-effort: a
+/// failure logs but never fails the login.
+async fn ensure_sso_memberships(
+    auth: &AuthCtx,
+    iss: &str,
+    user_id: Uuid,
+    email: Option<&str>,
+    email_verified: Option<bool>,
+) {
     let iss = normalize_issuer(iss);
+    // The primary (operator/env) issuer is the deployment's SHARED realm — never a tenant's
+    // own IdP — so a login through it must NOT auto-join any workspace. Otherwise a
+    // workspace that registered the primary issuer as its SSO would harvest every
+    // primary-realm login (mass membership injection + PII roster disclosure, CWE-863). The
+    // issuer registry already refuses to let a workspace shadow the primary; the membership
+    // path must honor the same boundary. (set_workspace_sso also rejects registering it.)
+    if iss == auth.issuers.primary().issuer {
+        return;
+    }
+    // Only a verified email yields a domain we may trust against email_domains; the
+    // per-workspace diagnostic below fires only once an issuer actually matches, so a
+    // non-SSO login without email_verified stays quiet.
+    let domain = email
+        .filter(|_| email_verified == Some(true))
+        .and_then(domain_of);
     let configs = match auth.persistence.workspace_sso_configs().await {
         Ok(c) => c,
         Err(e) => {
@@ -1203,6 +1312,24 @@ async fn ensure_sso_memberships(auth: &AuthCtx, iss: &str, user_id: Uuid) {
             .as_deref()
             == Some(&iss);
         if !matches {
+            continue;
+        }
+        // The issuer vouched for this login, but membership additionally requires the
+        // email's domain to be on THIS workspace's allowlist. No verified email → no
+        // domain to check → grant nothing (logged, so an IdP that omits email_verified
+        // is diagnosable rather than silently denying members).
+        let Some(domain) = domain.as_deref() else {
+            warn!(
+                %workspace_id, issuer = %iss,
+                "sso login has no verified email; not granting membership"
+            );
+            continue;
+        };
+        if !cfg_allows_domain(&cfg, domain) {
+            warn!(
+                %workspace_id, issuer = %iss,
+                "sso login email domain is not in the workspace's email_domains; not granting membership"
+            );
             continue;
         }
         match auth.persistence.workspace_role(workspace_id, user_id).await {
@@ -1449,10 +1576,22 @@ pub async fn cli_login(
             .await?;
         // The CLI login is an OIDC login too — claim any pending invites (ADR 0011) and
         // honor the per-workspace IdP membership invariant (Phase 5).
-        if let Some(email) = email {
-            claim_and_audit_invites(auth, owner_id, email).await;
-        }
-        ensure_sso_memberships(auth, claims.issuer().as_str(), owner_id).await;
+        claim_invites_if_verified(
+            auth,
+            owner_id,
+            email,
+            claims.email_verified(),
+            claims.issuer().as_str(),
+        )
+        .await;
+        ensure_sso_memberships(
+            auth,
+            claims.issuer().as_str(),
+            owner_id,
+            email,
+            claims.email_verified(),
+        )
+        .await;
         audit::record(
             &auth.persistence,
             AuditEvent::new("login")
@@ -1863,6 +2002,53 @@ mod tests {
         // malformed configs are skipped, never matched
         let broken = json!({ "email_domains": ["x.example"] }); // no issuer
         assert_eq!(issuer_for_domain([&broken], "x.example"), None);
+    }
+
+    #[test]
+    fn normalize_issuer_trailing_slash_symmetry() {
+        // The primary-issuer guards (set_workspace_sso reject + ensure_sso_memberships
+        // exclusion) compare normalized issuers; both must agree that a trailing slash is
+        // insignificant, or a registration could evade the reject yet match at login.
+        assert_eq!(
+            normalize_issuer("https://idp.example/"),
+            normalize_issuer("https://idp.example")
+        );
+        assert_eq!(
+            normalize_issuer("https://idp.example//"),
+            "https://idp.example"
+        );
+        // Case is significant (issuers are case-sensitive URLs); OIDC discovery rejects a
+        // case-variant of a real issuer, so this does not open a primary-shadowing path.
+        assert_ne!(
+            normalize_issuer("https://IDP.example"),
+            normalize_issuer("https://idp.example")
+        );
+    }
+
+    #[test]
+    fn email_domain_allowlist_gate() {
+        // The allowlist test that gates SSO membership (ensure_sso_memberships) — the same
+        // predicate as login routing, so an out-of-domain address is rejected at both.
+        let cfg = json!({
+            "issuer": "http://localhost:5558/dex",
+            "email_domains": ["corp.example", ".dotted.example"],
+        });
+        assert!(cfg_allows_domain(&cfg, "corp.example"));
+        assert!(cfg_allows_domain(&cfg, "Corp.Example")); // case-insensitive
+        assert!(cfg_allows_domain(&cfg, "dotted.example")); // leading dot forgiven
+                                                            // The vuln-0001 bypass: issuer registered for corp.example must NOT admit a token
+                                                            // asserting corpdomain.example.
+        assert!(!cfg_allows_domain(&cfg, "corpdomain.example"));
+        assert!(!cfg_allows_domain(&cfg, "evil.example"));
+        // No email_domains array, or a non-array, allows nothing.
+        assert!(!cfg_allows_domain(
+            &json!({ "issuer": "x" }),
+            "corp.example"
+        ));
+        assert!(!cfg_allows_domain(
+            &json!({ "email_domains": "corp.example" }),
+            "corp.example"
+        ));
     }
 
     #[test]

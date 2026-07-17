@@ -2135,27 +2135,47 @@ impl Persistence {
         Ok(res.rows_affected() > 0)
     }
 
-    /// On OIDC login: turn every unclaimed invite matching the email into a membership
-    /// (ADR 0011). Returns the claimed (workspace_id, role) pairs so callers can audit
-    /// each claim against its workspace.
-    pub async fn claim_invites(&self, user_id: Uuid, email: &str) -> Result<Vec<(Uuid, String)>> {
+    /// On OIDC login: turn matching unclaimed invites (ADR 0011) into memberships and
+    /// return the claimed (workspace_id, role) pairs so callers can audit each claim.
+    /// Claiming is scoped to issuers authoritative for the
+    /// invite's workspace. `deployment_wide` is true only for the operator's primary
+    /// (env) issuer, whose email claims are trusted across every tenant; for a
+    /// tenant-registered per-workspace issuer it is false and `only_workspaces` lists the
+    /// workspaces that registered that issuer — the sole invites it may claim. The scope
+    /// predicate `($3 or workspace_id = any($4))` is applied IDENTICALLY to the insert and
+    /// the claimed_at update so a claimed membership and its stamped invite never diverge.
+    /// Without this scope a hostile per-workspace issuer asserting a victim's email would
+    /// claim that victim's invites in unrelated tenants (CWE-290 cross-tenant takeover).
+    pub async fn claim_invites(
+        &self,
+        user_id: Uuid,
+        email: &str,
+        deployment_wide: bool,
+        only_workspaces: &[Uuid],
+    ) -> Result<Vec<(Uuid, String)>> {
         let mut tx = self.pool.begin().await?;
         sqlx::query(
             "insert into memberships (workspace_id, user_id, role)
              select workspace_id, $1, role from invites
              where lower(email) = lower($2) and claimed_at is null
+               and ($3 or workspace_id = any($4))
              on conflict (workspace_id, user_id) do nothing",
         )
         .bind(user_id)
         .bind(email)
+        .bind(deployment_wide)
+        .bind(only_workspaces)
         .execute(&mut *tx)
         .await?;
         let rows = sqlx::query(
             "update invites set claimed_at = now()
              where lower(email) = lower($1) and claimed_at is null
+               and ($2 or workspace_id = any($3))
              returning workspace_id, role",
         )
         .bind(email)
+        .bind(deployment_wide)
+        .bind(only_workspaces)
         .fetch_all(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -3217,6 +3237,77 @@ mod tests {
             .unwrap();
         assert!(container.starts_with("my-notes-"), "got {container}");
         assert!(!container.contains('/'));
+    }
+
+    /// Tenant-isolation regression (CWE-290, vuln-0001): a non-primary issuer's invite
+    /// claim is confined to the workspaces that registered it. An invite in a workspace
+    /// the issuer is NOT authoritative for must survive untouched (no membership, invite
+    /// stays unclaimed), while the same issuer scoped to the invite's own workspace, and
+    /// the deployment-wide (primary) path, both claim it at the invited role.
+    /// Skips unless TEST_DATABASE_URL is set.
+    #[tokio::test]
+    async fn claim_invites_is_scoped_to_authoritative_workspaces() {
+        let Some(p) = test_db().await else {
+            eprintln!(
+                "skipping: set TEST_DATABASE_URL to run claim_invites_is_scoped_to_authoritative_workspaces"
+            );
+            return;
+        };
+        let owner_v = p.create_agent_user("victim-owner").await.unwrap();
+        let ws_victim = p.create_workspace("victim-ws", owner_v).await.unwrap();
+        let owner_a = p.create_agent_user("attacker-owner").await.unwrap();
+        let ws_attacker = p.create_workspace("attacker-ws", owner_a).await.unwrap();
+        // An outstanding ADMIN invite in the victim workspace — the prize.
+        p.create_invite(ws_victim, "victim@corp.example", "admin", owner_v)
+            .await
+            .unwrap();
+
+        // Attacker's per-workspace issuer is authoritative only for ws_attacker. Claiming
+        // the victim's email scoped to ws_attacker must grant nothing in ws_victim.
+        let attacker = p.create_agent_user("attacker").await.unwrap();
+        let claimed = p
+            .claim_invites(attacker, "victim@corp.example", false, &[ws_attacker])
+            .await
+            .unwrap();
+        assert!(
+            claimed.is_empty(),
+            "cross-tenant claim leaked invites: {claimed:?}"
+        );
+        assert_eq!(
+            p.workspace_role(ws_victim, attacker).await.unwrap(),
+            None,
+            "attacker must not gain membership in the victim workspace"
+        );
+
+        // The legitimate path: the SAME non-primary issuer, scoped to the invite's own
+        // workspace (the workspace that registered it), claims at the invited role.
+        let member = p.create_agent_user("legit").await.unwrap();
+        let claimed = p
+            .claim_invites(member, "victim@corp.example", false, &[ws_victim])
+            .await
+            .unwrap();
+        assert_eq!(claimed, vec![(ws_victim, "admin".to_string())]);
+        assert_eq!(
+            p.workspace_role(ws_victim, member)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("admin")
+        );
+
+        // The deployment-wide (operator primary issuer) path claims across tenants; prove
+        // it against a fresh invite so the assertion is independent of the claim above.
+        let owner_o = p.create_agent_user("other-owner").await.unwrap();
+        let ws_other = p.create_workspace("other-ws", owner_o).await.unwrap();
+        p.create_invite(ws_other, "person@corp.example", "member", owner_o)
+            .await
+            .unwrap();
+        let person = p.create_agent_user("person").await.unwrap();
+        let claimed = p
+            .claim_invites(person, "person@corp.example", true, &[])
+            .await
+            .unwrap();
+        assert_eq!(claimed, vec![(ws_other, "member".to_string())]);
     }
 
     /// Onboarding stamp (migration 0016, spec 2026-07-02 §1): null until stamped,
