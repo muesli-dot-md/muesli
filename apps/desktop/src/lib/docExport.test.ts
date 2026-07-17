@@ -3,20 +3,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ---- mocks (registered before the module under test is imported) -----------
 
-const save = vi.fn();
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  save: (...args: unknown[]) => save(...args),
-}));
-
 const revealItemInDir = vi.fn();
 vi.mock("@tauri-apps/plugin-opener", () => ({
   revealItemInDir: (...args: unknown[]) => revealItemInDir(...args),
 }));
 
-const writeExportFile = vi.fn();
+// `export_file` owns the native save dialog Rust-side: it takes (name, contents)
+// and returns the chosen path (or null on cancel). There is no JS-supplied path.
+const exportFile = vi.fn();
 const printExport = vi.fn();
 vi.mock("$lib/tauri", () => ({
-  writeExportFile: (...args: unknown[]) => writeExportFile(...args),
+  exportFile: (...args: unknown[]) => exportFile(...args),
   printExport: (...args: unknown[]) => printExport(...args),
 }));
 
@@ -30,9 +27,8 @@ vi.mock("@muesli/editor-core/docExport", () => ({
 import { exportHtmlFile, printDocument } from "./docExport";
 
 beforeEach(() => {
-  save.mockReset();
   revealItemInDir.mockReset().mockResolvedValue(undefined);
-  writeExportFile.mockReset().mockResolvedValue(undefined);
+  exportFile.mockReset().mockResolvedValue(null);
   printExport.mockReset().mockResolvedValue(undefined);
   document.body.innerHTML = "";
 });
@@ -42,48 +38,42 @@ afterEach(() => {
 });
 
 describe("exportHtmlFile", () => {
-  it("writes the built HTML to the chosen path and reveals it", async () => {
-    save.mockResolvedValue("/tmp/My Note.html");
+  it("passes the base name + built HTML to export_file and reveals the saved path", async () => {
+    exportFile.mockResolvedValue("/tmp/My Note.html");
 
     await exportHtmlFile("My Note", "# hi");
 
-    expect(save).toHaveBeenCalledWith({
-      defaultPath: "My Note.html",
-      filters: [{ name: "HTML", extensions: ["html"] }],
-    });
-    expect(writeExportFile).toHaveBeenCalledWith(
-      "/tmp/My Note.html",
+    // The command receives only (name, contents) — never a path chosen in JS.
+    expect(exportFile).toHaveBeenCalledWith(
+      "My Note",
       "<html><!--My Note--><body># hi</body></html>", // buildHtmlExport(base, src)
     );
     expect(revealItemInDir).toHaveBeenCalledWith("/tmp/My Note.html");
   });
 
-  it("defaults to a .html name, stripping the tab's .md extension", async () => {
-    save.mockResolvedValue(null); // don't care about the write path here
+  it("strips the tab's .md extension from the export base name", async () => {
+    exportFile.mockResolvedValue("/tmp/untitled.html");
 
     await exportHtmlFile("untitled.md", "# hi");
 
-    expect(save).toHaveBeenCalledWith({
-      defaultPath: "untitled.html", // NOT untitled.md.html
-      filters: [{ name: "HTML", extensions: ["html"] }],
-    });
+    // base name is "untitled" (Rust appends .html for the dialog default).
+    expect(exportFile.mock.calls[0][0]).toBe("untitled");
   });
 
   it("is a no-op when the user cancels the save dialog", async () => {
-    save.mockResolvedValue(null);
+    exportFile.mockResolvedValue(null);
 
     await exportHtmlFile("My Note", "# hi");
 
-    expect(writeExportFile).not.toHaveBeenCalled();
     expect(revealItemInDir).not.toHaveBeenCalled();
   });
 
   it("still succeeds if revealing the file fails", async () => {
-    save.mockResolvedValue("/tmp/note.html");
+    exportFile.mockResolvedValue("/tmp/note.html");
     revealItemInDir.mockRejectedValue(new Error("no file manager"));
 
     await expect(exportHtmlFile("note", "x")).resolves.toBeUndefined();
-    expect(writeExportFile).toHaveBeenCalledTimes(1);
+    expect(exportFile).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -21,12 +21,26 @@ pub use tree::WorkspaceNode;
 // Workspace-root confinement
 // ---------------------------------------------------------------------------
 //
-// `read_note`/`write_note` are reachable from any script running in the
-// webview, so they must not accept arbitrary filesystem paths. Every requested
-// path is resolved and asserted to live inside the active workspace root
-// (the most recently opened workspace — the frontend registers it via
-// `add_recent_workspace` before any note IO). This mirrors the traversal
-// guard already applied in `rename_path`.
+// Two confinement rules apply to every filesystem command reachable from the
+// webview:
+//   1. Note-IO commands (read/write/create/rename/move/delete/stat) operate
+//      *inside* the ACTIVE workspace root: they resolve their path argument(s)
+//      against `active_workspace_root()` and reject `..`/symlink-escape/out-of-
+//      root.
+//   2. The workspace-open/enumerate commands (`read_workspace_tree`,
+//      `search`/`graph`) take a workspace `root` and confine it to a KNOWN
+//      workspace (via `require_known_workspace_root`) — NOT the single active
+//      root, because they read the workspace being switched TO, which is not yet
+//      active.
+// Both rules trust the same admission model: a path becomes a known/active
+// workspace root ONLY through the Rust-owned native folder picker
+// (`recent::pick_workspace`) or a Rust command that produced the folder
+// (`prepare_clone_dir`/`relocate_workspace`); the renderer can re-select an
+// already-admitted root but can never introduce an arbitrary new one. The
+// confinement is only as trustworthy as that anchor, so the anchor is not
+// renderer-controlled. The lone command that writes *outside* any workspace is
+// `export_file`, whose destination comes from a native save dialog opened in
+// Rust (never a webview-supplied path).
 
 /// Canonicalized root of the active workspace.
 fn active_workspace_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -35,9 +49,36 @@ fn active_workspace_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     std::fs::canonicalize(&root).map_err(|e| format!("workspace root unavailable: {e}"))
 }
 
+/// Confine a caller-supplied workspace `root` (as passed to
+/// `read_workspace_tree`/`search_workspace`/`build_link_graph`) to a KNOWN
+/// workspace root — one admitted via the Rust picker or a Rust-produced folder,
+/// tracked in the recents allowlist or the local registry.
+///
+/// This deliberately does NOT confine against the single *active* root: the
+/// frontend reads the tree of the workspace it is switching TO, which is not yet
+/// active, so an active-root check would break switching. Membership in the
+/// admission allowlist is the right test — a legit (even aged-out) workspace
+/// passes; an attacker's arbitrary path (`.md` enumeration/exfiltration) does
+/// not, because it was never admitted through a Rust-owned origin.
+pub(crate) fn require_known_workspace_root(
+    app: &tauri::AppHandle,
+    root: &str,
+) -> Result<PathBuf, String> {
+    if crate::workspaces_cmd::is_known_workspace(app, root) {
+        Ok(PathBuf::from(root))
+    } else {
+        Err(format!("not a known workspace root: {root}"))
+    }
+}
+
 /// Resolve `path` for reading: it must exist and canonicalize to a location
 /// inside `root` (which must itself be canonical). Symlinks that point outside
 /// the workspace are rejected because canonicalization resolves them.
+///
+/// Note: this canonicalizes and then the caller uses the returned path — a
+/// classic TOCTOU window exists between check and use. It is not exploitable in
+/// this threat model: no webview-reachable command creates symlinks inside the
+/// workspace, so an attacker cannot swap a resolved path for an escaping one.
 fn resolve_read_path(root: &Path, path: &str) -> Result<PathBuf, String> {
     let resolved = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
     if resolved.starts_with(root) {
@@ -47,12 +88,27 @@ fn resolve_read_path(root: &Path, path: &str) -> Result<PathBuf, String> {
     }
 }
 
-/// Resolve `path` for writing: the target may not exist yet, so canonicalize
-/// the nearest existing ancestor and re-attach the (not yet existing)
-/// remainder. Rejects `.`/`..` components outright — so `create_dir_all` on
-/// the parent can never escape `root` — and refuses broken symlinks, which
-/// writing "through" would re-route outside the workspace.
+/// Resolve `path` for writing a file: the target may not exist yet, so
+/// canonicalize the nearest existing ancestor and re-attach the (not yet
+/// existing) remainder. Rejects `.`/`..` components outright — so
+/// `create_dir_all` on the parent can never escape `root` — refuses broken
+/// symlinks (writing "through" would re-route outside the workspace), and
+/// rejects the root itself (not a writable file target).
 fn resolve_write_path(root: &Path, path: &str) -> Result<PathBuf, String> {
+    resolve_confined_path(root, path, false)
+}
+
+/// Resolve a *directory* `path` that must live inside `root`. Same confinement
+/// as [`resolve_write_path`], but the root itself is a valid target (a note or
+/// folder may be created directly at the workspace top level).
+fn resolve_dir_path(root: &Path, path: &str) -> Result<PathBuf, String> {
+    resolve_confined_path(root, path, true)
+}
+
+/// Shared body of [`resolve_write_path`]/[`resolve_dir_path`]. `allow_root`
+/// decides whether the confined path may equal `root` (true for directory
+/// targets, false for file targets).
+fn resolve_confined_path(root: &Path, path: &str, allow_root: bool) -> Result<PathBuf, String> {
     let requested = Path::new(path);
     if requested
         .components()
@@ -86,11 +142,27 @@ fn resolve_write_path(root: &Path, path: &str) -> Result<PathBuf, String> {
     for seg in tail.iter().rev() {
         full.push(seg);
     }
-    if full.starts_with(root) && full.as_path() != root {
+    let within = full.starts_with(root) && (allow_root || full.as_path() != root);
+    if within {
         Ok(full)
     } else {
         Err(outside())
     }
+}
+
+/// Reject a single path *segment* (a file/folder name) that would let a caller
+/// step outside its parent directory. Names must be non-empty, not the current
+/// directory (`.`), and free of path separators and `..`.
+fn reject_unsafe_name(name: &str) -> Result<(), String> {
+    if name.is_empty()
+        || name == "."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+    {
+        return Err(format!("invalid name: {name}"));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -99,17 +171,18 @@ fn resolve_write_path(root: &Path, path: &str) -> Result<PathBuf, String> {
 
 /// Return a recursive tree of workspace nodes rooted at `root`.
 ///
-/// Only `.md` files and directories are included. Dotfiles and dot-dirs
-/// (`.git`, `.obsidian`, `.muesli`, `.trash`) are skipped. Within each
+/// `root` must be a known workspace root (recents or registry); an unknown path
+/// is rejected. Only `.md` files and directories are included. Dotfiles and
+/// dot-dirs (`.git`, `.obsidian`, `.muesli`, `.trash`) are skipped. Within each
 /// directory folders appear first (case-insensitive alphabetical order),
 /// then files (same order).
 #[tauri::command]
-pub fn read_workspace_tree(root: String) -> Result<WorkspaceNode, String> {
-    let path = Path::new(&root);
+pub fn read_workspace_tree(app: tauri::AppHandle, root: String) -> Result<WorkspaceNode, String> {
+    let path = require_known_workspace_root(&app, &root)?;
     if !path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
-    tree::build_tree(path).map_err(|e| e.to_string())
+    tree::build_tree(&path).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -157,19 +230,62 @@ fn write_note_in(root: &Path, path: &str, contents: &str) -> Result<(), String> 
 }
 
 // ---------------------------------------------------------------------------
-// write_export_file
+// export_file
 // ---------------------------------------------------------------------------
 
-/// Write `contents` to the absolute `path` the user picked in a native save
-/// dialog (used by the toolbar's HTML export).
+/// Sanitize `name` into a safe file stem: keep alphanumerics and a small set of
+/// punctuation, replace everything else with `_`, and fall back to `export` when
+/// the result is empty. Shared by [`export_file`] and [`print_export`].
+fn sanitize_export_stem(name: &str) -> String {
+    let safe: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if safe.trim().is_empty() {
+        "export".to_string()
+    } else {
+        safe
+    }
+}
+
+/// Save an export (the toolbar's standalone HTML render) to a user-chosen
+/// location, returning the saved path — or `None` if the user cancelled.
 ///
-/// Unlike [`write_note`], this is deliberately NOT confined to the workspace
-/// root: the destination comes straight from the OS save dialog, so the user
-/// has already authorized this exact location. There is no `plugin-fs`, so this
-/// small command is how the frontend writes an export to an arbitrary path.
+/// This is the only filesystem write that legitimately lands OUTSIDE the
+/// workspace root, so the destination must not be trusted from the webview.
+/// The native save dialog is opened *in Rust* (`blocking_save_file`), so the
+/// path comes from the OS/user, never from a renderer-supplied argument — a
+/// script in the webview cannot drive this command to an arbitrary path because
+/// there is no path parameter to supply. The dialog plugin's Rust API is not
+/// capability-gated, so no `plugin-fs` grant is involved.
 #[tauri::command]
-pub fn write_export_file(path: String, contents: String) -> Result<(), String> {
-    std::fs::write(&path, contents).map_err(|e| e.to_string())
+pub async fn export_file(
+    app: tauri::AppHandle,
+    name: String,
+    contents: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let stem = sanitize_export_stem(&name);
+    let chosen = app
+        .dialog()
+        .file()
+        .set_file_name(format!("{stem}.html"))
+        .add_filter("HTML", &["html"])
+        .blocking_save_file();
+
+    let Some(file_path) = chosen else {
+        return Ok(None);
+    };
+    let path = file_path.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(&path, contents).map_err(|e| e.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 /// "Export → PDF": write `contents` (a standalone HTML render, with a load-time
@@ -183,21 +299,7 @@ pub fn write_export_file(path: String, contents: String) -> Result<(), String> {
 pub fn print_export(app: tauri::AppHandle, name: String, contents: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
 
-    let safe: String = name
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.') {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let safe = if safe.trim().is_empty() {
-        "export".to_string()
-    } else {
-        safe
-    };
+    let safe = sanitize_export_stem(&name);
 
     let dir = std::env::temp_dir().join("muesli-exports");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -220,16 +322,27 @@ pub fn print_export(app: tauri::AppHandle, name: String, contents: String) -> Re
 /// `Untitled 1.md`, `Untitled 2.md`, …
 ///
 /// Returns the final absolute path.
+///
+/// `dir` must resolve inside the active workspace root and `name` must be a
+/// bare filename; anything else is rejected (defense-in-depth against a
+/// compromised webview).
 #[tauri::command]
-pub fn create_note(dir: String, name: String) -> Result<String, String> {
-    let dir_path = Path::new(&dir);
-    std::fs::create_dir_all(dir_path).map_err(|e| e.to_string())?;
+pub fn create_note(app: tauri::AppHandle, dir: String, name: String) -> Result<String, String> {
+    let root = active_workspace_root(&app)?;
+    create_note_in(&root, &dir, &name)
+}
+
+/// Root-confined body of [`create_note`], separated for unit testing.
+fn create_note_in(root: &Path, dir: &str, name: &str) -> Result<String, String> {
+    reject_unsafe_name(name)?;
+    let dir_path = resolve_dir_path(root, dir)?;
+    std::fs::create_dir_all(&dir_path).map_err(|e| e.to_string())?;
 
     // Strip .md suffix from base_name for dedup logic, then we'll re-append.
     let base_name = if name.to_lowercase().ends_with(".md") {
         name[..name.len() - 3].to_string()
     } else {
-        name
+        name.to_string()
     };
 
     // Try "Untitled.md", "Untitled 1.md", "Untitled 2.md", ...
@@ -258,12 +371,22 @@ pub fn create_note(dir: String, name: String) -> Result<String, String> {
 ///
 /// De-duplicates: `name`, `name 1`, `name 2`, …  Returns the final absolute
 /// path.
+///
+/// `dir` must resolve inside the active workspace root and `name` must be a
+/// bare folder name; anything else is rejected.
 #[tauri::command]
-pub fn create_folder(dir: String, name: String) -> Result<String, String> {
-    let dir_path = Path::new(&dir);
-    std::fs::create_dir_all(dir_path).map_err(|e| e.to_string())?;
+pub fn create_folder(app: tauri::AppHandle, dir: String, name: String) -> Result<String, String> {
+    let root = active_workspace_root(&app)?;
+    create_folder_in(&root, &dir, &name)
+}
 
-    let candidate = dir_path.join(&name);
+/// Root-confined body of [`create_folder`], separated for unit testing.
+fn create_folder_in(root: &Path, dir: &str, name: &str) -> Result<String, String> {
+    reject_unsafe_name(name)?;
+    let dir_path = resolve_dir_path(root, dir)?;
+    std::fs::create_dir_all(&dir_path).map_err(|e| e.to_string())?;
+
+    let candidate = dir_path.join(name);
     if !candidate.exists() {
         std::fs::create_dir(&candidate).map_err(|e| e.to_string())?;
         return Ok(candidate.to_string_lossy().into_owned());
@@ -290,17 +413,29 @@ pub fn create_folder(dir: String, name: String) -> Result<String, String> {
 /// appended so the extension is preserved.
 ///
 /// Returns the new absolute path. Errors if the target already exists.
+///
+/// `path` must resolve inside the active workspace root, and `new_name` must be
+/// a bare filename (no separators / traversal) so the rename stays in the same
+/// parent directory.
 #[tauri::command]
-pub fn rename_path(path: String, new_name: String) -> Result<String, String> {
+pub fn rename_path(
+    app: tauri::AppHandle,
+    path: String,
+    new_name: String,
+) -> Result<String, String> {
+    let root = active_workspace_root(&app)?;
+    rename_path_in(&root, &path, &new_name)
+}
+
+/// Root-confined body of [`rename_path`], separated for unit testing.
+fn rename_path_in(root: &Path, path: &str, new_name: &str) -> Result<String, String> {
     // Renames stay within the same parent: reject path separators / traversal.
-    if new_name.is_empty()
-        || new_name.contains('/')
-        || new_name.contains('\\')
-        || new_name.contains("..")
-    {
-        return Err(format!("invalid name: {new_name}"));
+    reject_unsafe_name(new_name)?;
+    let new_name = new_name.to_string();
+    let src = resolve_read_path(root, path)?;
+    if src.as_path() == root {
+        return Err("refusing to rename the workspace root".to_string());
     }
-    let src = PathBuf::from(&path);
     let parent = src
         .parent()
         .ok_or_else(|| format!("path has no parent: {path}"))?;
@@ -335,15 +470,26 @@ pub fn rename_path(path: String, new_name: String) -> Result<String, String> {
 /// Move `src` into `dest_dir` (keeping the same filename).
 ///
 /// Returns the new absolute path. Errors if the target already exists.
+///
+/// Both `src` and `dest_dir` must resolve inside the active workspace root.
 #[tauri::command]
-pub fn move_path(src: String, dest_dir: String) -> Result<String, String> {
-    let src_path = PathBuf::from(&src);
+pub fn move_path(app: tauri::AppHandle, src: String, dest_dir: String) -> Result<String, String> {
+    let root = active_workspace_root(&app)?;
+    move_path_in(&root, &src, &dest_dir)
+}
+
+/// Root-confined body of [`move_path`], separated for unit testing.
+fn move_path_in(root: &Path, src: &str, dest_dir: &str) -> Result<String, String> {
+    let src_path = resolve_read_path(root, src)?;
+    if src_path.as_path() == root {
+        return Err("refusing to move the workspace root".to_string());
+    }
     let file_name = src_path
         .file_name()
         .ok_or_else(|| format!("src has no file name: {src}"))?;
 
-    let dest_dir_path = Path::new(&dest_dir);
-    std::fs::create_dir_all(dest_dir_path).map_err(|e| e.to_string())?;
+    let dest_dir_path = resolve_dir_path(root, dest_dir)?;
+    std::fs::create_dir_all(&dest_dir_path).map_err(|e| e.to_string())?;
 
     let dest = dest_dir_path.join(file_name);
     if dest.exists() {
@@ -359,9 +505,22 @@ pub fn move_path(src: String, dest_dir: String) -> Result<String, String> {
 // ---------------------------------------------------------------------------
 
 /// Move `path` to the OS trash using the `trash` crate.
+///
+/// `path` must resolve inside the active workspace root and may not be the root
+/// itself; anything else is rejected before `trash::delete` is ever reached.
 #[tauri::command]
-pub fn delete_path(path: String) -> Result<(), String> {
-    trash::delete(&path).map_err(|e| e.to_string())
+pub fn delete_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let root = active_workspace_root(&app)?;
+    delete_path_in(&root, &path)
+}
+
+/// Root-confined body of [`delete_path`], separated for unit testing.
+fn delete_path_in(root: &Path, path: &str) -> Result<(), String> {
+    let resolved = resolve_read_path(root, path)?;
+    if resolved.as_path() == root {
+        return Err("refusing to delete the workspace root".to_string());
+    }
+    trash::delete(&resolved).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -432,14 +591,23 @@ fn dir_md_size(dir: &Path) -> (u64, usize) {
 }
 
 /// Return basic metadata for `path` (size, modified/created times, child count).
+///
+/// `path` must resolve inside the active workspace root; anything else is
+/// rejected (a metadata/enumeration leak otherwise).
 #[tauri::command]
-pub fn stat_path(path: String) -> Result<PathInfo, String> {
-    let p = PathBuf::from(&path);
+pub fn stat_path(app: tauri::AppHandle, path: String) -> Result<PathInfo, String> {
+    let root = active_workspace_root(&app)?;
+    stat_path_in(&root, &path)
+}
+
+/// Root-confined body of [`stat_path`], separated for unit testing.
+fn stat_path_in(root: &Path, path: &str) -> Result<PathInfo, String> {
+    let p = resolve_read_path(root, path)?;
     let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
     let name = p
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.clone());
+        .unwrap_or_else(|| path.to_string());
     let is_dir = meta.is_dir();
     let (size, child_count) = if is_dir {
         let (s, c) = dir_md_size(&p);
@@ -484,13 +652,50 @@ mod tests {
     #[test]
     fn create_note_dedup() {
         let tmp = TempDir::new().unwrap();
-        let dir = tmp.path().to_str().unwrap().to_string();
+        let root = tmp.path().canonicalize().unwrap();
+        let dir = root.to_str().unwrap().to_string();
 
-        let first = create_note(dir.clone(), "Untitled".to_string()).unwrap();
+        let first = create_note_in(&root, &dir, "Untitled").unwrap();
         assert!(first.ends_with("Untitled.md"), "first: {first}");
 
-        let second = create_note(dir.clone(), "Untitled".to_string()).unwrap();
+        let second = create_note_in(&root, &dir, "Untitled").unwrap();
         assert!(second.ends_with("Untitled 1.md"), "second: {second}");
+    }
+
+    /// create_note/create_folder create in a nested in-root dir, but reject a
+    /// dir outside the workspace, a `..` escape, and unsafe leaf names.
+    #[test]
+    fn create_note_folder_confined_to_root() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let outside = TempDir::new().unwrap();
+        let outside_root = outside.path().canonicalize().unwrap();
+
+        // In-root (including a not-yet-existing nested dir) succeeds.
+        let sub = root.join("sub").to_str().unwrap().to_string();
+        let note = create_note_in(&root, &sub, "Untitled").unwrap();
+        assert!(note.ends_with("Untitled.md"));
+        let folder = create_folder_in(&root, root.to_str().unwrap(), "Ideas").unwrap();
+        assert!(folder.ends_with("Ideas"));
+
+        // Dir outside the workspace, or a `..` escape, is rejected.
+        let out = outside_root.to_str().unwrap().to_string();
+        assert!(create_note_in(&root, &out, "x").is_err());
+        assert!(create_folder_in(&root, &out, "x").is_err());
+        let escape = root.join("..").to_str().unwrap().to_string();
+        assert!(create_note_in(&root, &escape, "x").is_err());
+        assert!(create_folder_in(&root, &escape, "x").is_err());
+
+        // Unsafe leaf names are rejected before any filesystem touch.
+        for bad in ["../evil", "a/b", "..", ""] {
+            assert!(create_note_in(&root, &sub, bad).is_err(), "note {bad:?}");
+            assert!(
+                create_folder_in(&root, &sub, bad).is_err(),
+                "folder {bad:?}"
+            );
+        }
+        // Nothing landed outside the workspace.
+        assert!(!outside_root.join("x.md").exists());
     }
 
     // -----------------------------------------------------------------------
@@ -501,11 +706,11 @@ mod tests {
     #[test]
     fn rename_keeps_md_extension() {
         let tmp = TempDir::new().unwrap();
-        let root = tmp.path();
-        mkfile(root, "a.md");
+        let root = tmp.path().canonicalize().unwrap();
+        mkfile(&root, "a.md");
 
         let src = root.join("a.md").to_str().unwrap().to_string();
-        let new_path = rename_path(src, "b".to_string()).unwrap();
+        let new_path = rename_path_in(&root, &src, "b").unwrap();
 
         assert!(new_path.ends_with("b.md"), "new_path: {new_path}");
         assert!(Path::new(&new_path).exists());
@@ -515,17 +720,33 @@ mod tests {
     #[test]
     fn rename_rejects_path_traversal() {
         let tmp = TempDir::new().unwrap();
-        let root = tmp.path();
-        mkfile(root, "a.md");
+        let root = tmp.path().canonicalize().unwrap();
+        mkfile(&root, "a.md");
         let src = root.join("a.md").to_str().unwrap().to_string();
         for bad in ["../evil", "sub/evil", "..", ""] {
             assert!(
-                rename_path(src.clone(), bad.to_string()).is_err(),
+                rename_path_in(&root, &src, bad).is_err(),
                 "expected error for {bad:?}"
             );
         }
         // Original untouched.
         assert!(root.join("a.md").exists());
+    }
+
+    /// rename_path rejects a source path outside the workspace root.
+    #[test]
+    fn rename_rejects_source_outside_root() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let outside = TempDir::new().unwrap();
+        let outside_root = outside.path().canonicalize().unwrap();
+        std::fs::write(outside_root.join("secret.md"), "secret").unwrap();
+
+        let src = outside_root.join("secret.md").to_str().unwrap().to_string();
+        assert!(rename_path_in(&root, &src, "pwned").is_err());
+        // Untouched, and no rename landed outside the workspace.
+        assert!(outside_root.join("secret.md").exists());
+        assert!(!outside_root.join("pwned.md").exists());
     }
 
     // -----------------------------------------------------------------------
@@ -631,19 +852,121 @@ mod tests {
     #[test]
     fn move_path_into_subdir() {
         let tmp = TempDir::new().unwrap();
-        let root = tmp.path();
-        mkfile(root, "note.md");
+        let root = tmp.path().canonicalize().unwrap();
+        mkfile(&root, "note.md");
         let sub = root.join("sub");
         std::fs::create_dir_all(&sub).unwrap();
 
         let src = root.join("note.md").to_str().unwrap().to_string();
         let dest_dir = sub.to_str().unwrap().to_string();
 
-        let new_path = move_path(src.clone(), dest_dir).unwrap();
+        let new_path = move_path_in(&root, &src, &dest_dir).unwrap();
 
         assert!(!Path::new(&src).exists(), "original should be gone");
         assert!(Path::new(&new_path).exists(), "dest should exist");
         assert!(new_path.ends_with("note.md"));
+    }
+
+    /// move_path rejects a source or destination outside the workspace root.
+    #[test]
+    fn move_path_rejects_paths_outside_root() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        mkfile(&root, "note.md");
+        let outside = TempDir::new().unwrap();
+        let outside_root = outside.path().canonicalize().unwrap();
+        std::fs::write(outside_root.join("secret.md"), "secret").unwrap();
+
+        let in_src = root.join("note.md").to_str().unwrap().to_string();
+        let out_dir = outside_root.to_str().unwrap().to_string();
+        let out_src = outside_root.join("secret.md").to_str().unwrap().to_string();
+        let in_dir = root.to_str().unwrap().to_string();
+
+        // Destination outside the root: rejected, file stays put.
+        assert!(move_path_in(&root, &in_src, &out_dir).is_err());
+        assert!(root.join("note.md").exists());
+        assert!(!outside_root.join("note.md").exists());
+
+        // Source outside the root: rejected, secret untouched.
+        assert!(move_path_in(&root, &out_src, &in_dir).is_err());
+        assert!(outside_root.join("secret.md").exists());
+        assert!(!root.join("secret.md").exists());
+
+        // `..` escape on the destination is rejected too.
+        let escape = root.join("..").to_str().unwrap().to_string();
+        assert!(move_path_in(&root, &in_src, &escape).is_err());
+    }
+
+    /// rename_path and move_path refuse to operate on the workspace root
+    /// itself: renaming/moving the vault dir would push it outside the boundary
+    /// (parent.join(new_name)) and is never a legitimate file-tree action.
+    #[test]
+    fn rename_and_move_refuse_the_root() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let sub = root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        // rename the root → refused, root still there.
+        assert!(rename_path_in(&root, root.to_str().unwrap(), "evil").is_err());
+        assert!(root.exists());
+        assert!(!root.parent().unwrap().join("evil").exists());
+
+        // move the root into a subdir → refused.
+        let dest = sub.to_str().unwrap().to_string();
+        assert!(move_path_in(&root, root.to_str().unwrap(), &dest).is_err());
+        assert!(root.exists());
+    }
+
+    /// The `resolve_read_path` contract that backs the note-IO commands
+    /// (read_note/delete/stat/move-src/rename-src): a path inside the active
+    /// root resolves, an out-of-root path is rejected. (The workspace-open
+    /// commands — tree/search/graph — instead gate on known-workspace
+    /// membership, tested in `workspaces_cmd`.)
+    #[test]
+    fn root_confinement_rejects_out_of_root_enumeration() {
+        let tmp = TempDir::new().unwrap();
+        let active = tmp.path().canonicalize().unwrap();
+        let sub = active.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let outside = TempDir::new().unwrap();
+        let outside_root = outside.path().canonicalize().unwrap();
+
+        // The active root itself and a subdir resolve (legit in-root IO).
+        assert_eq!(
+            resolve_read_path(&active, active.to_str().unwrap()).unwrap(),
+            active
+        );
+        assert!(resolve_read_path(&active, sub.to_str().unwrap()).is_ok());
+        // A root outside the active workspace is refused (no arbitrary `.md`
+        // enumeration / content grep).
+        assert!(resolve_read_path(&active, outside_root.to_str().unwrap()).is_err());
+    }
+
+    /// delete_path rejects paths outside the workspace root (and the root
+    /// itself) before ever calling into the OS trash.
+    #[test]
+    fn delete_path_rejects_paths_outside_root() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let outside = TempDir::new().unwrap();
+        let outside_root = outside.path().canonicalize().unwrap();
+        std::fs::write(outside_root.join("secret.md"), "secret").unwrap();
+
+        let secret = outside_root.join("secret.md").to_str().unwrap().to_string();
+        assert!(delete_path_in(&root, &secret).is_err());
+        assert!(outside_root.join("secret.md").exists());
+
+        let escape = root
+            .join("..")
+            .join("evil.md")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(delete_path_in(&root, &escape).is_err());
+
+        // The workspace root itself is not a deletable target.
+        assert!(delete_path_in(&root, root.to_str().unwrap()).is_err());
     }
 
     // -----------------------------------------------------------------------
@@ -654,10 +977,11 @@ mod tests {
     #[test]
     fn stat_path_file() {
         let tmp = TempDir::new().unwrap();
-        let p = tmp.path().join("note.md");
+        let root = tmp.path().canonicalize().unwrap();
+        let p = root.join("note.md");
         std::fs::write(&p, "hello").unwrap();
 
-        let info = stat_path(p.to_str().unwrap().to_string()).unwrap();
+        let info = stat_path_in(&root, p.to_str().unwrap()).unwrap();
         assert_eq!(info.name, "note.md");
         assert!(!info.is_dir);
         assert_eq!(info.size, 5);
@@ -669,7 +993,7 @@ mod tests {
     #[test]
     fn stat_path_folder_sums_md() {
         let tmp = TempDir::new().unwrap();
-        let root = tmp.path();
+        let root = tmp.path().canonicalize().unwrap();
         std::fs::write(root.join("a.md"), "aaa").unwrap();
         std::fs::write(root.join("b.md"), "bb").unwrap();
         std::fs::write(root.join("ignore.txt"), "xxxxx").unwrap();
@@ -677,11 +1001,36 @@ mod tests {
         std::fs::create_dir_all(&sub).unwrap();
         std::fs::write(sub.join("c.md"), "c").unwrap();
 
-        let info = stat_path(root.to_str().unwrap().to_string()).unwrap();
+        let info = stat_path_in(&root, root.to_str().unwrap()).unwrap();
         assert!(info.is_dir);
         // 3 + 2 (root .md) + 1 (nested .md) = 6 bytes; non-.md ignored.
         assert_eq!(info.size, 6);
         // Only immediate .md children are counted.
         assert_eq!(info.child_count, Some(2));
+    }
+
+    /// stat_path refuses to report metadata for a path outside the workspace.
+    #[test]
+    fn stat_path_rejects_outside_root() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let outside = TempDir::new().unwrap();
+        let outside_root = outside.path().canonicalize().unwrap();
+        std::fs::write(outside_root.join("secret.md"), "secret").unwrap();
+
+        let secret = outside_root.join("secret.md").to_str().unwrap().to_string();
+        assert!(stat_path_in(&root, &secret).is_err());
+    }
+
+    /// The export filename sanitizer strips path separators / traversal and
+    /// falls back to `export` for an empty result — so `export_file`'s default
+    /// filename can never introduce a path.
+    #[test]
+    fn sanitize_export_stem_is_a_bare_name() {
+        assert_eq!(sanitize_export_stem("My Note"), "My Note");
+        assert_eq!(sanitize_export_stem("../../etc/passwd"), ".._.._etc_passwd");
+        assert_eq!(sanitize_export_stem("a/b\\c"), "a_b_c");
+        assert_eq!(sanitize_export_stem("   "), "export");
+        assert_eq!(sanitize_export_stem(""), "export");
     }
 }

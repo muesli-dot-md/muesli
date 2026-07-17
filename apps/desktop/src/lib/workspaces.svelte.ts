@@ -191,7 +191,7 @@ class WorkspacesStore {
    * collision). Stops the daemon only when the moved workspace is the open one,
    * then reopens it at the new location.
    */
-  async relocateWorkspace(view: WorkspaceView, newParent: string): Promise<void> {
+  async relocateWorkspace(view: WorkspaceView): Promise<void> {
     if (!view.local_path) return;
     this.error = null;
     this.busy = true;
@@ -199,7 +199,14 @@ class WorkspacesStore {
       const norm = (p: string) => p.replace(/\/+$/, "");
       let wasActive = workspace.root != null && norm(workspace.root) === norm(view.local_path);
       if (wasActive) await daemon.stop();
-      const newPath = await relocateWorkspaceCmd(view.id, view.local_path, newParent);
+      // relocateWorkspaceCmd opens the Rust-owned folder dialog for the new
+      // parent and derives the source from the id. null = the user cancelled;
+      // nothing moved, so restart the daemon at the original location.
+      const newPath = await relocateWorkspaceCmd(view.id);
+      if (!newPath) {
+        if (wasActive) await this.openFolderWithSync(view.local_path, view.server, view.id);
+        return;
+      }
       if (!wasActive && workspace.root) {
         // The string compare can miss the open workspace when the two sides
         // spell the same folder differently (symlinked prefix, stale recents

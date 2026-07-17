@@ -28,7 +28,7 @@
   import { colorFromId, initials as initialsFrom } from "$lib/presence";
   import { workspaces } from "$lib/workspaces.svelte";
   import { workspace } from "$lib/workspace.svelte";
-  import { pickFolder, prepareCloneDir } from "$lib/tauri";
+  import { pickWorkspace, prepareCloneDir } from "$lib/tauri";
   import type { WorkspaceView } from "$lib/tauri";
   import CreateWorkspaceModal from "$lib/CreateWorkspaceModal.svelte";
 
@@ -105,14 +105,14 @@
   }
 
   async function selectWorkspace(view: WorkspaceView) {
-    // Cloud-only clones on click: pick where the workspace's folder goes; the
-    // folder itself is created for it, named after the workspace.
+    // Cloud-only clones on click: the Rust-owned dialog (inside prepareCloneDir)
+    // picks where the workspace's folder goes; the folder itself is created for
+    // it, named after the workspace.
     if (view.state === "cloud-only") {
       if (workspaces.cloning) return;
-      const parent = await pickFolder();
-      if (!parent) return;
+      const path = await prepareCloneDir(view.name);
+      if (!path) return;
       close();
-      const path = await prepareCloneDir(parent, view.name);
       // openWorkspaceView flips workspaces.cloning while the pull runs.
       await workspaces.openWorkspaceView(view, path);
       return;
@@ -123,10 +123,9 @@
 
   async function move(view: WorkspaceView) {
     if (workspaces.busy || !view.local_path) return;
-    const parent = await pickFolder();
-    if (!parent) return;
+    // relocateWorkspace opens the Rust-owned dialog for the new parent.
     close();
-    await workspaces.relocateWorkspace(view, parent);
+    await workspaces.relocateWorkspace(view);
   }
 
   async function promote(view: WorkspaceView) {
@@ -142,7 +141,9 @@
 
   async function openLocal() {
     close();
-    const path = await pickFolder();
+    // Rust-owned picker: admits the chosen folder as a workspace root so the
+    // subsequent open (which anchors note-IO confinement) is authorized.
+    const path = await pickWorkspace();
     if (!path) return;
     const name = path.split("/").filter(Boolean).pop() ?? path;
     await workspaces.openLocalFolder(path, name);

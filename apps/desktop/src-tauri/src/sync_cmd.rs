@@ -21,13 +21,31 @@ pub async fn clone_workspace(
         .map_err(|e| format!("{e:#}"))
 }
 
-/// Create the workspace's own subfolder under `parent` (the directory the user
-/// picked) and return its path — the clone target. See clone::prepare_clone_dir.
+/// Pick the clone's destination PARENT via a native folder dialog opened IN
+/// RUST, create the workspace's own `<parent>/<sanitized-name>` subfolder under
+/// it, admit that folder as a known workspace root, and return its path (or
+/// `None` if the user cancelled).
+///
+/// Invariant: the destination parent is chosen by the OS/user, never supplied by
+/// the webview. This is what closes the LaunchAgent-persistence class — a
+/// renderer must not be able to point the clone at, say, `~/Library/
+/// LaunchAgents`, admit it as an active root, and then have the confined (but
+/// non-`.md`-restricted) `write_note` drop an auto-loaded plist there. `name` is
+/// only a leaf, sanitized by `clone::prepare_clone_dir` (no separators), so it
+/// cannot traverse out of the picked parent either.
 #[tauri::command]
-pub fn prepare_clone_dir(parent: String, name: String) -> Result<String, String> {
-    crate::clone::prepare_clone_dir(&PathBuf::from(parent), &name)
+pub async fn prepare_clone_dir(app: AppHandle, name: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let Some(parent) = app.dialog().file().blocking_pick_folder() else {
+        return Ok(None);
+    };
+    let parent = parent.into_path().map_err(|e| e.to_string())?;
+    let path = crate::clone::prepare_clone_dir(&parent, &name)
         .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|e| format!("{e:#}"))
+        .map_err(|e| format!("{e:#}"))?;
+    crate::workspace::recent::admit_recent(&app, &path)?;
+    Ok(Some(path))
 }
 
 /// Start (or switch to) the Tier-1 content-sync daemon over `path` for `workspace_id`

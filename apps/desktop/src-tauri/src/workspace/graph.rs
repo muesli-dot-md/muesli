@@ -238,14 +238,18 @@ fn build_graph(files: &[(String, String, String)]) -> LinkGraph {
 
 /// Scan the workspace at `root` for `.md` notes and their `[[wikilinks]]`,
 /// returning the node/edge/unresolved set for the graph view.
+///
+/// `root` must be a known workspace root (recents or registry); an unknown path
+/// is rejected (this reads `.md` contents, so an unconfined root would leak
+/// arbitrary files).
 #[tauri::command]
-pub fn build_link_graph(root: String) -> Result<LinkGraph, String> {
-    let root_path = Path::new(&root);
+pub fn build_link_graph(app: tauri::AppHandle, root: String) -> Result<LinkGraph, String> {
+    let root_path = super::require_known_workspace_root(&app, &root)?;
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
     let mut md: Vec<(std::path::PathBuf, String)> = Vec::new();
-    collect_md(root_path, &mut md);
+    collect_md(&root_path, &mut md);
 
     let files: Vec<(String, String, String)> = md
         .into_iter()

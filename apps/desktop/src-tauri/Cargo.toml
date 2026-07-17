@@ -48,6 +48,8 @@ transcribe-rs = { version = "=0.3.8", features = ["onnx"] }
 ureq = "2"
 tar = "0.4"
 flate2 = "1"
+# Integrity verification of the downloaded model tarball (see stt/model.rs).
+sha2 = "0.10"
 chrono = "0.4"
 # System-lane loudness normalization (EBU R128). Pure Rust port of libebur128
 # (MIT, no C), cross-platform so its tests run in CI. See audio/normalize.rs.
