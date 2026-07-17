@@ -186,23 +186,35 @@ impl SessionCtx {
                 println!("✓ synced {label} ⇄ #{}", self.doc_id);
                 shared.note(format!("synced {label}"));
                 shared.mark_synced(&self.doc_id);
-                let _ = store::touch_synced(&self.file);
+                let _ = store::touch_synced(&self.file, None);
             }
         }
     }
 
-    fn on_ingest(&self, update_len: usize) {
+    /// `text` is the ingested disk text (== `last_written` at the call site), called
+    /// AFTER the update was accepted by the socket sink. The persisted hash is a
+    /// best-effort trust-on-send marker: the transport took the frame, but there is no
+    /// server ack (and a read-only session's writes are dropped server-side), so it can
+    /// overclaim; the failure mode is the merge path on a later first connect, never
+    /// data loss. Persisted in EVERY mode — `muesli open` sessions feed the same
+    /// baseline the sync daemon consults on its next first connect.
+    fn on_ingest(&self, update_len: usize, text: &str) {
         match &self.mode {
             SessionMode::Open { .. } => info!("ingested disk edit ({} bytes update)", update_len),
             SessionMode::Sync { label, shared } => {
                 println!("↑ ingested external edit: {label}");
                 shared.note(format!("sent edit · {label}"));
-                let _ = store::touch_synced(&self.file);
             }
         }
+        let _ = store::touch_synced(&self.file, Some(text));
     }
 
-    fn on_materialize(&self) {
+    /// `synced_text` is `Some` only when the materialized content is also held by the
+    /// server (a live-connection materialize). An OFFLINE materialize passes `None`:
+    /// persisting the hash of un-pushed content would let a later first connect treat
+    /// the offline edit as "already synced" and overwrite it with the room's text.
+    /// Persisted in EVERY mode (see `on_ingest`).
+    fn on_materialize(&self, synced_text: Option<&str>) {
         match &self.mode {
             SessionMode::Open { .. } => {
                 info!("materialized remote edits → {}", self.file.display())
@@ -210,9 +222,20 @@ impl SessionCtx {
             SessionMode::Sync { label, shared } => {
                 println!("↓ synced remote edit → {label}");
                 shared.note(format!("received edit · {label}"));
-                let _ = store::touch_synced(&self.file);
             }
         }
+        let _ = store::touch_synced(&self.file, synced_text);
+    }
+
+    /// Persist the synced baseline: `text` is simultaneously on disk, in `last_written`
+    /// and in the replica, and is part of the room's state (received from it, or pushed
+    /// to it on this connection's sink). Mode-independent: the link row exists in every
+    /// mode (`Open` records it in `on_first_sync` before reconcile runs; `Sync` links
+    /// are recorded at link time), and a baseline written by `muesli open` is exactly
+    /// what protects the next daemon first connect from mistaking the file for an
+    /// offline edit. Same trust-on-send caveat as `on_ingest`.
+    fn on_synced_baseline(&self, text: &str) {
+        let _ = store::touch_synced(&self.file, Some(text));
     }
 
     /// Track the latest replica/disk text (rename re-bind needs its hash).
@@ -327,7 +350,8 @@ impl FileSession {
                     if text != *last_written && atomic_write(file, &text).is_ok() {
                         *last_written = text;
                         ctx.note_text(last_written);
-                        ctx.on_materialize();
+                        // Offline: the content has NOT reached the server — no hash.
+                        ctx.on_materialize(None);
                     }
                 }
             };
@@ -402,7 +426,8 @@ impl FileSession {
                         } else {
                             *last_written = text;
                             ctx.note_text(last_written);
-                            ctx.on_materialize();
+                            // Offline: the content has NOT reached the server — no hash.
+                            ctx.on_materialize(None);
                         }
                     }
                 }
@@ -446,6 +471,14 @@ impl FileSession {
             *last_written = disk_text.clone();
             ctx.note_text(last_written);
         }
+        // On a first connect the baseline above is VACUOUS — `disk == last_written`
+        // holds by construction — so reconcile must not read it as "nothing happened
+        // offline". Only the persisted last-synced hash can distinguish an untouched
+        // disk from one edited while the daemon was down: without a match, reconcile
+        // falls through to the merge path and the disk's possible offline edit survives
+        // as CRDT ops instead of being overwritten by the room's text.
+        let baseline_trusted = *announced
+            || store::last_synced_hash(file).is_some_and(|h| h == store::content_hash(&disk_text));
 
         let mut request = ctx.url.as_str().into_client_request()?;
         if let Some(token) = &ctx.token {
@@ -505,6 +538,13 @@ impl FileSession {
                         match msg? {
                             Message::Binary(data) => {
                                 let fo = handle_frame(replica, &data, &mut dirty);
+                                if fo.step2_failed {
+                                    // The client sends exactly one STEP1 per connection,
+                                    // so no replacement STEP2 will arrive on this socket:
+                                    // reconnect (run()'s exponential backoff) to retry
+                                    // the handshake instead of limping un-synced.
+                                    bail!("the server's sync step 2 failed to apply — retrying the handshake");
+                                }
                                 if let Some(reply) = fo.reply {
                                     sink.send(Message::Binary(reply)).await?;
                                 }
@@ -517,7 +557,13 @@ impl FileSession {
                                         let _ = tx.send(frame_awareness(&aw));
                                     }
                                 }
-                                if !synced_once && is_sync_frame(&data) {
+                                // First-sync gate: the room greets a joiner with its own
+                                // STEP1 (a state vector, no content) before its STEP2
+                                // reply on the same FIFO, and handle_frame applies a
+                                // STEP2 payload before returning — so step2_applied
+                                // guarantees the replica holds the server's content when
+                                // reconcile decides whether to seed, merge or materialize.
+                                if !synced_once && fo.step2_applied {
                                     synced_once = true;
                                     *synced = true;
                                     if !*announced {
@@ -526,10 +572,14 @@ impl FileSession {
                                     }
                                     // Reconcile room state vs disk state (covers offline edits).
                                     let disk_now = std::fs::read_to_string(file).unwrap_or_else(|_| disk_text.clone());
-                                    if let Some(update) = reconcile(replica, &disk_now, file, last_written)? {
+                                    if let Some(update) = reconcile(replica, &disk_now, file, last_written, baseline_trusted)? {
                                         ctx.note_text(last_written);
                                         sink.send(Message::Binary(frame_sync(SYNC_UPDATE, &update))).await?;
                                     }
+                                    // Reconcile leaves disk, last_written and the replica
+                                    // holding the same room-backed text: persist its hash
+                                    // as the baseline for the next first connect.
+                                    ctx.on_synced_baseline(last_written);
                                 }
                                 if dirty {
                                     materialize_timer.as_mut().reset(tokio::time::Instant::now() + MATERIALIZE_DEBOUNCE);
@@ -542,7 +592,16 @@ impl FileSession {
                     }
 
                     // ── Disk → replica → server (ingest) ───────────────────────────────
-                    Some(()) = fs_rx.recv() => {
+                    // Gated on handshake completion for the run's FIRST connection:
+                    // ingest diffs the disk against the replica, which is EMPTY until
+                    // the server's STEP2 is applied — ingesting earlier would push the
+                    // whole file as brand-new ops into a possibly non-empty room
+                    // (duplication). Nothing is lost while the gate is closed: the event
+                    // stays queued on fs_rx, and the reconcile at the gate re-reads the
+                    // disk fresh, so a pre-handshake edit reaches the room through the
+                    // merge path. On reconnects (`announced`) the replica is already
+                    // populated and ingest is safe from the first event.
+                    Some(()) = fs_rx.recv(), if synced_once || *announced => {
                         touch_idle!();
                         // Small settle delay: editors emit bursts (write + rename).
                         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -567,8 +626,10 @@ impl FileSession {
                                     warn!("external edit replaced most of the document — merged as one change");
                                 }
                                 let update = replica.diff_update(&sv).map_err(|e| anyhow::anyhow!(e.to_string()))?;
-                                ctx.on_ingest(update.len());
                                 sink.send(Message::Binary(frame_sync(SYNC_UPDATE, &update))).await?;
+                                // Only after the sink accepted the frame (trust-on-send,
+                                // see on_ingest): a failed send must not move the marker.
+                                ctx.on_ingest(update.len(), last_written);
                                 // A disk edit shows live in the editor too (replaces the Plan-2 poll).
                                 if let Some(tx) = &out_tx {
                                     let _ = tx.send(frame_sync(SYNC_UPDATE, &update));
@@ -586,7 +647,7 @@ impl FileSession {
                             atomic_write(file, &text)?;
                             *last_written = text;
                             ctx.note_text(last_written);
-                            ctx.on_materialize();
+                            ctx.on_materialize(Some(last_written));
                         }
                     }
 
@@ -654,6 +715,18 @@ impl FileSession {
                 atomic_write(file, &text)?;
                 *last_written = text;
                 ctx.note_text(last_written);
+                // A clean exit (Flush/Idle) flushes content that reached the replica
+                // from server frames or from editor deltas already accepted by this
+                // connection's sink — server-held text, exactly like the live
+                // materialize arm — so it must move the persisted baseline too: a stale
+                // hash would make the next first connect treat this write as an offline
+                // edit and, if the room advances meanwhile, merge it over the newer
+                // room text. An error exit keeps the old baseline — the connection died
+                // mid-frame, so no such claim can be made; the reconnect handshake
+                // resyncs from the retained replica instead.
+                if session.is_ok() {
+                    ctx.on_synced_baseline(last_written);
+                }
             }
         }
         session
@@ -678,6 +751,16 @@ pub(crate) struct FrameOut {
     pub reply: Option<Vec<u8>>,
     pub delta: Option<Vec<u8>>,
     pub awareness: Option<Vec<u8>>,
+    /// Set ONLY when a SYNC_STEP2 payload decoded and applied cleanly: the positive
+    /// proof that the replica now holds the server's content. The first-sync gate keys
+    /// on this, so every failure mode — unknown frame, truncated framing, undecodable
+    /// payload — leaves the gate closed by construction (an empty replica behind a
+    /// passed gate would re-seed a non-empty room and duplicate the document).
+    pub step2_applied: bool,
+    /// A SYNC_STEP2 frame arrived but its payload could not be read or applied (the
+    /// replica is untouched). The client sends exactly one STEP1 per connection, so no
+    /// replacement STEP2 will come: the session must reconnect to retry the handshake.
+    pub step2_failed: bool,
 }
 
 /// Parse one peer frame against `replica`. Applies sync payloads; sets `dirty` when the
@@ -695,6 +778,9 @@ pub(crate) fn handle_frame(replica: &MuesliDoc, data: &[u8], dirty: &mut bool) -
                 return out;
             };
             let Ok(payload) = c.read_bytes() else {
+                // Truncated framing: for a STEP2 this is a failed handshake, not a
+                // skippable frame (see FrameOut::step2_failed).
+                out.step2_failed = subtype == SYNC_STEP2;
                 return out;
             };
             match subtype {
@@ -705,10 +791,19 @@ pub(crate) fn handle_frame(replica: &MuesliDoc, data: &[u8], dirty: &mut bool) -
                 }
                 SYNC_STEP2 | SYNC_UPDATE => {
                     let before = replica.state_vector();
-                    if replica.apply_update_changed(payload).unwrap_or(false) {
-                        *dirty = true;
-                        if let Ok(delta) = replica.diff_update(&before) {
-                            out.delta = Some(delta);
+                    match replica.apply_update_changed(payload) {
+                        Ok(changed) => {
+                            out.step2_applied = subtype == SYNC_STEP2;
+                            if changed {
+                                *dirty = true;
+                                if let Ok(delta) = replica.diff_update(&before) {
+                                    out.delta = Some(delta);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!(%e, "sync payload failed to apply — ignored");
+                            out.step2_failed = subtype == SYNC_STEP2;
                         }
                     }
                 }
@@ -725,19 +820,20 @@ pub(crate) fn handle_frame(replica: &MuesliDoc, data: &[u8], dirty: &mut bool) -
     out
 }
 
-/// Heuristic: the first sync frame (step 1 or step 2) from the server completes the handshake.
-fn is_sync_frame(data: &[u8]) -> bool {
-    let mut c = Cursor::new(data);
-    matches!(c.read_var_u64(), Ok(MSG_SYNC))
-}
-
 /// First-sync reconciliation of room state vs disk state (internal/design/ingest-and-
 /// materialization.md, "offline daemon" case). Returns an update to send, if any.
+///
+/// `baseline_trusted` is false only on a first connect whose disk content does not
+/// match the persisted last-synced hash: `last_written` was just seeded FROM the disk,
+/// so `disk == last_written` holds vacuously and must not be read as "no offline edit"
+/// — the merge path below is the safe interpretation (the disk's edit becomes CRDT ops
+/// rather than being overwritten by the room's text).
 fn reconcile(
     replica: &MuesliDoc,
     disk_text: &str,
     file: &Path,
     last_written: &mut String,
+    baseline_trusted: bool,
 ) -> Result<Option<Vec<u8>>> {
     let room_text = replica.materialize();
     if room_text == disk_text {
@@ -761,7 +857,7 @@ fn reconcile(
         info!("materialized room state → {}", file.display());
         return Ok(None);
     }
-    if disk_text == *last_written {
+    if disk_text == *last_written && baseline_trusted {
         // The file holds exactly what we last wrote — nothing external happened. The
         // divergence is replica-side (remote ops merged during this handshake, or
         // offline editor edits whose exit flush failed): ingesting the stale disk
@@ -775,6 +871,17 @@ fn reconcile(
     }
     // Both non-empty and divergent: the disk edit happened while we weren't watching —
     // merge it as an out-of-band ingest (CRDT merge, one coherent change; never discard).
+    if !baseline_trusted && disk_text == *last_written {
+        // First connect with no (or mismatching) persisted baseline: indistinguishable
+        // from an offline edit, so the disk wins as a merge — room-side changes may be
+        // superseded (recoverable via CRDT history). This is the expected one-time path
+        // for links recorded before the hash column existed; logged so the event is
+        // diagnosable.
+        warn!(
+            file = %file.display(),
+            "no trusted sync baseline for this file — merging its disk content over the room's"
+        );
+    }
     let sv = replica.state_vector();
     let outcome = replica.ingest(disk_text);
     if outcome == IngestOutcome::WholesaleReplace {
@@ -912,7 +1019,7 @@ mod tests {
         replica.ingest("base plus offline edit");
         let mut last_written = "base".to_string();
 
-        let update = reconcile(&replica, "base", &file, &mut last_written).unwrap();
+        let update = reconcile(&replica, "base", &file, &mut last_written, true).unwrap();
         assert!(update.is_none(), "no out-of-band ingest to push");
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
@@ -926,6 +1033,201 @@ mod tests {
             "the replica is never reverted to stale disk text"
         );
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn test_dir(tag: &str) -> PathBuf {
+        let tmp = std::env::temp_dir().join(format!("muesli-session-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        tmp
+    }
+
+    /// THE production frame order at daemon start: the room greets a joiner with its
+    /// own SYNC_STEP1 (state vector only, no content) and only then answers the
+    /// client's STEP1 with STEP2 — both on the same FIFO. The first-sync gate must
+    /// ignore the greeting: reconciling on it ran against a still-empty replica, and
+    /// the seed path re-ingested the whole file as brand-new ops into the non-empty
+    /// room, doubling the document on every daemon start.
+    #[test]
+    fn greeting_step1_does_not_open_the_first_sync_gate() {
+        let tmp = test_dir("gate-order");
+        let file = tmp.join("t.md");
+        std::fs::write(&file, "the text T").unwrap();
+
+        let server = MuesliDoc::with_text("the text T");
+        let replica = MuesliDoc::new();
+        let empty_sv = replica.state_vector();
+        // First connect: last_written is seeded from the disk (run_once baseline).
+        let mut last_written = "the text T".to_string();
+        let mut dirty = false;
+
+        // Frame 1: the greeting STEP1, exactly what a room join sends first.
+        let greeting = frame_sync(SYNC_STEP1, &server.state_vector());
+        let fo = handle_frame(&replica, &greeting, &mut dirty);
+        assert!(
+            !fo.step2_applied,
+            "the greeting STEP1 must not open the first-sync gate"
+        );
+        assert!(!fo.step2_failed, "the greeting is a healthy frame");
+        assert!(
+            fo.reply.is_some(),
+            "STEP1 still gets its protocol STEP2 answer"
+        );
+        assert!(fo.delta.is_none(), "no content moved — nothing to push");
+        assert_eq!(
+            replica.materialize(),
+            "",
+            "the replica holds no server content yet"
+        );
+
+        // Frame 2: the server's STEP2 answering our connect STEP1 (diff vs our empty
+        // state). handle_frame applies its payload BEFORE the gate is consulted.
+        let step2 = frame_sync(SYNC_STEP2, &server.diff_update(&empty_sv).unwrap());
+        let fo2 = handle_frame(&replica, &step2, &mut dirty);
+        assert!(fo2.step2_applied, "the STEP2 reply completes the handshake");
+        assert_eq!(
+            replica.materialize(),
+            "the text T",
+            "the replica already holds the server's content when reconcile runs"
+        );
+        // Worst case for the gate: an untrusted first-connect baseline. room == disk
+        // returns before any baseline question arises.
+        let update = reconcile(&replica, "the text T", &file, &mut last_written, false).unwrap();
+        assert!(update.is_none(), "room == disk: nothing to push, no seed");
+        assert_eq!(replica.materialize(), "the text T", "text is NOT doubled");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "the text T");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// An empty room's STEP2 carries an empty diff: the gate opens, the replica stays
+    /// empty, and the legitimate seed path fires exactly once with ONE copy of the file.
+    #[test]
+    fn empty_room_step2_still_seeds_exactly_once() {
+        let tmp = test_dir("gate-seed");
+        let file = tmp.join("s.md");
+        std::fs::write(&file, "seed me").unwrap();
+
+        let server = MuesliDoc::new();
+        let replica = MuesliDoc::new();
+        let step2 = frame_sync(
+            SYNC_STEP2,
+            &server.diff_update(&replica.state_vector()).unwrap(),
+        );
+        let mut dirty = false;
+        let fo = handle_frame(&replica, &step2, &mut dirty);
+        assert!(fo.step2_applied, "an empty diff is a valid STEP2");
+        assert_eq!(
+            replica.materialize(),
+            "",
+            "empty room: the replica stays empty"
+        );
+
+        let mut last_written = "seed me".to_string();
+        let update = reconcile(&replica, "seed me", &file, &mut last_written, false)
+            .unwrap()
+            .expect("a fresh room is seeded from the file");
+        assert_eq!(replica.materialize(), "seed me");
+        let room = MuesliDoc::new();
+        room.apply_update(&update).unwrap();
+        assert_eq!(
+            room.materialize(),
+            "seed me",
+            "exactly one copy of the disk text"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// First connect, disk untouched while the daemon was down (persisted hash matched),
+    /// server advanced: the room's text wins — materialized over the file, nothing pushed.
+    #[test]
+    fn first_connect_trusted_baseline_lets_the_room_win() {
+        let tmp = test_dir("gate-trusted");
+        let file = tmp.join("u.md");
+        std::fs::write(&file, "old disk").unwrap();
+
+        let replica = MuesliDoc::with_text("server advanced");
+        let mut last_written = "old disk".to_string(); // first-connect baseline = disk
+        let update = reconcile(&replica, "old disk", &file, &mut last_written, true).unwrap();
+        assert!(
+            update.is_none(),
+            "nothing external happened — nothing to push"
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "server advanced");
+        assert_eq!(last_written, "server advanced");
+        assert_eq!(replica.materialize(), "server advanced");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// First connect, disk edited while the daemon was down (persisted hash mismatch):
+    /// the offline edit wins as a CRDT merge — pushed to the room, never overwritten.
+    #[test]
+    fn first_connect_offline_edit_wins_as_a_merge() {
+        let tmp = test_dir("gate-offline-edit");
+        let file = tmp.join("o.md");
+        std::fs::write(&file, "offline edit").unwrap();
+
+        let replica = MuesliDoc::with_text("server text");
+        let mut last_written = "offline edit".to_string(); // vacuous first-connect baseline
+        let update = reconcile(&replica, "offline edit", &file, &mut last_written, false)
+            .unwrap()
+            .expect("the offline edit is pushed as CRDT ops");
+        assert!(!update.is_empty());
+        assert_eq!(replica.materialize(), "offline edit");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "offline edit",
+            "the offline edit stays on disk"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// Defense in depth: a STEP2 whose payload fails to apply leaves the replica empty —
+    /// it must NOT open the gate (a non-empty room would be re-seeded, duplicating the
+    /// document), and it must flag the handshake as failed so the session reconnects
+    /// (the client sends exactly one STEP1 per connection — no replacement STEP2 comes).
+    #[test]
+    fn malformed_step2_does_not_open_the_gate() {
+        let replica = MuesliDoc::new();
+        let mut dirty = false;
+        let step2 = frame_sync(SYNC_STEP2, b"definitely not a yrs update");
+        let fo = handle_frame(&replica, &step2, &mut dirty);
+        assert!(
+            !fo.step2_applied,
+            "a failed STEP2 must not open the seed gate"
+        );
+        assert!(fo.step2_failed, "a garbage payload fails the handshake");
+        assert!(!dirty, "the replica is untouched");
+        assert!(fo.delta.is_none());
+        assert_eq!(replica.materialize(), "");
+    }
+
+    /// The gate signal is POSITIVE (step2_applied), so a STEP2 broken at the FRAMING
+    /// layer — header only, or a declared payload length with missing bytes — must
+    /// neither open the gate nor pass as a healthy frame. (A negative "malformed" flag
+    /// re-parsed from the raw bytes missed exactly this case: the framing check bailed
+    /// before the payload was ever inspected.)
+    #[test]
+    fn truncated_step2_framing_does_not_open_the_gate() {
+        let replica = MuesliDoc::new();
+        let mut dirty = false;
+
+        // MSG_SYNC + SYNC_STEP2 varints with no payload length at all.
+        let header_only = vec![0x00, 0x01];
+        let fo = handle_frame(&replica, &header_only, &mut dirty);
+        assert!(
+            !fo.step2_applied,
+            "header-only STEP2 must not open the gate"
+        );
+        assert!(fo.step2_failed, "header-only STEP2 fails the handshake");
+
+        // Declared payload length (5) with the bytes missing.
+        let short_payload = vec![0x00, 0x01, 0x05, 0xaa];
+        let fo2 = handle_frame(&replica, &short_payload, &mut dirty);
+        assert!(!fo2.step2_applied, "short STEP2 must not open the gate");
+        assert!(fo2.step2_failed, "short STEP2 fails the handshake");
+
+        assert!(!dirty, "the replica is untouched");
+        assert_eq!(replica.materialize(), "");
     }
 
     fn offline_test_session(file: PathBuf) -> FileSession {

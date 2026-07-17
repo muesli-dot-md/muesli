@@ -206,12 +206,13 @@ struct LegacyEntry {
 static STORE_LOCK: Mutex<()> = Mutex::new(());
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS links (
-    file_path      TEXT PRIMARY KEY,
-    doc_id         TEXT NOT NULL,
-    server         TEXT NOT NULL,
-    workspace      TEXT,
-    added_at       TEXT NOT NULL DEFAULT (datetime('now')),
-    last_synced_at TEXT
+    file_path        TEXT PRIMARY KEY,
+    doc_id           TEXT NOT NULL,
+    server           TEXT NOT NULL,
+    workspace        TEXT,
+    added_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    last_synced_at   TEXT,
+    last_synced_hash TEXT
 )";
 
 fn open_index_in(dir: &Path) -> Result<Connection> {
@@ -219,7 +220,34 @@ fn open_index_in(dir: &Path) -> Result<Connection> {
     let conn = Connection::open(dir.join("index.db"))?;
     conn.busy_timeout(Duration::from_secs(5))?;
     conn.execute_batch(SCHEMA)?;
+    // CREATE TABLE IF NOT EXISTS never alters an existing table: databases created
+    // before the last_synced_hash column existed gain it here. Two processes (daemon +
+    // CLI) can race this ALTER; the loser's "duplicate column name" error means the
+    // column exists, which is the goal — tolerate it, fail on anything else.
+    let has_hash_column = conn
+        .prepare("SELECT 1 FROM pragma_table_info('links') WHERE name = 'last_synced_hash'")?
+        .exists([])?;
+    if !has_hash_column {
+        if let Err(e) = conn.execute_batch("ALTER TABLE links ADD COLUMN last_synced_hash TEXT") {
+            if !e.to_string().contains("duplicate column name") {
+                return Err(e.into());
+            }
+        }
+    }
     Ok(conn)
+}
+
+/// Deterministic content hash for the persisted last-synced marker (FNV-1a 64, hex).
+/// The stored value must compare equal across daemon restarts AND across releases,
+/// which rules out std's `DefaultHasher` (its algorithm is explicitly unspecified and
+/// free to change between Rust versions).
+pub fn content_hash(text: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in text.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
 }
 
 /// Transparent migration: if `links.json` exists and `index.db` does not, import the JSON
@@ -297,10 +325,16 @@ fn record_link_in(
 ) -> Result<()> {
     let _guard = STORE_LOCK.lock().unwrap();
     let conn = open_index_in(dir)?;
+    // last_synced_hash certifies the content of ONE room: re-linking the path to a
+    // different doc (or server) must not inherit the old room's baseline, or the next
+    // first connect would trust a hash the new room never held.
     conn.execute(
         "INSERT INTO links (file_path, doc_id, server, workspace) VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(file_path) DO UPDATE SET
-           doc_id = excluded.doc_id, server = excluded.server, workspace = excluded.workspace",
+           doc_id = excluded.doc_id, server = excluded.server, workspace = excluded.workspace,
+           last_synced_hash = CASE
+             WHEN links.doc_id = excluded.doc_id AND links.server = excluded.server
+             THEN links.last_synced_hash ELSE NULL END",
         params![file.to_string_lossy(), doc, http_base(server), workspace],
     )?;
     drop(conn);
@@ -348,15 +382,54 @@ fn rebind_link_in(dir: &Path, doc: &str, server: &str, new_file: &Path) -> Resul
     write_mirror_in(dir)
 }
 
-/// Stamp sync activity (shown by `muesli status`). No mirror rewrite: the mirror carries
-/// only {file, doc, server}, which a touch never changes.
-fn touch_synced_in(dir: &Path, file: &Path) -> Result<()> {
+/// Stamp sync activity (shown by `muesli status`). `synced_text` is the exact on-disk
+/// text the server room is known to hold: when `Some`, its hash is persisted so a later
+/// first connect can tell an untouched disk from one edited while the daemon was down.
+/// A `None` touch keeps the previous hash — deliberately: content materialized while
+/// OFFLINE has not reached the server, and a stale (mismatching) hash routes the next
+/// first connect to the merge path, which preserves the un-pushed edit as CRDT ops.
+/// No mirror rewrite: the mirror carries only {file, doc, server}, which a touch never
+/// changes.
+fn touch_synced_in(dir: &Path, file: &Path, synced_text: Option<&str>) -> Result<()> {
     let conn = open_index_in(dir)?;
-    conn.execute(
-        "UPDATE links SET last_synced_at = datetime('now') WHERE file_path = ?1",
-        params![file.to_string_lossy()],
-    )?;
+    match synced_text {
+        Some(text) => conn.execute(
+            "UPDATE links SET last_synced_at = datetime('now'), last_synced_hash = ?2
+             WHERE file_path = ?1",
+            params![file.to_string_lossy(), content_hash(text)],
+        )?,
+        None => conn.execute(
+            "UPDATE links SET last_synced_at = datetime('now') WHERE file_path = ?1",
+            params![file.to_string_lossy()],
+        )?,
+    };
     Ok(())
+}
+
+fn last_synced_hash_in(dir: &Path, file: &Path) -> Result<Option<String>> {
+    let conn = open_index_in(dir)?;
+    Ok(conn
+        .query_row(
+            "SELECT last_synced_hash FROM links WHERE file_path = ?1",
+            params![file.to_string_lossy()],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten())
+}
+
+/// The persisted hash of the last text known to be synced for `file`, if any. A store
+/// error degrades to `None` — an UNTRUSTED first-connect baseline, i.e. the merge path
+/// — which is the safe direction; logged because silent degradation on every start
+/// would otherwise be undiagnosable.
+pub fn last_synced_hash(file: &Path) -> Option<String> {
+    match data_dir().and_then(|d| last_synced_hash_in(&d, file)) {
+        Ok(hash) => hash,
+        Err(e) => {
+            warn!(%e, file = %file.display(), "could not read the last-synced hash — treating the sync baseline as untrusted");
+            None
+        }
+    }
 }
 
 pub fn load_links() -> Vec<Link> {
@@ -381,8 +454,8 @@ pub fn rebind_link(doc: &str, server: &str, new_file: &Path) -> Result<()> {
     rebind_link_in(&data_dir()?, doc, server, new_file)
 }
 
-pub fn touch_synced(file: &Path) -> Result<()> {
-    touch_synced_in(&data_dir()?, file)
+pub fn touch_synced(file: &Path, synced_text: Option<&str>) -> Result<()> {
+    touch_synced_in(&data_dir()?, file, synced_text)
 }
 
 /// Rewrite every link under `old_root` to the same relative location under
@@ -482,7 +555,7 @@ mod tests {
         assert!(links.iter().all(|l| l.server == "http://localhost:8787"));
         assert!(links.iter().all(|l| l.last_synced.is_none()));
 
-        touch_synced_in(&dir, Path::new("/tmp/a.md")).unwrap();
+        touch_synced_in(&dir, Path::new("/tmp/a.md"), None).unwrap();
         let a = load_links_in(&dir)
             .unwrap()
             .into_iter()
@@ -503,6 +576,100 @@ mod tests {
         assert_eq!(removed.doc, "doc-a");
         assert_eq!(load_links_in(&dir).unwrap().len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn touch_synced_stores_and_keeps_the_content_hash() {
+        let dir = tmp_dir("hash");
+        let file = Path::new("/tmp/h.md");
+        record_link_in(&dir, file, "doc-h", "http://localhost:8787", None).unwrap();
+        assert_eq!(last_synced_hash_in(&dir, file).unwrap(), None);
+
+        touch_synced_in(&dir, file, Some("hello")).unwrap();
+        assert_eq!(
+            last_synced_hash_in(&dir, file).unwrap(),
+            Some(content_hash("hello"))
+        );
+
+        // A timestamp-only touch (offline materialize) must NOT update the hash: the
+        // content is not at the server, and a stale hash is what routes the next first
+        // connect to the merge path that preserves the un-pushed edit.
+        touch_synced_in(&dir, file, None).unwrap();
+        assert_eq!(
+            last_synced_hash_in(&dir, file).unwrap(),
+            Some(content_hash("hello"))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The hash certifies one room's content: re-recording the same link keeps it,
+    /// re-linking the path to a different doc (or server) must NULL it — the new room
+    /// never held that text.
+    #[test]
+    fn relinking_to_a_different_doc_clears_the_hash() {
+        let dir = tmp_dir("hash-relink");
+        let file = Path::new("/tmp/r.md");
+        record_link_in(&dir, file, "doc-a", "http://localhost:8787", None).unwrap();
+        touch_synced_in(&dir, file, Some("text of doc-a")).unwrap();
+
+        // Same doc + server re-recorded (e.g. workspace update): the hash survives.
+        record_link_in(&dir, file, "doc-a", "http://localhost:8787", Some("ws-1")).unwrap();
+        assert_eq!(
+            last_synced_hash_in(&dir, file).unwrap(),
+            Some(content_hash("text of doc-a"))
+        );
+
+        // Different doc at the same path: the inherited baseline would be a lie.
+        record_link_in(&dir, file, "doc-b", "http://localhost:8787", None).unwrap();
+        assert_eq!(last_synced_hash_in(&dir, file).unwrap(), None);
+
+        // Same doc id on a different server is a different room too.
+        touch_synced_in(&dir, file, Some("text of doc-b")).unwrap();
+        record_link_in(&dir, file, "doc-b", "http://other:8787", None).unwrap();
+        assert_eq!(last_synced_hash_in(&dir, file).unwrap(), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn adds_the_hash_column_to_a_pre_existing_db() {
+        let dir = tmp_dir("hash-migrate");
+        // A database created by a build that predates last_synced_hash.
+        let conn = Connection::open(dir.join("index.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE links (
+                file_path      TEXT PRIMARY KEY,
+                doc_id         TEXT NOT NULL,
+                server         TEXT NOT NULL,
+                workspace      TEXT,
+                added_at       TEXT NOT NULL DEFAULT (datetime('now')),
+                last_synced_at TEXT
+            )",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO links (file_path, doc_id, server) VALUES ('/tmp/m.md', 'doc-m', 'http://x')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let file = Path::new("/tmp/m.md");
+        assert_eq!(last_synced_hash_in(&dir, file).unwrap(), None);
+        touch_synced_in(&dir, file, Some("t")).unwrap();
+        assert_eq!(
+            last_synced_hash_in(&dir, file).unwrap(),
+            Some(content_hash("t"))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The persisted hash is compared across processes and releases: pin it to the
+    /// published FNV-1a 64 test vectors so an accidental algorithm change fails loudly.
+    #[test]
+    fn content_hash_matches_the_fnv1a_reference_vectors() {
+        assert_eq!(content_hash(""), "cbf29ce484222325");
+        assert_eq!(content_hash("a"), "af63dc4c8601ec8c");
+        assert_ne!(content_hash("x"), content_hash("y"));
     }
 
     #[test]
