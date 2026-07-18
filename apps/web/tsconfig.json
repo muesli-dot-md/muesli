@@ -35,6 +35,8 @@
     "src/components",
     "src/hooks",
     "src/lib",
+    "src/state",
+    "src/services",
     "src/App.tsx",
     "src/main.tsx",
     "src/vite-env.d.ts",
