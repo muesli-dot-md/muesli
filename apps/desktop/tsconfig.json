@@ -26,8 +26,5 @@
     }
   },
   "include": ["src", "vite.config.ts"],
-  // Old Svelte-era sources stay on disk as the porting reference (deleted in
-  // the integration phase); they are not part of the React build graph and
-  // must not be typechecked.
-  "exclude": ["src/lib", "src/routes", "node_modules", "build", "src-tauri"]
+  "exclude": ["node_modules", "build", "src-tauri"]
 }

@@ -13,12 +13,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     include: ["src/**/*.test.{ts,tsx}"],
-    // src/lib + src/routes hold the frozen Svelte-era sources (the porting
-    // reference, deleted in the integration phase); their tests import svelte,
-    // which is no longer installed. New tests live beside the React code.
-    exclude: ["src/lib/**", "src/routes/**", "**/node_modules/**"],
-    // The React tree starts with no tests of its own; feature agents add them.
-    passWithNoTests: true,
+    exclude: ["**/node_modules/**"],
     // katex pulls a `.css` side-effect import (which Node's ESM loader can't
     // handle), and inlining @codemirror/* routes them through Vite's resolver
     // so `resolve.dedupe` yields a single @codemirror/state copy (else

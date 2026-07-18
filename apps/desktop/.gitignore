@@ -8,10 +8,8 @@ dist/
 !vendor/voice_activity_detector/src/silero_vad.onnx
 models/
 
-# SvelteKit
+# Vite build output (tauri.conf.json frontendDist)
 /build
-/.svelte-kit
-/package
 
 # Env files
 .env
