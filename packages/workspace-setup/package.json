@@ -6,7 +6,6 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
-      "svelte": "./src/index.ts",
       "default": "./src/index.ts"
     },
     "./react": {
@@ -20,18 +19,6 @@
     "./react/*": {
       "types": "./src/react/*.tsx",
       "default": "./src/react/*.tsx"
-    },
-    "./WorkspaceWizard.svelte": {
-      "svelte": "./src/WorkspaceWizard.svelte",
-      "default": "./src/WorkspaceWizard.svelte"
-    },
-    "./StepConnectSharePoint.svelte": {
-      "svelte": "./src/StepConnectSharePoint.svelte",
-      "default": "./src/StepConnectSharePoint.svelte"
-    },
-    "./OnboardingFlow.svelte": {
-      "svelte": "./src/OnboardingFlow.svelte",
-      "default": "./src/OnboardingFlow.svelte"
     },
     "./onboarding": {
       "types": "./src/onboarding.ts",
@@ -60,17 +47,14 @@
   },
   "scripts": {
     "test": "vitest run",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "react": "^19.0.0",
-    "svelte": "^5.0.0"
+    "react": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "react": "^19.0.0",
-    "svelte": "^5.0.0",
-    "svelte-check": "^4.7.1",
     "typescript": "~5.7.0",
     "vitest": "^4.1.9"
   }

@@ -13,7 +13,6 @@ node_modules/
 dist/
 build/
 .vite/
-.svelte-kit/
 coverage/
 *.tsbuildinfo
 vite.config.js.timestamp-*

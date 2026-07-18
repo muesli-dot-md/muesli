@@ -24,7 +24,7 @@ import { dirname, join } from "node:path";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import WebSocket from "ws";
-import { createWorkspaceApi, WorkspaceApiError } from "../src/workspaceApi.ts";
+import { createWorkspaceApi, WorkspaceApiError } from "../src/services/workspaceApi.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..", "..");

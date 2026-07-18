@@ -19,7 +19,7 @@ import { dirname, join } from "node:path";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import WebSocket from "ws";
-import { createGraphApi } from "../src/graphApi.ts";
+import { createGraphApi } from "../src/services/graphApi.ts";
 
 const OWN_SERVER = !process.env.MUESLI_HTTP;
 const SERVER = process.env.MUESLI_HTTP ?? "http://127.0.0.1:8794";

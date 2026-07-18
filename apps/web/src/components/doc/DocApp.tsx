@@ -18,7 +18,7 @@ import { useCollabSnapshot } from "@/state/collabStore";
 import { useT } from "@/state/i18n";
 import { gotoHome } from "@/state/route";
 import { presenceStore, usePresence } from "@/state/presence";
-import { openSearchPalette, searchShortcutHint } from "@/components/home/searchPaletteStore";
+import { openSearchPalette, searchShortcutHint } from "@/components/search/SearchPalette";
 
 import { fetchMe, httpBase, logout, me, setMeIdentity, type AuthInfo } from "@/services/identity";
 import { classifyDocError, type ErrorKind } from "@/services/errorKind";
@@ -469,7 +469,7 @@ export default function DocApp({
         <section className="doc-sheet min-h-0 min-w-0 flex-1">
           <Editor />
         </section>
-        <CollabSidebar store={collab} />
+        <CollabSidebar store={collab} docId={docId} shareToken={shareToken} />
       </main>
 
       {workspaceOpen && auth.mode === "oidc" && auth.user && (

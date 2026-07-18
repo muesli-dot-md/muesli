@@ -25,22 +25,6 @@
       "@/*": ["src/*"]
     }
   },
-  // Stage-2 scaffold: only the NEW React code is included; the legacy Svelte
-  // sources (.svelte components, .svelte.ts rune stores, and the plain .ts
-  // modules that import them) stay on disk as the porting reference and are
-  // typechecked again as feature agents port each module. Widen this list as
-  // dirs/files are ported; the integration phase deletes the legacy sources
-  // and flips include back to ["src", "vite.config.ts"].
-  "include": [
-    "src/components",
-    "src/hooks",
-    "src/lib",
-    "src/state",
-    "src/services",
-    "src/App.tsx",
-    "src/main.tsx",
-    "src/vite-env.d.ts",
-    "vite.config.ts"
-  ],
+  "include": ["src", "vite.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -2,7 +2,6 @@
 // history with badges) + panel host + collapse. Port of src/Sidebar.svelte.
 // The panels themselves live in @/components/collab and take the store as an
 // explicit prop (stage-2 contract).
-import { useEffect } from "react";
 import { ChevronsRight, History, MessageCircle, PencilLine, type LucideIcon } from "lucide-react";
 
 import { useT, type MessageKey } from "@/state/i18n";
@@ -19,13 +18,21 @@ const tabs: { id: SidebarTab; labelKey: MessageKey; icon: LucideIcon }[] = [
   { id: "history", labelKey: "sidebar.history", icon: History },
 ];
 
-export default function CollabSidebar({ store }: { store: CollabStore }) {
+export default function CollabSidebar({
+  store,
+  docId,
+  shareToken,
+}: {
+  store: CollabStore;
+  /** Doc slug + share token, threaded to CommentsPanel for its backlinks section. */
+  docId?: string;
+  shareToken?: string | null;
+}) {
   const t = useT();
   useCollabSnapshot(store);
 
   const sidebarOpen = store.sidebarOpen;
   const tab = store.tab;
-  const historyLen = store.history.length;
 
   function openTab(next: SidebarTab) {
     store.tab = next;
@@ -39,13 +46,8 @@ export default function CollabSidebar({ store }: { store: CollabStore }) {
         ? store.pendingGroups.length
         : 0;
 
-  // History loads lazily when its tab is first opened (and refreshes on
-  // accepts via the store).
-  useEffect(() => {
-    if (sidebarOpen && tab === "history" && historyLen === 0) {
-      void store.loadHistory(true);
-    }
-  }, [store, sidebarOpen, tab, historyLen]);
+  // History loads lazily: HistoryPanel self-loads the first page on mount, and
+  // it only mounts when its tab is open — no host-side trigger needed.
 
   if (store.availability === "volatile") {
     return (
@@ -139,7 +141,7 @@ export default function CollabSidebar({ store }: { store: CollabStore }) {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === "comments" ? (
-          <CommentsPanel store={store} />
+          <CommentsPanel store={store} docId={docId} shareToken={shareToken} />
         ) : tab === "suggestions" ? (
           <SuggestionsPanel store={store} />
         ) : (

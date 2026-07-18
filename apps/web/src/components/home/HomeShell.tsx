@@ -66,7 +66,6 @@ import { compareBy, homeMainPanel, inWorkspace } from "@/services/homeWorkspace"
 import { fetchMe, httpBase, logout, type AuthInfo, type Me } from "@/services/identity";
 import { createAccountApi } from "@/services/accountApi";
 import { markLocalOnboarded, shouldShowOnboarding } from "@/services/onboardingGate";
-import { driveDate, fullDateTime } from "@/services/time";
 import {
   createWorkspaceApi,
   slugify,

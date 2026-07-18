@@ -12,5 +12,5 @@
     "useDefineForClassFields": true,
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.svelte"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

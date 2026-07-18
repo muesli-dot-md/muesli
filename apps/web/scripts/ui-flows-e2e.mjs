@@ -15,7 +15,7 @@ import { spawn } from "node:child_process";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import WebSocket from "ws";
-import { createCollabApi, ApiError } from "../src/collabApi.ts";
+import { createCollabApi, ApiError } from "../src/services/collabApi.ts";
 import { byteRangeToUtf16, utf16RangeToByte } from "../../../packages/editor-core/src/offsets.ts";
 
 const OWN_SERVER = !process.env.MUESLI_HTTP;

@@ -1,11 +1,11 @@
-// Workspace-wide ESLint flat config: TypeScript + Svelte 5 across apps/,
+// Workspace-wide ESLint flat config: TypeScript + React across apps/,
 // packages/, and integrations/, with eslint-config-prettier so formatting is
 // Prettier's job alone (run `pnpm format`). Kept deliberately un-type-aware:
-// type correctness is enforced by svelte-check/tsc in `pnpm check`; ESLint here
-// catches real code smells fast (unused code, unsafe patterns, svelte misuse).
+// type correctness is enforced by tsc in `pnpm check`; ESLint here catches
+// real code smells fast (unused code, unsafe patterns).
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
-import svelte from "eslint-plugin-svelte";
+import reactHooks from "eslint-plugin-react-hooks";
 import prettier from "eslint-config-prettier";
 import globals from "globals";
 
@@ -15,7 +15,6 @@ export default tseslint.config(
       "**/node_modules/",
       "**/dist/",
       "**/build/",
-      "**/.svelte-kit/",
       "**/coverage/",
       "**/target/",
       "internal/",
@@ -27,18 +26,20 @@ export default tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
-  ...svelte.configs["flat/recommended"],
+  // rules-of-hooks: error; exhaustive-deps: warn (intentional omissions carry
+  // an eslint-disable comment with the why, matching the deviations rule below).
+  {
+    files: ["**/*.{ts,tsx}"],
+    plugins: { "react-hooks": reactHooks },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
+    },
+  },
   prettier,
-  ...svelte.configs["flat/prettier"],
   {
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
-    },
-  },
-  {
-    files: ["**/*.svelte", "**/*.svelte.ts", "**/*.svelte.js"],
-    languageOptions: {
-      parserOptions: { parser: tseslint.parser },
     },
   },
   {
@@ -56,25 +57,6 @@ export default tseslint.config(
           ignoreRestSiblings: true,
         },
       ],
-      // The markdown preview pipeline renders sanitized HTML on purpose
-      // (DOMPurify in editor-core/render.ts); the blanket rule would flag
-      // every {@html} in the preview surfaces.
-      "svelte/no-at-html-tags": "off",
-      // Audited 2026-07 (all 23 hits): every flagged Map/Set/Date is either
-      // built fresh and returned inside $derived.by / a plain helper, updated
-      // immutably (`lines = new Map(lines)` in transcript.svelte.ts), or
-      // explicitly non-reactive bookkeeping (tabs.svelte.ts flushCallbacks).
-      // Reactivity comes from re-deriving/reassigning, never from mutating a
-      // collection in place, so SvelteMap/SvelteSet would add proxy overhead
-      // without changing behavior. Re-audit before introducing a store that
-      // mutates a collection held in $state.
-      "svelte/prefer-svelte-reactivity": "off",
-      // Our svelte-ignore comments target COMPILER warnings (a11y_*,
-      // state_referenced_locally) enforced by svelte-check and the vite
-      // build. ESLint doesn't run the compiler's checks, so it would flag
-      // every one of them as "unused" — removing them would reintroduce the
-      // real warnings in `pnpm check`.
-      "svelte/no-unused-svelte-ignore": "off",
     },
   },
 );

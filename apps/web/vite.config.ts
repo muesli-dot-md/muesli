@@ -11,19 +11,6 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     include: ["src/**/*.test.{ts,tsx}"],
-    // Legacy Svelte-era tests stay on disk as porting reference until the
-    // Stage-2 integration phase deletes the Svelte sources. Excluded here
-    // because they import `.svelte` components / `.svelte.ts` rune modules
-    // that no longer compile without the Svelte plugin. Pure-TS module tests
-    // (appGate, presence, mentions, prefsSyncCore, API clients, …) keep
-    // running.
-    exclude: [
-      "**/node_modules/**",
-      "src/SettingsPage.test.ts",
-      "src/settings/ProfileSection.test.ts",
-      "src/settings/ColorBubbleRow.svelte.test.ts",
-      "src/settings/settingsNav.test.ts",
-    ],
     // katex pulls a `.css` side-effect import (which Node's ESM loader can't
     // handle), and inlining @codemirror/* routes them through Vite's resolver
     // so `resolve.dedupe` yields a single @codemirror/state copy (else

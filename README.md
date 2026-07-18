@@ -15,9 +15,9 @@ ingested back as text diffs. Nothing is ever converted — the file stays a mark
 - `crates/muesli-server` — sync server: y-websocket protocol, single-owner Doc Rooms (axum/tokio).
 - `crates/muesli-cli` — the `muesli` local agent: a sync bridge between a `.md` on disk and a
   server room. Never touches git.
-- `apps/web` — the web editor: Vite + Svelte 5 + daisyUI, CodeMirror 6, live cursors, markdown
+- `apps/web` — the web editor: Vite + React 19 + Tailwind 4 + shadcn/ui, CodeMirror 6, live cursors, markdown
   preview.
-- `apps/desktop` — the Tauri + Svelte local-first desktop app over a folder of `.md` files: the
+- `apps/desktop` — the Tauri + React local-first desktop app over a folder of `.md` files: the
   full editor surface (live cursors, comments, suggestions, history, link graph) plus on-device
   speech-to-text dictation (Parakeet ONNX, runs locally).
 - `packages/editor-core` — shared TypeScript editor library (markdown render, tables, Mermaid,
@@ -60,7 +60,7 @@ run locally with:
 ```sh
 pnpm format     # prettier --write across the repo
 pnpm lint       # eslint over apps/, packages/, integrations/
-pnpm check      # svelte-check + tsc in every package that has one
+pnpm check      # tsc in every package that has one
 pnpm test       # every vitest suite in the workspace
 cargo fmt --all && cargo clippy --workspace --all-targets   # rust (repeat with
                 # --manifest-path apps/desktop/src-tauri/Cargo.toml for the tauri crate)

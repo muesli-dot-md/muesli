@@ -6,77 +6,62 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
-      "svelte": "./src/index.ts",
       "default": "./src/index.ts"
     },
     "./render": {
       "types": "./src/render.ts",
-      "svelte": "./src/render.ts",
       "default": "./src/render.ts"
     },
     "./mermaid": {
       "types": "./src/mermaid.ts",
-      "svelte": "./src/mermaid.ts",
       "default": "./src/mermaid.ts"
     },
     "./zoom": {
       "types": "./src/zoom.ts",
-      "svelte": "./src/zoom.ts",
       "default": "./src/zoom.ts"
     },
     "./scrollPastEnd": {
       "types": "./src/scrollPastEnd.ts",
-      "svelte": "./src/scrollPastEnd.ts",
       "default": "./src/scrollPastEnd.ts"
     },
     "./mermaidInteraction": {
       "types": "./src/mermaidInteraction.ts",
-      "svelte": "./src/mermaidInteraction.ts",
       "default": "./src/mermaidInteraction.ts"
     },
     "./tableModel": {
       "types": "./src/tableModel.ts",
-      "svelte": "./src/tableModel.ts",
       "default": "./src/tableModel.ts"
     },
     "./tableInteraction": {
       "types": "./src/tableInteraction.ts",
-      "svelte": "./src/tableInteraction.ts",
       "default": "./src/tableInteraction.ts"
     },
     "./offsets": {
       "types": "./src/offsets.ts",
-      "svelte": "./src/offsets.ts",
       "default": "./src/offsets.ts"
     },
     "./docExport": {
       "types": "./src/docExport.ts",
-      "svelte": "./src/docExport.ts",
       "default": "./src/docExport.ts"
     },
     "./annotations": {
       "types": "./src/annotations.ts",
-      "svelte": "./src/annotations.ts",
       "default": "./src/annotations.ts"
     },
     "./annotationsTheme": {
       "types": "./src/annotationsTheme.ts",
-      "svelte": "./src/annotationsTheme.ts",
       "default": "./src/annotationsTheme.ts"
     },
     "./mdCommands": {
       "types": "./src/mdCommands.ts",
-      "svelte": "./src/mdCommands.ts",
       "default": "./src/mdCommands.ts"
     },
     "./frontmatter": {
       "types": "./src/frontmatter.ts",
-      "svelte": "./src/frontmatter.ts",
       "default": "./src/frontmatter.ts"
     },
     "./livePreview": {
       "types": "./src/livePreview/index.ts",
-      "svelte": "./src/livePreview/index.ts",
       "default": "./src/livePreview/index.ts"
     }
   },

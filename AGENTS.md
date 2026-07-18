@@ -15,8 +15,8 @@ stays canonical — nothing is ever converted.
 - `crates/muesli-core` — shared engine: CRDT, materialization, ingest, wire protocol
 - `crates/muesli-server` — sync server (axum, y-websocket, Postgres, MCP façade at `POST /mcp`)
 - `crates/muesli-cli` — the `muesli` binary: file/folder sync bridge, device-code login, MCP stdio proxy
-- `apps/web` — web editor (Vite + Svelte 5 + daisyUI + CodeMirror 6)
-- `apps/desktop` — Tauri 2 + SvelteKit desktop app; its Rust crate `apps/desktop/src-tauri` is **outside** the cargo workspace
+- `apps/web` — web editor (Vite + React 19 + Tailwind 4 + shadcn/ui + CodeMirror 6)
+- `apps/desktop` — Tauri 2 + React desktop app; its Rust crate `apps/desktop/src-tauri` is **outside** the cargo workspace
 - `packages/editor-core` — shared editor library (render, livePreview, tables, mermaid, annotations, mdCommands)
 - `packages/workspace-setup` — shared onboarding/creation-wizard flow machine
 - `integrations/vscode` — presence-only VS Code extension
@@ -46,9 +46,9 @@ Everything below must be green before you consider a change done:
 pnpm install
 git config core.hooksPath .githooks   # once per clone: pre-push fmt/lint gate
 pnpm test           # all vitest suites (editor-core, workspace-setup, web, desktop)
-pnpm check          # svelte-check + tsc in every package
+pnpm check          # tsc in every package
 pnpm lint           # eslint (flat config: eslint.config.mjs)
-pnpm format:check   # prettier (printWidth 100, svelte plugin)
+pnpm format:check   # prettier (printWidth 100)
 cargo test --workspace
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
 ```
@@ -76,16 +76,15 @@ frontend, server, desktop-build).
 - **ESLint deviations are documented**: every rule turned off in
   `eslint.config.mjs` carries its rationale inline. If you disable something new,
   write the why next to it.
-- **Svelte 5 runes** everywhere (`$state`, `$derived`, `$props`, `$effect`).
-  Collections are rebuilt/reassigned, not mutated in place — see the
-  `prefer-svelte-reactivity` note in the eslint config before "fixing" that.
+- **React 19 + zustand** everywhere (vanilla store + hook pattern; actions are
+  named store methods). Collections are rebuilt/reassigned, not mutated in place.
 - **Web/desktop duplication**: `livePreview/` is intentionally duplicated between
   `apps/web/src` and `apps/desktop/src/lib/editor` (mostly identical files). If
   you touch one, mirror the other, or extract into `packages/editor-core` like
   mdCommands was. Shared code in editor-core uses self-referencing subpath
   imports (`@muesli/editor-core/...`), never relative imports with `.ts`
   extensions — the headless node scripts depend on it.
-- **i18n**: the web app has six locales (`apps/web/src/i18n/{en,de,es,fr,it,pt}.ts`).
+- **i18n**: the web app has six locales (`apps/web/src/state/i18n/{en,de,es,fr,it,pt}.ts`).
   A new UI string means a key in **all six** (English fallback exists, but keys
   are added everywhere in this repo). The desktop app is not localized; its
   copy lives in components / `packages/workspace-setup/src/copy.ts`.

@@ -24,8 +24,8 @@ import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { createAccountApi, AccountApiError } from "../src/accountApi.ts";
-import { createWorkspaceApi, WorkspaceApiError } from "../src/workspaceApi.ts";
+import { createAccountApi, AccountApiError } from "../src/services/accountApi.ts";
+import { createWorkspaceApi, WorkspaceApiError } from "../src/services/workspaceApi.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..", "..");
