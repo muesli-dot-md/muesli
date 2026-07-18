@@ -88,11 +88,11 @@ check(
 );
 check("highlight in code span untouched", /<code>==notmark==<\/code>/.test(html));
 
-// 3) Callouts: daisyUI alert class + title + nested markdown
-check("callout has alert class", /class="callout alert alert-info"/.test(html));
+// 3) Callouts: neutral editor-core classes + title + nested markdown
+check("callout has callout class", /class="callout callout-info"/.test(html));
 check("callout title rendered", html.includes(">Note</p>"));
 check("callout nested markdown renders", html.includes("<strong>nested</strong>"));
-check("warning callout variant", html.includes("alert-warning"));
+check("warning callout variant", html.includes("callout-warning"));
 
 // 4) Wikilinks: slugified hash hrefs, label support, distinct class
 check("slugify", slugify("The Slug") === "the-slug", `got ${slugify("The Slug")}`);
@@ -126,7 +126,7 @@ check("wikilink class", html.includes('class="wikilink"'));
 // 5) Frontmatter table rows
 check(
   "frontmatter table",
-  /<div class="frontmatter[^"]*"><table class="table table-xs">/.test(html),
+  /<div class="frontmatter[^"]*"><table>/.test(html),
 );
 check("frontmatter row: title", />title<\/th><td>Test Doc<\/td>/.test(html));
 check("frontmatter row: owner", />owner<\/th><td>julian<\/td>/.test(html));

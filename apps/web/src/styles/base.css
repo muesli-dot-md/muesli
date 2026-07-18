@@ -1,0 +1,89 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   Base layer — global chrome polish shared by every screen.
+   Kept lean on purpose: micro-transitions live on components (tw-animate-css
+   drives data-state enter/exit); only app-wide conventions live here.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  /* Thin translucent scrollbars everywhere: 6px, transparent track, thumb
+     brightens on hover. Firefox gets the `thin` equivalent. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Text selection rides the primary color at low alpha so it stays legible
+     over both surface tiers and the live-preview code lines. */
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 24%, transparent);
+  }
+
+  /* Focus convention: a soft 3px ring, never a UA outline. Components opt in
+     with focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:border-ring;
+     this backstop keeps anything unstyled from flashing the default outline. */
+  :focus-visible {
+    outline: none;
+  }
+}
+
+/* ── Sidebar / panel resize contract ─────────────────────────────────────────
+   During a drag the resizer writes widths straight to the DOM and stamps
+   data-sidebar-resizing="true" on <html>; everything must show ew-resize and
+   width transitions must not fight the pointer. Same contract for right-hand
+   panels via data-right-sidebar-resizing. */
+html[data-sidebar-resizing="true"],
+html[data-sidebar-resizing="true"] *,
+html[data-right-sidebar-resizing="true"],
+html[data-right-sidebar-resizing="true"] * {
+  cursor: ew-resize !important;
+  user-select: none !important;
+}
+html[data-sidebar-resizing="true"] [data-sidebar-panel],
+html[data-right-sidebar-resizing="true"] [data-right-sidebar-panel] {
+  transition: none !important;
+}
+/* Right sidebar toggle animates its flex-grow when NOT dragging. */
+[data-right-sidebar-panel] {
+  transition: flex-grow 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Menu / popover entrance ────────────────────────────────────────────────
+   tw-animate-css maps data-state=open/closed to animate-in/out utilities on
+   the components themselves (fade-in-0 zoom-in-95 slide-in-from-*-2). The
+   default duration is pinned here so every menu shares the same 100ms feel. */
+[data-slot="dropdown-menu-content"],
+[data-slot="context-menu-content"],
+[data-slot="select-content"],
+[data-slot="popover-content"],
+[data-slot="tooltip-content"] {
+  animation-duration: 100ms;
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,17 +1,44 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+
     "strict": true,
-    "skipLibCheck": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "allowJs": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
     "isolatedModules": true,
-    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "noEmit": true,
     "useDefineForClassFields": true,
-    "types": ["svelte", "vite/client"]
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte"]
+  // Stage-2 scaffold: only the NEW React code is included; the legacy Svelte
+  // sources (.svelte components, .svelte.ts rune stores, and the plain .ts
+  // modules that import them) stay on disk as the porting reference and are
+  // typechecked again as feature agents port each module. Widen this list as
+  // dirs/files are ported; the integration phase deletes the legacy sources
+  // and flips include back to ["src", "vite.config.ts"].
+  "include": [
+    "src/components",
+    "src/hooks",
+    "src/lib",
+    "src/App.tsx",
+    "src/main.tsx",
+    "src/vite-env.d.ts",
+    "vite.config.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
 }

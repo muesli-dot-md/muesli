@@ -1,0 +1,25 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./app.css";
+
+/* Dark variant triggers on BOTH the shadcn-style .dark class and the
+   Muesli-style data-theme="muesli-dark" attribute — the theme store sets both,
+   but either alone must keep dark: utilities working (index.html sets only the
+   data-theme attribute before first paint). Mirrors apps/desktop. */
+@custom-variant dark (&:where(.dark, .dark *, [data-theme$="-dark"], [data-theme$="-dark"] *));
+
+/* Tailwind v4 scans this app's own source by default but NOT the shared
+   workspace packages. @muesli/editor-core is deliberately utility-free (it
+   emits only its own neutral classes, styled in app.css), so it needs no
+   @source line. workspace-setup's Svelte components still carry utility
+   strings; that line goes when they do. Paths are relative to THIS file. */
+@source "../../../../packages/workspace-setup/src/**/*.{ts,tsx,svelte}";
+@source "../**/*.{ts,tsx}";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}

@@ -1,48 +1,68 @@
 /// <reference types="vitest/config" />
-import { svelte } from "@sveltejs/vite-plugin-svelte";
+import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
+import { fileURLToPath, URL } from "node:url";
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+
   test: {
-    environment: "node",
-    include: ["src/**/*.test.ts"],
-    // katex ships a `.css` side-effect import (pulled in by livePreview widgets).
-    // Inlining it routes the import through Vite's transform instead of Node's
-    // ESM loader, which would otherwise choke on the `.css` extension.
-    // The @codemirror/* packages are inlined too so they go through Vite's
-    // resolver (which honours `resolve.dedupe`); otherwise the test loads two
-    // copies of @codemirror/state and EditorState.create fails its instanceof
-    // checks ("multiple instances of @codemirror/state").
-    // "svelte" is inlined so component tests resolve Svelte's browser (client)
-    // runtime — `mount()` — with jsdom-env test files supplying the DOM; plain
-    // node-env module tests are unaffected. Mirrors apps/desktop/vite.config.js.
-    server: {
-      deps: {
-        inline: ["svelte", "katex", /@codemirror\//, /@lezer\//],
-      },
+    environment: "jsdom",
+    globals: true,
+    include: ["src/**/*.test.{ts,tsx}"],
+    // Legacy Svelte-era tests stay on disk as porting reference until the
+    // Stage-2 integration phase deletes the Svelte sources. Excluded here
+    // because they import `.svelte` components / `.svelte.ts` rune modules
+    // that no longer compile without the Svelte plugin. Pure-TS module tests
+    // (appGate, presence, mentions, prefsSyncCore, API clients, …) keep
+    // running.
+    exclude: [
+      "**/node_modules/**",
+      "src/SettingsPage.test.ts",
+      "src/settings/ProfileSection.test.ts",
+      "src/settings/ColorBubbleRow.svelte.test.ts",
+      "src/settings/settingsNav.test.ts",
+    ],
+    // katex pulls a `.css` side-effect import (which Node's ESM loader can't
+    // handle), and inlining @codemirror/* routes them through Vite's resolver
+    // so `resolve.dedupe` yields a single @codemirror/state copy (else
+    // EditorState.create fails its instanceof checks under jsdom).
+    server: { deps: { inline: ["katex", /@codemirror\//, /@lezer\//] } },
+  },
+
+  resolve: {
+    // @codemirror/state (and its view/language peers) MUST resolve to a SINGLE
+    // instance. The workspace installs more than one CM version; if two copies
+    // load, an extension built by one isn't recognized by the other's
+    // EditorState.create ("Unrecognized extension value… multiple instances of
+    // @codemirror/state"), and the editor fails to mount entirely (blank
+    // document pane). react/react-dom deduped for the same reason (hooks
+    // across duplicated copies throw); yjs because a Y.Doc built by one copy
+    // isn't instanceof the other's. Mirrors apps/desktop/vite.config.ts.
+    dedupe: [
+      "@codemirror/state",
+      "@codemirror/view",
+      "@codemirror/language",
+      "react",
+      "react-dom",
+      "yjs",
+    ],
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
-  plugins: [svelte(), tailwindcss()],
-  resolve: {
-    // TEST-ONLY (vitest runs Vite in mode "test"): the `browser` condition
-    // makes the node-based test runner resolve Svelte's client runtime so
-    // `mount()` exists in component tests. It must NOT apply to dev/build:
-    // `resolve.conditions` REPLACES Vite's default client conditions there,
-    // which was measured to grow the prod entry chunk by ~12 KB (esm-env's
-    // dev fallback plus svelte dev internals, turning the compile-time DEV
-    // flag into a runtime NODE_ENV check). Scoped this way, `vite build`
-    // output is byte-identical to a config without this block.
-    ...(mode === "test" ? { conditions: ["browser"] } : {}),
-    // @codemirror/state (and its view/language peers) MUST resolve to a SINGLE
-    // instance. The workspace installs both 6.6.0 and 6.7.0; if two copies load,
-    // an extension built by one isn't recognized by the other's EditorState.create
-    // ("Unrecognized extension value… multiple instances of @codemirror/state"),
-    // and the editor fails to mount entirely (blank document pane). Force one copy.
-    dedupe: ["@codemirror/state", "@codemirror/view", "@codemirror/language"],
+
+  build: {
+    // Served in production by muesli-server (MUESLI_WEB_DIR → ServeDir with
+    // index.html fallback); the Dockerfile copies this dir. Vite's default,
+    // made explicit so nobody "cleans it up" into a breakage.
+    outDir: "dist",
+    emptyOutDir: true,
   },
+
   // The server's credentialed CORS allows exactly MUESLI_WEB_ORIGIN (default :5173).
   // If vite silently hops to another port, every authenticated fetch breaks while the
   // editor ws still connects — maddening to debug. Fail loudly instead.
   server: { port: 5173, strictPort: true },
-}));
+});

@@ -14,8 +14,10 @@
     <script>
       // Resolve the persisted theme mode ("muesli:theme" ∈ light|dark|system,
       // default system) and set data-theme BEFORE first paint so a hard refresh
-      // never flashes the wrong colors. theme.svelte.ts mirrors this logic and
-      // takes over once the app boots.
+      // never flashes the wrong colors. The theme store mirrors this logic and
+      // takes over once the app boots (it also sets the .dark class for the
+      // shadcn token layer; the data-theme attribute alone keeps dark: working
+      // pre-boot via the @custom-variant in globals.css).
       (() => {
         let mode = null;
         try {
@@ -50,6 +52,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

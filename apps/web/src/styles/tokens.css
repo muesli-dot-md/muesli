@@ -1,0 +1,209 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   Muesli design tokens — Multica-style surface system, Muesli colors.
+
+   Surface system: the app shell is the quiet outer frame (sidebar + title bar
+   share this color); the page canvas is where documents live, floating inside
+   the frame as a rounded card with a hairline ring and a whisper of shadow;
+   surfaces are reserved for bounded content groups; raised surfaces are
+   ephemeral overlays (menus, popovers, dialogs).
+
+   Colors are Muesli's: neutral ladder on hue 262 (not Multica's 286), brand /
+   primary is the Muesli blue (Tailwind blue-600 light / blue-400 dark, the
+   sRGB-exact conversions — see shared/palette.css). Dark surface tiers reuse
+   the exact Muesli dark values from the Svelte app (base-200 floor 0.165,
+   base-100 card 0.215, overlay 0.25, lift 0.315).
+
+   The accent-preset store keeps working: --primary resolves through
+   --accent-primary (light) / --accent-primary-dark (dark), which
+   state/accent.ts sets inline on <html>; unset, they fall back to the Muesli
+   blue exactly.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: light;
+
+  /* ── surface system ─────────────────────────────────────────────────────── */
+  --app-shell: oklch(0.9644 0.0013 262);
+  --page-canvas: oklch(0.9881 0 0);
+  --surface: oklch(1 0 0);
+  --surface-foreground: oklch(0.141 0.005 262);
+  --surface-raised: oklch(1 0 0);
+  --surface-hover: oklch(0.967 0.001 262);
+  --surface-selected: oklch(0.95 0.002 262);
+  --surface-selected-foreground: oklch(0.141 0.005 262);
+  --surface-border: oklch(0.92 0.004 262);
+
+  /* ── 3-tier shadow system ───────────────────────────────────────────────── */
+  /* cards + the floating canvas */
+  --surface-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 1px rgb(15 23 42 / 0.03);
+  /* dialogs, alert dialogs, sheets */
+  --floating-shadow: 0 16px 40px rgb(15 23 42 / 0.14), 0 3px 10px rgb(15 23 42 / 0.08);
+  /* dropdowns, context menus, selects, popovers */
+  --menu-shadow: 0 8px 24px rgb(15 23 42 / 0.08), 0 2px 6px rgb(15 23 42 / 0.05);
+
+  /* ── shadcn token family ────────────────────────────────────────────────── */
+  --background: var(--page-canvas);
+  --foreground: oklch(0.141 0.005 262);
+  --card: var(--surface);
+  --card-foreground: oklch(0.141 0.005 262);
+  --popover: var(--surface-raised);
+  --popover-foreground: oklch(0.141 0.005 262);
+  /* Muesli blue (#2563eb blue-600); accent store overrides via --accent-primary */
+  --primary: var(--accent-primary, oklch(0.546 0.215 262.9));
+  --primary-foreground: var(--accent-primary-content, oklch(0.98 0.01 262));
+  --secondary: oklch(0.967 0.001 262);
+  --secondary-foreground: oklch(0.21 0.006 262);
+  --muted: oklch(0.967 0.001 262);
+  --muted-foreground: oklch(0.552 0.016 262);
+  --accent: oklch(0.967 0.001 262);
+  --accent-foreground: oklch(0.21 0.006 262);
+  --destructive: oklch(0.62 0.21 25);
+  --destructive-foreground: oklch(0.98 0.02 25);
+  --border: oklch(0.945 0.003 262);
+  --input: oklch(0.92 0.004 262);
+  --ring: oklch(0.705 0.015 262);
+
+  /* ── sidebar family ─────────────────────────────────────────────────────── */
+  --sidebar: var(--app-shell);
+  --sidebar-foreground: oklch(0.141 0.005 262);
+  --sidebar-primary: oklch(0.21 0.006 262);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.935 0.003 262);
+  --sidebar-accent-foreground: oklch(0.21 0.006 262);
+  --sidebar-border: oklch(0.92 0.004 262);
+  --sidebar-ring: oklch(0.705 0.015 262);
+
+  /* ── brand + status ─────────────────────────────────────────────────────── */
+  --brand: oklch(0.546 0.215 262.9);
+  --brand-foreground: oklch(0.98 0.01 262);
+  --success: oklch(0.7 0.15 150);
+  --warning: oklch(0.82 0.17 80);
+  --info: oklch(0.7 0.14 235);
+
+  /* ── scrollbars ─────────────────────────────────────────────────────────── */
+  --scrollbar-thumb: oklch(0 0 0 / 10%);
+  --scrollbar-thumb-hover: oklch(0 0 0 / 18%);
+  --scrollbar-track: transparent;
+
+  /* ── radius knob ────────────────────────────────────────────────────────── */
+  --radius: 0.625rem; /* 10px controls / 14px (xl) cards */
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* ── surface system — Muesli dark ladder (shared/palette.css family) ────── */
+  --app-shell: oklch(0.165 0.006 262); /* Muesli dark floor (base-200) */
+  --page-canvas: oklch(0.19 0.006 262);
+  --surface: oklch(0.215 0.007 262); /* Muesli dark card (base-100) */
+  --surface-foreground: oklch(0.92 0.007 262);
+  --surface-raised: oklch(0.25 0.009 262); /* Muesli --overlay */
+  --surface-hover: oklch(0.274 0.006 262);
+  --surface-selected: oklch(0.315 0.009 262); /* Muesli --lift */
+  --surface-selected-foreground: oklch(0.95 0.007 262);
+  --surface-border: oklch(1 0 0 / 10%);
+
+  --surface-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 1px 1px rgb(0 0 0 / 0.16);
+  --floating-shadow: 0 20px 48px rgb(0 0 0 / 0.46), 0 4px 12px rgb(0 0 0 / 0.28);
+  --menu-shadow: 0 10px 28px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.18);
+
+  --background: var(--page-canvas);
+  --foreground: oklch(0.92 0.007 262);
+  --card: var(--surface);
+  --card-foreground: oklch(0.92 0.007 262);
+  --popover: var(--surface-raised);
+  --popover-foreground: oklch(0.92 0.007 262);
+  /* Muesli blue dark step (#60a5fa blue-400, sRGB-exact) */
+  --primary: var(--accent-primary-dark, oklch(0.714 0.143 254.6));
+  --primary-foreground: var(--accent-primary-content-dark, oklch(0.16 0.02 262));
+  --secondary: oklch(0.274 0.006 262);
+  --secondary-foreground: oklch(0.92 0.007 262);
+  --muted: oklch(0.274 0.006 262);
+  --muted-foreground: oklch(0.705 0.015 262);
+  --accent: oklch(0.274 0.006 262);
+  --accent-foreground: oklch(0.92 0.007 262);
+  --destructive: oklch(0.63 0.2 25);
+  --destructive-foreground: oklch(0.98 0.02 25);
+  --border: oklch(1 0 0 / 6%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.552 0.016 262);
+
+  --sidebar: var(--app-shell);
+  --sidebar-foreground: oklch(0.92 0.007 262);
+  --sidebar-primary: oklch(0.714 0.143 254.6);
+  --sidebar-primary-foreground: oklch(0.16 0.02 262);
+  --sidebar-accent: oklch(0.274 0.006 262);
+  --sidebar-accent-foreground: oklch(0.92 0.007 262);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.552 0.016 262);
+
+  --brand: oklch(0.714 0.143 254.6);
+  --brand-foreground: oklch(0.16 0.02 262);
+  --success: oklch(0.7 0.15 150);
+  --warning: oklch(0.8 0.16 80);
+  --info: oklch(0.7 0.14 235);
+
+  --scrollbar-thumb: oklch(1 0 0 / 8%);
+  --scrollbar-thumb-hover: oklch(1 0 0 / 18%);
+  --scrollbar-track: transparent;
+}
+
+/* Map every token onto Tailwind color/radius names so utilities like
+   bg-app-shell, bg-page-canvas, bg-surface-raised, ring-surface-border,
+   text-brand, bg-surface-hover, bg-sidebar-accent, rounded-xl exist. */
+@theme inline {
+  --color-app-shell: var(--app-shell);
+  --color-page-canvas: var(--page-canvas);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-selected: var(--surface-selected);
+  --color-surface-selected-foreground: var(--surface-selected-foreground);
+  --color-surface-border: var(--surface-border);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  /* One knob, derived scale: rounded-lg (10px) for buttons + menus,
+     rounded-xl (14px) for cards, dialogs, and the page canvas. */
+  --radius-sm: calc(var(--radius) * 0.6); /* 6px */
+  --radius-md: calc(var(--radius) * 0.8); /* 8px */
+  --radius-lg: var(--radius); /* 10px */
+  --radius-xl: calc(var(--radius) * 1.4); /* 14px */
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
