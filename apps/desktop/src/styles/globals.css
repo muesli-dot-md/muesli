@@ -1,0 +1,25 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./app.css";
+
+/* Dark variant triggers on BOTH the shadcn-style .dark class and the
+   Muesli-style data-theme="arc-dark" attribute — the theme store sets both,
+   but either alone must keep dark: utilities working (compat during porting). */
+@custom-variant dark (&:where(.dark, .dark *, [data-theme$="-dark"], [data-theme$="-dark"] *));
+
+/* Tailwind v4 scans this app's own source by default but NOT the shared
+   workspace packages. The editor widgets in packages/editor-core build DOM
+   with Tailwind utility class strings; without these directives any utility
+   used ONLY there is silently dropped from the compiled CSS and the widget
+   renders unstyled. Paths are relative to THIS file. */
+@source "../../../../packages/editor-core/src/**/*.{ts,tsx,svelte}";
+@source "../../../../packages/workspace-setup/src/**/*.{ts,tsx,svelte}";
+@source "../**/*.{ts,tsx}";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
