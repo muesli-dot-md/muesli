@@ -33,11 +33,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { errMsg } from "@/services/apiError";
 import { httpBase } from "@/services/identity";
 import { driveDate } from "@/services/time";
-import {
-  createWorkspaceApi,
-  type FolderSummary,
-  type SearchResult,
-} from "@/services/workspaceApi";
+import { createWorkspaceApi, type FolderSummary, type SearchResult } from "@/services/workspaceApi";
 import { useT } from "@/state/i18n";
 import { gotoDoc } from "@/state/route";
 
@@ -57,8 +53,7 @@ export function searchPaletteOpen(): boolean {
   return searchPaletteStore.getState().open;
 }
 
-export const useSearchPaletteOpen = () =>
-  useStore(searchPaletteStore, (s) => s.open);
+export const useSearchPaletteOpen = () => useStore(searchPaletteStore, (s) => s.open);
 
 /** "⌘K" on Apple platforms, "Ctrl K" elsewhere — for header hints. */
 export const searchShortcutHint = /Mac|iPhone|iPad/.test(
@@ -104,7 +99,11 @@ function highlightSplit(
   if (!n) return null;
   const i = text.toLowerCase().indexOf(n);
   if (i < 0) return null;
-  return { pre: text.slice(0, i), hit: text.slice(i, i + n.length), post: text.slice(i + n.length) };
+  return {
+    pre: text.slice(0, i),
+    hit: text.slice(i, i + n.length),
+    post: text.slice(i + n.length),
+  };
 }
 
 /** First-occurrence highlight: <mark> around the matched span, plain otherwise. */

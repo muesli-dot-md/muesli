@@ -22,11 +22,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 // ── MentionText ──────────────────────────────────────────────────────────────
 // Renders a comment/reply body with @mention chips. Plain runs keep their
@@ -201,11 +197,9 @@ export function CommentsPanel({ store: collab }: { store: CollabStore }) {
         thread.
       </p>
 
-      {openThreads.length === 0 &&
-        orphanedThreads.length === 0 &&
-        resolvedThreads.length === 0 && (
-          <p className="px-1 py-4 text-center text-sm opacity-50">No comments yet.</p>
-        )}
+      {openThreads.length === 0 && orphanedThreads.length === 0 && resolvedThreads.length === 0 && (
+        <p className="px-1 py-4 text-center text-sm opacity-50">No comments yet.</p>
+      )}
 
       {openThreads.map((thread) => (
         <ThreadCard key={thread.id} collab={collab} thread={thread} orphaned={false} />
@@ -279,8 +273,8 @@ export function SuggestionsPanel({ store: collab }: { store: CollabStore }) {
       <p className="px-1 text-xs opacity-60">
         {collab.suggestMode ? (
           <>
-            Editing is paused — select text and use the{" "}
-            <span className="font-medium">Suggest</span> action to queue a change.
+            Editing is paused — select text and use the <span className="font-medium">Suggest</span>{" "}
+            action to queue a change.
           </>
         ) : (
           <>
@@ -302,7 +296,9 @@ export function SuggestionsPanel({ store: collab }: { store: CollabStore }) {
                   <Badge variant="ghost" className="mr-1 h-4 px-1 text-[0.65rem]">
                     {draftLabel(draft)}
                   </Badge>
-                  {draft.oldText && <span className="suggest-old">{draft.oldText.slice(0, 60)}</span>}
+                  {draft.oldText && (
+                    <span className="suggest-old">{draft.oldText.slice(0, 60)}</span>
+                  )}
                   {draft.oldText && draft.insert && <span className="opacity-50"> → </span>}
                   {draft.insert && <span className="suggest-new">{draft.insert.slice(0, 60)}</span>}
                 </div>
@@ -362,7 +358,9 @@ export function SuggestionsPanel({ store: collab }: { store: CollabStore }) {
               {first.note && <p className="text-xs italic opacity-70">“{first.note}”</p>}
               {group.items.map((s) => (
                 <div key={s.id} className="rounded bg-muted/60 px-2 py-1 text-xs">
-                  {s.op.old_text && <span className="suggest-old">{s.op.old_text.slice(0, 120)}</span>}
+                  {s.op.old_text && (
+                    <span className="suggest-old">{s.op.old_text.slice(0, 120)}</span>
+                  )}
                   {s.op.old_text && s.op.insert && <span className="opacity-50"> → </span>}
                   {s.op.insert ? (
                     <span className="suggest-new">{s.op.insert.slice(0, 120)}</span>
@@ -451,7 +449,10 @@ export function HistoryPanel({ store: collab }: { store: CollabStore }) {
             {entry.author?.kind === "agent" ? "✦ " : ""}
             {authorName(entry.author)}
           </span>
-          <span className="opacity-50"> · {entry.origin} · {relativeTime(entry.created_at)}</span>
+          <span className="opacity-50">
+            {" "}
+            · {entry.origin} · {relativeTime(entry.created_at)}
+          </span>
           <span className="opacity-50">
             {" "}
             · {updates(entry) === 1 ? "1 update" : `${updates(entry)} updates`}

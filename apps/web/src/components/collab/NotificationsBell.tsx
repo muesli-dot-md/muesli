@@ -18,11 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bell, BellOff, LogIn, TriangleAlert } from "lucide-react";
 
 import { httpBase } from "@/services/identity";
-import {
-  ApiError,
-  createNotificationsApi,
-  type Notification,
-} from "@/services/notificationsApi";
+import { ApiError, createNotificationsApi, type Notification } from "@/services/notificationsApi";
 import { colorFromId } from "@/services/presence";
 import { gotoDoc } from "@/state/route";
 import { useT } from "@/state/i18n";
@@ -40,10 +36,7 @@ export interface NotificationsBellProps {
 
 export function NotificationsBell({ server, onSignIn }: NotificationsBellProps) {
   const t = useT();
-  const api = useMemo(
-    () => createNotificationsApi({ httpBase: server ?? httpBase }),
-    [server],
-  );
+  const api = useMemo(() => createNotificationsApi({ httpBase: server ?? httpBase }), [server]);
 
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<Notification[]>([]);
@@ -59,8 +52,7 @@ export function NotificationsBell({ server, onSignIn }: NotificationsBellProps) 
   // Subtle staggered enter for list rows — skipped under reduced-motion so the
   // panel just appears. ~60ms/row, capped so a long list never feels slow.
   const reducedMotion =
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   async function refreshCount() {
     try {
@@ -259,7 +251,9 @@ export function NotificationsBell({ server, onSignIn }: NotificationsBellProps) 
                         <span className="block text-sm">
                           {t("notifications.mentionedYou", { actor: actorOf(n), doc: docOf(n) })}
                         </span>
-                        <span className="block text-xs opacity-50">{relativeTime(n.created_at)}</span>
+                        <span className="block text-xs opacity-50">
+                          {relativeTime(n.created_at)}
+                        </span>
                       </span>
                       {!n.read ? (
                         <span

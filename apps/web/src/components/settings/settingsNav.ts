@@ -13,14 +13,7 @@ import type { MessageKey } from "@/state/i18n";
 import type { SettingsSection } from "@/state/route";
 
 export type SettingsIconKey =
-  | "user"
-  | "sliders"
-  | "languages"
-  | "bell"
-  | "keyRound"
-  | "cable"
-  | "info"
-  | "settings";
+  "user" | "sliders" | "languages" | "bell" | "keyRound" | "cable" | "info" | "settings";
 
 export type SettingsNavItem = {
   section: SettingsSection;

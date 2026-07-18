@@ -134,7 +134,10 @@ export function HomeTreeNode(props: HomeTreeNodeProps) {
       </div>
 
       {isOpen && (
-        <div className="tree-children" style={{ "--guide-x": `${depth * 14 + 23}px` } as CSSProperties}>
+        <div
+          className="tree-children"
+          style={{ "--guide-x": `${depth * 14 + 23}px` } as CSSProperties}
+        >
           {kids.map((k) => (
             <HomeTreeNode key={k.id} {...props} folder={k} depth={depth + 1} />
           ))}

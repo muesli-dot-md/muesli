@@ -1,18 +1,13 @@
 // One chip per *person* (already deduped/grouped upstream), with a 2-chip + ⊕N
 // overflow that opens a roster popover. Port of src/lib/PresenceStack.svelte;
 // mirrors the webapp header presence stack.
-import {
-  initials,
-  splitForStack,
-  type PresencePerson,
-} from "@/services/presence";
+import { initials, splitForStack, type PresencePerson } from "@/services/presence";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // Hairline outline keeps avatar photos from melting into the chrome on either
 // theme; outline (not border) so it never shifts layout.
-const AVATAR_OUTLINE =
-  "outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10";
+const AVATAR_OUTLINE = "outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10";
 
 function Chip({ person, size }: { person: PresencePerson; size: "sm" | "md" }) {
   const dim = size === "md" ? "h-7 w-7" : "h-6 w-6";
@@ -47,7 +42,11 @@ export default function PresenceStack({ people }: { people: PresencePerson[] }) 
   return (
     <div className="relative flex items-center">
       {stack.visible.map((p) => (
-        <div key={p.key} className="-ml-1.5 first:ml-0 ring-2 ring-background rounded-full" title={p.name}>
+        <div
+          key={p.key}
+          className="-ml-1.5 first:ml-0 ring-2 ring-background rounded-full"
+          title={p.name}
+        >
           <Chip person={p} size="md" />
         </div>
       ))}

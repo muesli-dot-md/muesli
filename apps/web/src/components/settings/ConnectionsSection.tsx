@@ -219,9 +219,7 @@ export function ConnectionsSection({ auth, toast }: Props) {
   return (
     <>
       <header className="mb-5">
-        <h2 className="text-lg font-semibold tracking-tight">
-          {t("settings.nav.connections")}
-        </h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("settings.nav.connections")}</h2>
         <p className="mt-1 max-w-prose text-sm text-muted-foreground [text-wrap:pretty]">
           {t("settings.conn.intro")}
         </p>
@@ -279,9 +277,7 @@ export function ConnectionsSection({ auth, toast }: Props) {
           {/* existing connections */}
           <SettingsCard description={!isAdmin ? t("settings.conn.adminOnly") : undefined}>
             {connections.length === 0 ? (
-              <SettingsRow
-                title={connsLoading ? t("common.loading") : t("settings.conn.empty")}
-              />
+              <SettingsRow title={connsLoading ? t("common.loading") : t("settings.conn.empty")} />
             ) : null}
             {connections.map((conn) => (
               <SettingsRow
@@ -297,9 +293,7 @@ export function ConnectionsSection({ auth, toast }: Props) {
                       </Badge>
                     ) : null}
                   </p>
-                  <p className="truncate font-mono text-xs text-muted-foreground">
-                    {facts(conn)}
-                  </p>
+                  <p className="truncate font-mono text-xs text-muted-foreground">{facts(conn)}</p>
                   <p className="mt-0.5 text-xs opacity-50">
                     {t("settings.conn.connectedOn", { date: driveDate(conn.created_at) })}
                   </p>
@@ -414,9 +408,7 @@ export function ConnectionsSection({ auth, toast }: Props) {
             <SettingsRow stacked>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
                 <GitBranch className="size-5 shrink-0 opacity-70" aria-hidden="true" />
-                <p className="min-w-0 flex-1 text-sm font-medium">
-                  {t("settings.conn.github")}
-                </p>
+                <p className="min-w-0 flex-1 text-sm font-medium">{t("settings.conn.github")}</p>
                 <Button
                   variant="outline"
                   size="sm"
@@ -461,9 +453,7 @@ export function ConnectionsSection({ auth, toast }: Props) {
                 <div className="mt-3 flex flex-col">
                   <StepConnectSharePoint
                     host={sharepointHost}
-                    t={(k: string, p?: Record<string, string | number>) =>
-                      t(k as MessageKey, p)
-                    }
+                    t={(k: string, p?: Record<string, string | number>) => t(k as MessageKey, p)}
                     workspaceId={selectedId}
                     ensureWorkspace={() => Promise.resolve(selectedId)}
                     onConnected={() => {

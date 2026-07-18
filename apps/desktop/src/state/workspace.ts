@@ -97,5 +97,4 @@ export const workspaceStore = createStore<WorkspaceState>()((set, get) => ({
   },
 }));
 
-export const useWorkspace = <T>(sel: (s: WorkspaceState) => T): T =>
-  useStore(workspaceStore, sel);
+export const useWorkspace = <T>(sel: (s: WorkspaceState) => T): T => useStore(workspaceStore, sel);

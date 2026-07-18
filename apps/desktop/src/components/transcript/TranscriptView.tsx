@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "zustand";
-import {
-  FolderOpen,
-  Mic,
-  MonitorSpeaker,
-  RefreshCw,
-  ShieldAlert,
-  Square,
-} from "lucide-react";
+import { FolderOpen, Mic, MonitorSpeaker, RefreshCw, ShieldAlert, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { subscribeToTranscriptEvents } from "@/services/events";
@@ -208,7 +201,11 @@ export default function TranscriptView({ workspaceDir, onStop, onSaved }: Transc
           )}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="brand" onClick={() => void startCapture()} disabled={running || setupPhase === "denied"}>
+          <Button
+            variant="brand"
+            onClick={() => void startCapture()}
+            disabled={running || setupPhase === "denied"}
+          >
             <Mic data-icon="inline-start" aria-hidden />
             Start
           </Button>
@@ -239,7 +236,9 @@ export default function TranscriptView({ workspaceDir, onStop, onSaved }: Transc
             </Button>
           </span>
         ) : (
-          <span className="text-xs text-muted-foreground italic">Output file: not yet available</span>
+          <span className="text-xs text-muted-foreground italic">
+            Output file: not yet available
+          </span>
         )}
       </div>
 
@@ -254,8 +253,7 @@ export default function TranscriptView({ workspaceDir, onStop, onSaved }: Transc
             <ul className="mt-3 space-y-1.5 text-sm text-muted-foreground">
               <li className="flex items-center gap-2">
                 <Mic className="size-4 shrink-0" aria-hidden />
-                Microphone ("Me" lane) —{" "}
-                {permissions?.microphone ? "granted" : "not granted"}
+                Microphone ("Me" lane) — {permissions?.microphone ? "granted" : "not granted"}
               </li>
               <li className="flex items-center gap-2">
                 <MonitorSpeaker className="size-4 shrink-0" aria-hidden />

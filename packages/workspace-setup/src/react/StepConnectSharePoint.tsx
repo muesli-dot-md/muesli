@@ -413,7 +413,11 @@ export function StepConnectSharePoint({
                 <Button variant="ghost" type="button" onClick={back}>
                   {t("wizard.back")}
                 </Button>
-                <Button variant="brand" type="button" onClick={() => mutateSp((s) => nextStage(s, setup))}>
+                <Button
+                  variant="brand"
+                  type="button"
+                  onClick={() => mutateSp((s) => nextStage(s, setup))}
+                >
                   {t("wizard.next")}
                 </Button>
               </div>

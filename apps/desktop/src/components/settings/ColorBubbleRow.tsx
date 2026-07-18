@@ -72,9 +72,7 @@ export function ColorBubbleRow({
   // Tab-reachable preset follows whichever bubble last received actual DOM
   // focus or, failing that, whichever preset is checked (falling back to the
   // first preset when none is).
-  const [focusedIndex, setFocusedIndex] = useState(
-    checkedIndex !== -1 ? checkedIndex : 0,
-  );
+  const [focusedIndex, setFocusedIndex] = useState(checkedIndex !== -1 ? checkedIndex : 0);
 
   // Keeps the roving tabindex on the checked preset whenever `hue` changes
   // from OUTSIDE this component's own arrow-key/click handling — e.g. a
@@ -112,11 +110,7 @@ export function ColorBubbleRow({
       {/* The presets only: pure radios, selection follows focus (WAI-ARIA
           APG). A REAL flex box, not display:contents — WebKit historically
           dropped explicit roles on boxless elements from the a11y tree. */}
-      <div
-        role="radiogroup"
-        aria-label={groupLabel}
-        className="flex flex-wrap gap-2.5"
-      >
+      <div role="radiogroup" aria-label={groupLabel} className="flex flex-wrap gap-2.5">
         {presets.map((preset, i) => {
           const checked = checkedIndex === i;
           return (
@@ -134,9 +128,7 @@ export function ColorBubbleRow({
               tabIndex={focusedIndex === i ? 0 : -1}
               className={cn(
                 "relative h-7 w-7 shrink-0 rounded-full ring-2 ring-offset-2 ring-offset-background transition-shadow active:translate-y-px",
-                checked
-                  ? "ring-primary"
-                  : "ring-transparent hover:ring-surface-border",
+                checked ? "ring-primary" : "ring-transparent hover:ring-surface-border",
               )}
               style={{
                 background: swatchColor(preset.hue, swatchL, swatchC),

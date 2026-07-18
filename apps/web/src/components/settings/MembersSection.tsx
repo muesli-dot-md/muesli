@@ -57,8 +57,7 @@ export function MembersSection({ user, workspace, detail, toast, onChanged }: Pr
   const auditFor = useRef("");
 
   function fail(e: unknown) {
-    if (e instanceof WorkspaceApiError && e.status === 409)
-      toast(t("ws.adminNeeded"), "warning");
+    if (e instanceof WorkspaceApiError && e.status === 409) toast(t("ws.adminNeeded"), "warning");
     else if (e instanceof WorkspaceApiError && e.status === 403)
       toast(t("ws.notAllowed"), "warning");
     else toast(errMsg(e), "warning");
@@ -177,9 +176,7 @@ export function MembersSection({ user, workspace, detail, toast, onChanged }: Pr
   return (
     <>
       <header className="mb-5">
-        <h2 className="text-lg font-semibold tracking-tight">
-          {t("settings.nav.members")}
-        </h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("settings.nav.members")}</h2>
         <p className="mt-1 text-sm text-muted-foreground [text-wrap:pretty]">
           {t("settings.members.intro")}
         </p>
@@ -187,9 +184,7 @@ export function MembersSection({ user, workspace, detail, toast, onChanged }: Pr
 
       {!detail ? (
         <SettingsCard>
-          <div className="px-4 py-6 text-sm text-muted-foreground">
-            {t("common.loading")}
-          </div>
+          <div className="px-4 py-6 text-sm text-muted-foreground">{t("common.loading")}</div>
         </SettingsCard>
       ) : (
         <>
@@ -230,9 +225,7 @@ export function MembersSection({ user, workspace, detail, toast, onChanged }: Pr
                     value={m.role}
                     disabled={roleLocked(m) || busyMember === m.user_id}
                     title={roleLocked(m) ? t("ws.adminNeeded") : ""}
-                    onChange={(e) =>
-                      void setRole(m, e.currentTarget.value as WorkspaceRole)
-                    }
+                    onChange={(e) => void setRole(m, e.currentTarget.value as WorkspaceRole)}
                   >
                     <option value="admin">{t("ws.roleAdmin")}</option>
                     <option value="member">{t("ws.roleMember")}</option>
@@ -270,10 +263,7 @@ export function MembersSection({ user, workspace, detail, toast, onChanged }: Pr
           {isAdmin && detail.invites ? (
             <SettingsCard heading={t("ws.invites")}>
               <div className="px-4 py-3.5">
-                <form
-                  className="flex flex-wrap items-center gap-2"
-                  onSubmit={onInviteSubmit}
-                >
+                <form className="flex flex-wrap items-center gap-2" onSubmit={onInviteSubmit}>
                   <Input
                     className="h-8 min-w-0 flex-1"
                     type="email"
@@ -285,9 +275,7 @@ export function MembersSection({ user, workspace, detail, toast, onChanged }: Pr
                   <NativeSelect
                     className="w-28"
                     value={inviteRole}
-                    onChange={(e) =>
-                      setInviteRole(e.currentTarget.value as WorkspaceRole)
-                    }
+                    onChange={(e) => setInviteRole(e.currentTarget.value as WorkspaceRole)}
                   >
                     <option value="member">{t("ws.roleMember")}</option>
                     <option value="admin">{t("ws.roleAdmin")}</option>
@@ -343,9 +331,7 @@ export function MembersSection({ user, workspace, detail, toast, onChanged }: Pr
                         <tr className="text-left text-muted-foreground">
                           <th className="pb-1.5 font-medium">{t("ws.colAction")}</th>
                           <th className="pb-1.5 font-medium">{t("ws.colActor")}</th>
-                          <th className="pb-1.5 text-right font-medium">
-                            {t("ws.colWhen")}
-                          </th>
+                          <th className="pb-1.5 text-right font-medium">{t("ws.colWhen")}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-surface-border">

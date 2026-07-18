@@ -101,9 +101,7 @@ export function AuthPage() {
                 setSsoError("");
               }}
             />
-            {ssoError ? (
-              <p className="text-center text-xs text-destructive">{ssoError}</p>
-            ) : null}
+            {ssoError ? <p className="text-center text-xs text-destructive">{ssoError}</p> : null}
             <Button type="submit" size="lg" className="w-full" disabled={ssoBusy}>
               {ssoBusy ? <Spinner className="size-3.5" /> : null}
               {t("account.signInWithOrg")}

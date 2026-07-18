@@ -13,7 +13,10 @@ import { relativeTime } from "@/state/collabStore";
 import { useSidebars } from "@/state/sidebars";
 import { ApiError } from "@/services/collab/apiRequest";
 import { colorFromId } from "@/services/presence";
-import { createNotificationsApi, type Notification } from "@/services/notifications/notificationsApi";
+import {
+  createNotificationsApi,
+  type Notification,
+} from "@/services/notifications/notificationsApi";
 import {
   clampPanelLeft,
   clampPanelMaxHeight,
@@ -100,8 +103,7 @@ export function NotificationsBell({ server, onSignIn }: NotificationsBellProps) 
   // Subtle staggered enter for list rows — skipped under reduced-motion so
   // the panel just appears. ~60ms/row, capped so a long list never feels slow.
   const reducedMotion =
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   async function refreshCount() {
     try {
@@ -287,7 +289,9 @@ export function NotificationsBell({ server, onSignIn }: NotificationsBellProps) 
           ) : (
             <ul className="flex w-full flex-col gap-0.5">
               {items.map((n, i) => {
-                const color = n.actor_id ? colorFromId(n.actor_id).color : "var(--muted-foreground)";
+                const color = n.actor_id
+                  ? colorFromId(n.actor_id).color
+                  : "var(--muted-foreground)";
                 return (
                   <li
                     key={n.id}
@@ -318,7 +322,9 @@ export function NotificationsBell({ server, onSignIn }: NotificationsBellProps) 
                         <span className="block text-sm">
                           {actorOf(n)} mentioned you in «{docOf(n)}»
                         </span>
-                        <span className="block text-xs opacity-50">{relativeTime(n.created_at)}</span>
+                        <span className="block text-xs opacity-50">
+                          {relativeTime(n.created_at)}
+                        </span>
                       </span>
                       {!n.read ? (
                         <span

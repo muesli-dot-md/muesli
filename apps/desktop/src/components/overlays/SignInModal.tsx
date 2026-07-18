@@ -8,11 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  displayHost,
-  displayUrl,
-  normalizeServerInput,
-} from "@/services/signInServer";
+import { displayHost, displayUrl, normalizeServerInput } from "@/services/signInServer";
 import { settingsStore, useSettings } from "@/state/settings";
 
 interface Props {
@@ -108,9 +104,7 @@ export function SignInModal({ onConfirm, onCancel }: Props) {
           // Server row: label, friendly host in medium weight, Change… link.
           <div className="flex items-center gap-3 text-sm">
             <span className="text-muted-foreground">Server</span>
-            <span className="min-w-0 flex-1 truncate text-right font-medium">
-              {host}
-            </span>
+            <span className="min-w-0 flex-1 truncate text-right font-medium">{host}</span>
             <Button
               type="button"
               variant="ghost"
@@ -125,10 +119,7 @@ export function SignInModal({ onConfirm, onCancel }: Props) {
           // The row swaps to a labeled URL input prefilled with the plain-URL
           // form of settings.wsBase (displayUrl).
           <div className="flex flex-col gap-1.5">
-            <label
-              className="text-sm text-muted-foreground"
-              htmlFor="signin-server-url"
-            >
+            <label className="text-sm text-muted-foreground" htmlFor="signin-server-url">
               Server
             </label>
             <div className="flex items-center gap-2">
@@ -162,19 +153,12 @@ export function SignInModal({ onConfirm, onCancel }: Props) {
                 Cancel
               </Button>
             </div>
-            {inputError ? (
-              <p className="text-xs text-destructive">{inputError}</p>
-            ) : null}
+            {inputError ? <p className="text-xs text-destructive">{inputError}</p> : null}
           </div>
         )}
 
         <div className="mt-2 flex items-center justify-between">
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-muted-foreground"
-            onClick={cancel}
-          >
+          <Button type="button" variant="ghost" className="text-muted-foreground" onClick={cancel}>
             Not now
           </Button>
           {/* Disabled while editing so Continue can never sign into a server

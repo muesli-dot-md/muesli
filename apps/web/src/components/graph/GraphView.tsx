@@ -16,7 +16,13 @@
 // ALL simulation state lives in refs; the rAF loop mutates in place and bumps
 // a frame counter so React re-renders the SVG at most once per animation frame.
 
-import { useEffect, useReducer, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Minus, Plus } from "lucide-react";
 
 import { Spinner } from "@/components/ui/spinner";
@@ -470,9 +476,7 @@ export function GraphView({
                   {" "}
                   ·{" "}
                   {t(
-                    ghostTotal === 1
-                      ? "graph.unresolvedCount.one"
-                      : "graph.unresolvedCount.other",
+                    ghostTotal === 1 ? "graph.unresolvedCount.one" : "graph.unresolvedCount.other",
                     { count: ghostTotal },
                   )}
                 </>

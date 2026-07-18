@@ -269,7 +269,8 @@ export default function DocApp({
 
   // A hairline outline keeps avatar photos from melting into the chrome on
   // either theme; outline (not border) so it doesn't shift layout.
-  const avatarOutline = "outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10";
+  const avatarOutline =
+    "outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10";
 
   if (docError === "doc-not-found") return <NotFound kind="doc" />;
   if (docError === "no-access")
@@ -283,215 +284,215 @@ export default function DocApp({
 
   return (
     <DocSessionContext.Provider value={session}>
-    <div className="flex h-screen flex-col bg-[var(--floor)]">
-      <header className="flex min-h-0 items-center border-b border-border bg-background px-4 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-2 px-2"
-            title={t("doc.allDocuments")}
-            onClick={() => gotoHome()}
-          >
-            {/* Wordmark matches the marketing site's nav: lowercase, Sentient, 1.4rem */}
-            <span className="wordmark text-[1.4rem] leading-none">muesli</span>
-          </Button>
-          <div className="flex min-w-0 items-baseline gap-2">
-            {editingTitle ? (
-              <Input
-                ref={titleInputRef}
-                className="h-7 w-64 text-base font-medium"
-                placeholder={docId}
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={() => void commitTitle()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void commitTitle();
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    cancelTitleEdit();
-                  }
-                }}
-              />
-            ) : (
-              <button
-                className="max-w-72 truncate rounded px-1.5 py-0.5 text-base font-medium hover:bg-muted"
-                title={t("modal.renameDocTitle")}
-                onClick={startTitleEdit}
-              >
-                {displayTitle}
-              </button>
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="rounded-full"
-            title={t("doc.searchTitle", { hint: searchShortcutHint })}
-            onClick={() => openSearchPalette()}
-          >
-            <Search aria-hidden="true" />
-          </Button>
-          {/* Connected is the web's steady state — only the EXCEPTION gets a dot. */}
-          {!connected && (
-            <span
-              className="h-2 w-2 shrink-0 rounded-full bg-destructive"
-              title={t("doc.disconnected")}
-            />
-          )}
-          {showSignInHint ? (
-            <span className="text-xs opacity-60">{t("doc.signInToOpen")}</span>
-          ) : !connected ? (
-            <span className="text-xs opacity-60">{t("doc.offline")}</span>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          {roster.length > 0 && (
-            <div className="relative flex items-center pl-1.5" ref={rosterElRef}>
-              {stack.visible.map((p, i) => (
-                <div key={p.key} className={i === 0 ? "" : "-ml-1.5"} title={p.name}>
-                  {p.avatar ? (
-                    <img
-                      className={`h-7 w-7 rounded-full ring-2 ring-background ${avatarOutline}`}
-                      src={p.avatar}
-                      alt={p.name}
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <span
-                      className="flex h-7 w-7 items-center justify-center rounded-full text-[0.65rem] font-semibold text-white ring-2 ring-background"
-                      style={{ backgroundColor: p.color }}
-                      aria-label={p.name}
-                    >
-                      {p.kind === "agent" ? "✦" : initials(p.name)}
-                    </span>
-                  )}
-                </div>
-              ))}
-              {stack.overflow > 0 && (
+      <div className="flex h-screen flex-col bg-[var(--floor)]">
+        <header className="flex min-h-0 items-center border-b border-border bg-background px-4 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-2 px-2"
+              title={t("doc.allDocuments")}
+              onClick={() => gotoHome()}
+            >
+              {/* Wordmark matches the marketing site's nav: lowercase, Sentient, 1.4rem */}
+              <span className="wordmark text-[1.4rem] leading-none">muesli</span>
+            </Button>
+            <div className="flex min-w-0 items-baseline gap-2">
+              {editingTitle ? (
+                <Input
+                  ref={titleInputRef}
+                  className="h-7 w-64 text-base font-medium"
+                  placeholder={docId}
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={() => void commitTitle()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void commitTitle();
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      cancelTitleEdit();
+                    }
+                  }}
+                />
+              ) : (
                 <button
-                  type="button"
-                  className="-ml-1.5 flex h-10 min-w-10 items-center justify-center rounded-full ring-2 ring-background transition-transform active:scale-[0.96]"
-                  title={t("doc.presenceMore", { count: stack.overflow })}
-                  aria-haspopup="true"
-                  aria-expanded={rosterOpen}
-                  onClick={() => setRosterOpen((v) => !v)}
+                  className="max-w-72 truncate rounded px-1.5 py-0.5 text-base font-medium hover:bg-muted"
+                  title={t("modal.renameDocTitle")}
+                  onClick={startTitleEdit}
                 >
-                  <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-muted px-1 text-[0.65rem] font-semibold">
-                    ⊕{stack.overflow}
-                  </span>
+                  {displayTitle}
                 </button>
               )}
-              {rosterOpen && (
-                <div
-                  className="absolute right-0 top-full z-20 mt-1.5 max-h-80 w-56 overflow-y-auto rounded-lg border border-border bg-popover p-2 shadow-md"
-                  role="menu"
-                >
-                  <p className="px-1.5 pb-1 text-xs font-semibold opacity-60">
-                    {t("doc.peopleHere")}
-                  </p>
-                  <ul className="flex flex-col gap-0.5">
-                    {roster.map((p) => (
-                      <li key={p.key} className="flex items-center gap-2 rounded px-1.5 py-1">
-                        {p.avatar ? (
-                          <img
-                            className={`h-6 w-6 shrink-0 rounded-full ${avatarOutline}`}
-                            src={p.avatar}
-                            alt={p.name}
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <span
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.6rem] font-semibold text-white"
-                            style={{ backgroundColor: p.color }}
-                            aria-hidden="true"
-                          >
-                            {p.kind === "agent" ? "✦" : initials(p.name)}
-                          </span>
-                        )}
-                        <span className="truncate text-sm">{p.name}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </div>
-          )}
-          {auth.mode === "oidc" && auth.user && <NotificationsBell />}
-          {auth.mode === "oidc" && auth.user && (
-            <Popover>
-              <PopoverTrigger render={<Button size="sm" className="ml-1" />}>
-                {t("common.share")}
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-72 p-3">
-                <div className="flex items-center gap-2">
-                  <select
-                    className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs"
-                    value={shareRole}
-                    onChange={(e) => setShareRole(e.target.value as ShareRole)}
-                  >
-                    <option value="viewer">{t("common.shareRole.viewer")}</option>
-                    <option value="commenter">{t("common.shareRole.commenter")}</option>
-                    <option value="editor">{t("common.shareRole.editor")}</option>
-                  </select>
-                  <Button size="sm" variant="outline" onClick={() => void share()}>
-                    {t("common.createLink")}
-                  </Button>
-                </div>
-                {shareUrl && (
-                  <>
-                    <Input
-                      className="mt-2 h-7 w-full font-mono text-xs"
-                      readOnly
-                      value={shareUrl}
-                      onFocus={(e) => e.currentTarget.select()}
-                    />
-                    <p className="mt-1 text-xs opacity-60">{t("common.copiedToClipboard")}</p>
-                  </>
-                )}
-                {shareError && <p className="mt-1 text-xs text-destructive">{shareError}</p>}
-              </PopoverContent>
-            </Popover>
-          )}
-          <AccountMenu
-            auth={auth}
-            toast={(m: string) => collab.showToast(m)}
-            onSignOut={() => void signOut()}
-            onWorkspace={() => setWorkspaceOpen(true)}
-          />
-        </div>
-      </header>
-
-      <Toolbar title={displayTitle} />
-
-      <main className="flex min-h-0 flex-1 bg-[var(--floor)]">
-        <OutlineRail />
-        <section className="doc-sheet min-h-0 min-w-0 flex-1">
-          <Editor />
-        </section>
-        <CollabSidebar store={collab} docId={docId} shareToken={shareToken} />
-      </main>
-
-      {workspaceOpen && auth.mode === "oidc" && auth.user && (
-        <WorkspacePanel
-          user={auth.user}
-          toast={(m: string) => collab.showToast(m)}
-          onClose={() => setWorkspaceOpen(false)}
-        />
-      )}
-
-      {collab.toast && (
-        <div className="fixed bottom-4 right-4 z-50">
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm shadow-lg backdrop-blur">
-            {collab.toast}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="rounded-full"
+              title={t("doc.searchTitle", { hint: searchShortcutHint })}
+              onClick={() => openSearchPalette()}
+            >
+              <Search aria-hidden="true" />
+            </Button>
+            {/* Connected is the web's steady state — only the EXCEPTION gets a dot. */}
+            {!connected && (
+              <span
+                className="h-2 w-2 shrink-0 rounded-full bg-destructive"
+                title={t("doc.disconnected")}
+              />
+            )}
+            {showSignInHint ? (
+              <span className="text-xs opacity-60">{t("doc.signInToOpen")}</span>
+            ) : !connected ? (
+              <span className="text-xs opacity-60">{t("doc.offline")}</span>
+            ) : null}
           </div>
-        </div>
-      )}
+          <div className="flex items-center gap-2">
+            {roster.length > 0 && (
+              <div className="relative flex items-center pl-1.5" ref={rosterElRef}>
+                {stack.visible.map((p, i) => (
+                  <div key={p.key} className={i === 0 ? "" : "-ml-1.5"} title={p.name}>
+                    {p.avatar ? (
+                      <img
+                        className={`h-7 w-7 rounded-full ring-2 ring-background ${avatarOutline}`}
+                        src={p.avatar}
+                        alt={p.name}
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <span
+                        className="flex h-7 w-7 items-center justify-center rounded-full text-[0.65rem] font-semibold text-white ring-2 ring-background"
+                        style={{ backgroundColor: p.color }}
+                        aria-label={p.name}
+                      >
+                        {p.kind === "agent" ? "✦" : initials(p.name)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+                {stack.overflow > 0 && (
+                  <button
+                    type="button"
+                    className="-ml-1.5 flex h-10 min-w-10 items-center justify-center rounded-full ring-2 ring-background transition-transform active:scale-[0.96]"
+                    title={t("doc.presenceMore", { count: stack.overflow })}
+                    aria-haspopup="true"
+                    aria-expanded={rosterOpen}
+                    onClick={() => setRosterOpen((v) => !v)}
+                  >
+                    <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-muted px-1 text-[0.65rem] font-semibold">
+                      ⊕{stack.overflow}
+                    </span>
+                  </button>
+                )}
+                {rosterOpen && (
+                  <div
+                    className="absolute right-0 top-full z-20 mt-1.5 max-h-80 w-56 overflow-y-auto rounded-lg border border-border bg-popover p-2 shadow-md"
+                    role="menu"
+                  >
+                    <p className="px-1.5 pb-1 text-xs font-semibold opacity-60">
+                      {t("doc.peopleHere")}
+                    </p>
+                    <ul className="flex flex-col gap-0.5">
+                      {roster.map((p) => (
+                        <li key={p.key} className="flex items-center gap-2 rounded px-1.5 py-1">
+                          {p.avatar ? (
+                            <img
+                              className={`h-6 w-6 shrink-0 rounded-full ${avatarOutline}`}
+                              src={p.avatar}
+                              alt={p.name}
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <span
+                              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[0.6rem] font-semibold text-white"
+                              style={{ backgroundColor: p.color }}
+                              aria-hidden="true"
+                            >
+                              {p.kind === "agent" ? "✦" : initials(p.name)}
+                            </span>
+                          )}
+                          <span className="truncate text-sm">{p.name}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+            {auth.mode === "oidc" && auth.user && <NotificationsBell />}
+            {auth.mode === "oidc" && auth.user && (
+              <Popover>
+                <PopoverTrigger render={<Button size="sm" className="ml-1" />}>
+                  {t("common.share")}
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 p-3">
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs"
+                      value={shareRole}
+                      onChange={(e) => setShareRole(e.target.value as ShareRole)}
+                    >
+                      <option value="viewer">{t("common.shareRole.viewer")}</option>
+                      <option value="commenter">{t("common.shareRole.commenter")}</option>
+                      <option value="editor">{t("common.shareRole.editor")}</option>
+                    </select>
+                    <Button size="sm" variant="outline" onClick={() => void share()}>
+                      {t("common.createLink")}
+                    </Button>
+                  </div>
+                  {shareUrl && (
+                    <>
+                      <Input
+                        className="mt-2 h-7 w-full font-mono text-xs"
+                        readOnly
+                        value={shareUrl}
+                        onFocus={(e) => e.currentTarget.select()}
+                      />
+                      <p className="mt-1 text-xs opacity-60">{t("common.copiedToClipboard")}</p>
+                    </>
+                  )}
+                  {shareError && <p className="mt-1 text-xs text-destructive">{shareError}</p>}
+                </PopoverContent>
+              </Popover>
+            )}
+            <AccountMenu
+              auth={auth}
+              toast={(m: string) => collab.showToast(m)}
+              onSignOut={() => void signOut()}
+              onWorkspace={() => setWorkspaceOpen(true)}
+            />
+          </div>
+        </header>
 
-      {collab.snapshot && (
-        <SnapshotModal snapshot={collab.snapshot} onClose={() => collab.closeSnapshot()} />
-      )}
-    </div>
+        <Toolbar title={displayTitle} />
+
+        <main className="flex min-h-0 flex-1 bg-[var(--floor)]">
+          <OutlineRail />
+          <section className="doc-sheet min-h-0 min-w-0 flex-1">
+            <Editor />
+          </section>
+          <CollabSidebar store={collab} docId={docId} shareToken={shareToken} />
+        </main>
+
+        {workspaceOpen && auth.mode === "oidc" && auth.user && (
+          <WorkspacePanel
+            user={auth.user}
+            toast={(m: string) => collab.showToast(m)}
+            onClose={() => setWorkspaceOpen(false)}
+          />
+        )}
+
+        {collab.toast && (
+          <div className="fixed bottom-4 right-4 z-50">
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm shadow-lg backdrop-blur">
+              {collab.toast}
+            </div>
+          </div>
+        )}
+
+        {collab.snapshot && (
+          <SnapshotModal snapshot={collab.snapshot} onClose={() => collab.closeSnapshot()} />
+        )}
+      </div>
     </DocSessionContext.Provider>
   );
 }

@@ -45,9 +45,7 @@ export function AboutSection({ appVersion }: Props) {
         <SettingsRow title="App" control={<span className="text-sm">Muesli</span>} />
         <SettingsRow
           title="Version"
-          control={
-            <span className="font-mono text-xs tabular-nums">{appVersion}</span>
-          }
+          control={<span className="font-mono text-xs tabular-nums">{appVersion}</span>}
         />
       </SettingsCard>
 

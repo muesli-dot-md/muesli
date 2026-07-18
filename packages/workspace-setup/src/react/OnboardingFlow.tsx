@@ -47,7 +47,11 @@ export type OnboardingFlowHost = {
 type ConceptIcon = "workspace" | "document" | "storage" | "sharing";
 
 const CONCEPTS: { title: WizardKey; body: WizardKey; icon: ConceptIcon }[] = [
-  { title: "onboarding.conceptWorkspace", body: "onboarding.conceptWorkspaceBody", icon: "workspace" },
+  {
+    title: "onboarding.conceptWorkspace",
+    body: "onboarding.conceptWorkspaceBody",
+    icon: "workspace",
+  },
   { title: "onboarding.conceptDocument", body: "onboarding.conceptDocumentBody", icon: "document" },
   { title: "onboarding.conceptStorage", body: "onboarding.conceptStorageBody", icon: "storage" },
   { title: "onboarding.conceptSharing", body: "onboarding.conceptSharingBody", icon: "sharing" },
@@ -177,7 +181,9 @@ export function OnboardingFlow({
   // {workspace} intact) so the name lands inside <em> — italic serif — in any
   // word order a translation chooses.
   const invitedParts =
-    host.context.kind === "invited" ? splitAtParam(t("onboarding.invitedTitle"), "workspace") : null;
+    host.context.kind === "invited"
+      ? splitAtParam(t("onboarding.invitedTitle"), "workspace")
+      : null;
 
   let screen: ReactNode;
   if (view.screen === "welcome") {

@@ -128,7 +128,11 @@ export function StepConnectS3({
         <div className="flex flex-wrap gap-3">
           <label className="flex min-w-40 flex-1 flex-col gap-1">
             <span className="text-sm">{t("wizard.region")}</span>
-            <Input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="us-east-1" />
+            <Input
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              placeholder="us-east-1"
+            />
           </label>
           <label className="flex min-w-40 flex-1 flex-col gap-1">
             <span className="text-sm">{t("wizard.accessKeyId")}</span>

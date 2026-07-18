@@ -62,5 +62,5 @@ export const captureUiStore = createStore<CaptureUiState>()((set, get) => ({
     }),
 }));
 
-export const useCaptureUi = <T,>(selector: (s: CaptureUiState) => T): T =>
+export const useCaptureUi = <T>(selector: (s: CaptureUiState) => T): T =>
   useStore(captureUiStore, selector);

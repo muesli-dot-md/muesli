@@ -48,9 +48,7 @@ export function PreferencesSection() {
   return (
     <>
       <header className="mb-5">
-        <h2 className="text-lg font-semibold tracking-tight">
-          {t("settings.nav.preferences")}
-        </h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("settings.nav.preferences")}</h2>
         <p className="mt-1 text-sm text-muted-foreground [text-wrap:pretty]">
           {t("settings.appearance.perBrowser")}
         </p>
@@ -93,11 +91,7 @@ export function PreferencesSection() {
                 onClick={() => accentStore.getState().setId(p.id)}
               >
                 {selected ? (
-                  <Check
-                    className="size-4"
-                    style={{ color: p.lightContent }}
-                    aria-hidden="true"
-                  />
+                  <Check className="size-4" style={{ color: p.lightContent }} aria-hidden="true" />
                 ) : null}
               </button>
             );
@@ -137,19 +131,14 @@ export function PreferencesSection() {
       {/* Background tint: the desktop's floor controls, minus its window
           translucency (no web counterpart) — the wash lands flat on the page
           floor. */}
-      <SettingsCard
-        heading={t("settings.background")}
-        description={t("settings.background.hint")}
-      >
+      <SettingsCard heading={t("settings.background")} description={t("settings.background.hint")}>
         <SettingsRow
           title={t("settings.background.tintStrength")}
           stacked
           control={
             <div className="w-full">
               <div className="mb-1.5 flex items-center justify-end">
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {tint}%
-                </span>
+                <span className="text-xs tabular-nums text-muted-foreground">{tint}%</span>
               </div>
               <Slider
                 min={0}

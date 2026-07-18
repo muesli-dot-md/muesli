@@ -20,9 +20,7 @@ export default function OutlineRail() {
   const session = useDocSession();
   // The mounted editor view (reactive seam) — scroll tracking + jump target.
   const view = useEditorView(session);
-  const [items, setItems] = useState<OutlineItem[]>(() =>
-    parseOutline(session.ytext.toString()),
-  );
+  const [items, setItems] = useState<OutlineItem[]>(() => parseOutline(session.ytext.toString()));
   const [collapsed, setCollapsed] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
 
@@ -51,9 +49,7 @@ export default function OutlineRail() {
     }
     // the heading at/above the first visible line is the current section
     // (heights are relative to the document top, so strip the scroller padding)
-    const topPos = view.lineBlockAtHeight(
-      view.scrollDOM.scrollTop - view.documentPadding.top,
-    ).from;
+    const topPos = view.lineBlockAtHeight(view.scrollDOM.scrollTop - view.documentPadding.top).from;
     let idx = 0;
     for (let i = 0; i < items.length; i++) {
       if (items[i].from <= topPos + 1) idx = i;

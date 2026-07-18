@@ -26,12 +26,8 @@ export function NotificationsSection({ auth, toast }: Props) {
   const [saving, setSaving] = useState(false);
 
   // The mention preferences per channel; undefined until loaded.
-  const inAppMention = prefs.find(
-    (p) => p.event_type === "mention" && p.channel === "in_app",
-  );
-  const emailMention = prefs.find(
-    (p) => p.event_type === "mention" && p.channel === "email",
-  );
+  const inAppMention = prefs.find((p) => p.event_type === "mention" && p.channel === "in_app");
+  const emailMention = prefs.find((p) => p.event_type === "mention" && p.channel === "email");
 
   useEffect(() => {
     if (!(auth.mode === "oidc" && auth.user) || loaded) return;
@@ -57,9 +53,7 @@ export function NotificationsSection({ auth, toast }: Props) {
     setSaving(true);
     // Optimistic: reflect the new value immediately, roll back on failure.
     setPrefs((cur) =>
-      cur.map((p) =>
-        p.event_type === "mention" && p.channel === channel ? { ...p, enabled } : p,
-      ),
+      cur.map((p) => (p.event_type === "mention" && p.channel === channel ? { ...p, enabled } : p)),
     );
     try {
       await api.setPreference("mention", channel, enabled);
@@ -67,9 +61,7 @@ export function NotificationsSection({ auth, toast }: Props) {
     } catch {
       setPrefs((cur) =>
         cur.map((p) =>
-          p.event_type === "mention" && p.channel === channel
-            ? { ...p, enabled: !enabled }
-            : p,
+          p.event_type === "mention" && p.channel === channel ? { ...p, enabled: !enabled } : p,
         ),
       );
       toast(t("settings.notifications.saveFailed"), "warning");
@@ -81,9 +73,7 @@ export function NotificationsSection({ auth, toast }: Props) {
   return (
     <>
       <header className="mb-5">
-        <h2 className="text-lg font-semibold tracking-tight">
-          {t("settings.notifications")}
-        </h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("settings.notifications")}</h2>
         <p className="mt-1 text-sm text-muted-foreground [text-wrap:pretty]">
           {t("settings.notifications.intro")}
         </p>

@@ -7,11 +7,7 @@ import { KeyRound, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  AccountApiError,
-  createAccountApi,
-  type ApiTokenSummary,
-} from "@/services/accountApi";
+import { AccountApiError, createAccountApi, type ApiTokenSummary } from "@/services/accountApi";
 import { errMsg } from "@/services/apiError";
 import { httpBase, loginUrl, type AuthInfo } from "@/services/identity";
 import { driveDate, fullDateTime } from "@/services/time";
@@ -80,9 +76,7 @@ export function ApiKeysSection({ auth, toast }: Props) {
     <>
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold tracking-tight">
-            {t("settings.nav.apiKeys")}
-          </h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t("settings.nav.apiKeys")}</h2>
           <p className="mt-1 max-w-prose text-sm text-muted-foreground [text-wrap:pretty]">
             {t("settings.keys.purpose")}
           </p>
@@ -96,9 +90,7 @@ export function ApiKeysSection({ auth, toast }: Props) {
       </header>
 
       {auth.mode === "open" || degraded === "open" ? (
-        <p className="text-sm text-muted-foreground [text-wrap:pretty]">
-          {t("settings.openMode")}
-        </p>
+        <p className="text-sm text-muted-foreground [text-wrap:pretty]">{t("settings.openMode")}</p>
       ) : degraded === "signin" ? (
         <p className="text-sm text-muted-foreground [text-wrap:pretty]">
           {t("settings.signInToManage")}{" "}
@@ -123,8 +115,7 @@ export function ApiKeysSection({ auth, toast }: Props) {
         <SettingsCard>
           {tokens.map((token) => {
             const expired =
-              token.expires_at != null &&
-              new Date(token.expires_at).getTime() < Date.now();
+              token.expires_at != null && new Date(token.expires_at).getTime() < Date.now();
             return (
               <div key={token.id} className="flex items-center gap-3 px-4 py-3.5">
                 <span
@@ -135,14 +126,10 @@ export function ApiKeysSection({ auth, toast }: Props) {
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-medium">
-                      {token.label ?? "—"}
-                    </span>
+                    <span className="truncate text-sm font-medium">{token.label ?? "—"}</span>
                     <Badge variant="secondary">{scopesLabel(token.scopes)}</Badge>
                     {expired ? (
-                      <Badge variant="destructive">
-                        {t("settings.keys.expiredBadge")}
-                      </Badge>
+                      <Badge variant="destructive">{t("settings.keys.expiredBadge")}</Badge>
                     ) : null}
                   </div>
                   <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">

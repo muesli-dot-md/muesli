@@ -87,9 +87,7 @@ export function MoveToModal({ srcPath, srcName, onClose, onMoved }: Props) {
 
         <div className="min-h-0 overflow-y-auto py-1">
           {targets.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-muted-foreground">
-              No other folder to move into.
-            </p>
+            <p className="px-4 py-6 text-sm text-muted-foreground">No other folder to move into.</p>
           ) : (
             targets.map((t) => (
               <button

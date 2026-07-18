@@ -33,13 +33,7 @@ export default defineConfig({
     // @codemirror/state") and the editor fails to mount (blank document pane).
     // react/react-dom deduped for the same reason (hooks across duplicated
     // copies throw). Mirrors apps/web/vite.config.ts.
-    dedupe: [
-      "@codemirror/state",
-      "@codemirror/view",
-      "@codemirror/language",
-      "react",
-      "react-dom",
-    ],
+    dedupe: ["@codemirror/state", "@codemirror/view", "@codemirror/language", "react", "react-dom"],
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },

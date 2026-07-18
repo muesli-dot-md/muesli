@@ -233,8 +233,7 @@ export function TreeNode({
     else onOpen(node.path, node.name);
   }
 
-  const sortedChildren =
-    node.isDir && node.children ? sortNodes(node.children, sortMode) : [];
+  const sortedChildren = node.isDir && node.children ? sortNodes(node.children, sortMode) : [];
 
   const isActive = !node.isDir && node.path === activePath;
 

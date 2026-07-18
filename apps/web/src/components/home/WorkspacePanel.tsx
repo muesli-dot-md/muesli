@@ -380,9 +380,7 @@ export function WorkspacePanel({ user, onClose, toast = () => {} }: Props) {
                       </>
                     )}
                     <Pill
-                      className={
-                        isAdmin ? "bg-primary/15 text-primary" : "text-muted-foreground"
-                      }
+                      className={isAdmin ? "bg-primary/15 text-primary" : "text-muted-foreground"}
                     >
                       {detail.role}
                     </Pill>
@@ -505,7 +503,10 @@ export function WorkspacePanel({ user, onClose, toast = () => {} }: Props) {
                           ))}
                         </ul>
                       )}
-                      <form className="mb-4 flex items-center gap-2" onSubmit={(e) => void sendInvite(e)}>
+                      <form
+                        className="mb-4 flex items-center gap-2"
+                        onSubmit={(e) => void sendInvite(e)}
+                      >
                         <Input
                           className="h-8 flex-1"
                           type="email"
@@ -567,7 +568,10 @@ export function WorkspacePanel({ user, onClose, toast = () => {} }: Props) {
                                       )}
                                     </span>
                                   </td>
-                                  <td className="py-1 text-right text-xs opacity-50" title={e.created_at}>
+                                  <td
+                                    className="py-1 text-right text-xs opacity-50"
+                                    title={e.created_at}
+                                  >
                                     {relativeTime(e.created_at)}
                                   </td>
                                 </tr>

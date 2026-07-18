@@ -120,8 +120,7 @@ export default function EditorPane() {
   // availability, snapshot, composerRequest, members). Tolerates null.
   useCollabSnapshot(collabStore);
   const suggestMode: boolean = collabStore?.suggestMode ?? false;
-  const hasSelection =
-    !!collabStore && collabStore.selection.from !== collabStore.selection.to;
+  const hasSelection = !!collabStore && collabStore.selection.from !== collabStore.selection.to;
   // Only offer the affordance on synced docs whose collab store is live and
   // reachable (not auth-degraded / volatile).
   const showAffordance =

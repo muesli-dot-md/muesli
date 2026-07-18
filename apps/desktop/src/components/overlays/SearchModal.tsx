@@ -12,11 +12,7 @@ import { CommandDialog } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  flattenGroups,
-  groupHits,
-  highlightSplit,
-} from "@/services/searchGrouping";
+import { flattenGroups, groupHits, highlightSplit } from "@/services/searchGrouping";
 import { searchWorkspace, type SearchHit } from "@/services/tauri";
 import { tabsStore } from "@/state/tabs";
 import { workspaceStore } from "@/state/workspace";
@@ -30,9 +26,7 @@ function Highlighted({ text, needle }: { text: string; needle: string }) {
   return (
     <>
       {h.pre}
-      <mark className="rounded-sm bg-primary/20 font-semibold text-inherit">
-        {h.hit}
-      </mark>
+      <mark className="rounded-sm bg-primary/20 font-semibold text-inherit">{h.hit}</mark>
       {h.post}
     </>
   );
@@ -159,10 +153,7 @@ export function SearchModal({ open, onClose }: Props) {
       title="Search files & content"
       description="Search filenames and contents in the open workspace…"
     >
-      <div
-        className="flex max-h-[60vh] flex-col overflow-hidden"
-        onKeyDown={handleKeyDown}
-      >
+      <div className="flex max-h-[60vh] flex-col overflow-hidden" onKeyDown={handleKeyDown}>
         {/* Search input row */}
         <label className="flex items-center gap-3 border-b border-surface-border px-4 py-3">
           <Search className="size-4.5 shrink-0 opacity-50" aria-hidden="true" />
@@ -182,10 +173,7 @@ export function SearchModal({ open, onClose }: Props) {
         </label>
 
         {/* Results */}
-        <div
-          ref={listRef}
-          className="min-h-0 overflow-y-auto overscroll-contain py-1"
-        >
+        <div ref={listRef} className="min-h-0 overflow-y-auto overscroll-contain py-1">
           {loading && results.length === 0 ? (
             // Shimmer only while there is nothing to show; stale results stay
             // on screen during a refresh so typing never flickers.

@@ -428,7 +428,10 @@ export class CollabStore {
     if (kind === "insert-after") {
       this.drafts = [...this.drafts, { from: to, to, insert, oldText: "" }];
     } else {
-      this.drafts = [...this.drafts, { from, to, insert: kind === "delete" ? "" : insert, oldText }];
+      this.drafts = [
+        ...this.drafts,
+        { from, to, insert: kind === "delete" ? "" : insert, oldText },
+      ];
     }
   }
 

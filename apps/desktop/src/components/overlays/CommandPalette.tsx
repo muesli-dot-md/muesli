@@ -35,10 +35,7 @@ export function CommandPalette({ open, onClose }: Props) {
   const [query, setQuery] = useState("");
   const all = useCommands((s: { all: () => PaletteCommand[] }) => s.all());
 
-  const filtered = useMemo(
-    () => fuzzyFilter(all, query, (c) => c.title),
-    [all, query],
-  );
+  const filtered = useMemo(() => fuzzyFilter(all, query, (c) => c.title), [all, query]);
 
   // Reset the query on every open so the palette always starts fresh.
   useEffect(() => {
@@ -68,23 +65,13 @@ export function CommandPalette({ open, onClose }: Props) {
     >
       {/* cmdk's own filter is off — ranking comes from services/fuzzy. */}
       <Command shouldFilter={false} onKeyDown={handleKeyDown}>
-        <CommandInput
-          placeholder="Type a command…"
-          value={query}
-          onValueChange={setQuery}
-        />
+        <CommandInput placeholder="Type a command…" value={query} onValueChange={setQuery} />
         <CommandList>
           <CommandEmpty>No commands found</CommandEmpty>
           {filtered.map((cmd) => (
-            <CommandItem
-              key={cmd.id}
-              value={cmd.id}
-              onSelect={() => runCommand(cmd)}
-            >
+            <CommandItem key={cmd.id} value={cmd.id} onSelect={() => runCommand(cmd)}>
               <span className="truncate">{cmd.title}</span>
-              {cmd.hotkey ? (
-                <Kbd className="ml-auto shrink-0">{cmd.hotkey}</Kbd>
-              ) : null}
+              {cmd.hotkey ? <Kbd className="ml-auto shrink-0">{cmd.hotkey}</Kbd> : null}
             </CommandItem>
           ))}
         </CommandList>

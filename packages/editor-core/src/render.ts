@@ -308,9 +308,7 @@ function extractFrontmatter(src: string): { html: string; body: string } {
         `<tr><th class="frontmatter-key">${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`,
     )
     .join("");
-  const html =
-    `<div class="frontmatter">` +
-    `<table><tbody>${rows}</tbody></table></div>\n`;
+  const html = `<div class="frontmatter">` + `<table><tbody>${rows}</tbody></table></div>\n`;
   return { html, body: src.slice(m[0].length) };
 }
 

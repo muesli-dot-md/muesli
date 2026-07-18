@@ -12,20 +12,13 @@ interface Props {
   className?: string;
 }
 
-export function SettingsSection({
-  title,
-  description,
-  children,
-  className,
-}: Props) {
+export function SettingsSection({ title, description, children, className }: Props) {
   return (
     <section className={cn("flex flex-col", className)}>
       <header className="mb-5">
         <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
         {description ? (
-          <p className="mt-1 text-sm text-muted-foreground [text-wrap:pretty]">
-            {description}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground [text-wrap:pretty]">{description}</p>
         ) : null}
       </header>
       {children}

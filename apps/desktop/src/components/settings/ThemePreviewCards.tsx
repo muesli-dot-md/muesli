@@ -22,18 +22,9 @@ function Preview({ kind }: { kind: "light" | "dark" }) {
       style={{ background: dark ? "oklch(0.21 0.004 285)" : "oklch(0.985 0 0)" }}
     >
       <div className="flex gap-1">
-        <span
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ background: "oklch(0.7 0.16 25)" }}
-        />
-        <span
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ background: "oklch(0.82 0.15 85)" }}
-        />
-        <span
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ background: "oklch(0.78 0.16 145)" }}
-        />
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: "oklch(0.7 0.16 25)" }} />
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: "oklch(0.82 0.15 85)" }} />
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: "oklch(0.78 0.16 145)" }} />
       </div>
       <div className="flex flex-1 gap-1.5">
         <div

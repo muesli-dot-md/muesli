@@ -80,11 +80,7 @@ export function PreferencesSection() {
                 onClick={() => accentStore.getState().setId(p.id)}
               >
                 {selected ? (
-                  <Check
-                    className="size-4"
-                    style={{ color: p.lightContent }}
-                    aria-hidden="true"
-                  />
+                  <Check className="size-4" style={{ color: p.lightContent }} aria-hidden="true" />
                 ) : null}
               </button>
             );
@@ -103,9 +99,7 @@ export function PreferencesSection() {
           control={
             <div className="w-full">
               <div className="mb-1.5 flex items-center justify-end">
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {translucency}%
-                </span>
+                <span className="text-xs tabular-nums text-muted-foreground">{translucency}%</span>
               </div>
               <Slider
                 min={0}
@@ -126,9 +120,7 @@ export function PreferencesSection() {
           control={
             <div className="w-full">
               <div className="mb-1.5 flex items-center justify-end">
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {tint}%
-                </span>
+                <span className="text-xs tabular-nums text-muted-foreground">{tint}%</span>
               </div>
               <Slider
                 min={0}
@@ -165,11 +157,7 @@ export function PreferencesSection() {
           control={
             // Routed through prefsSync so the synced keys are deleted
             // server-side (null), not written out as this app's defaults.
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => prefsSync.resetBackground()}
-            >
+            <Button variant="ghost" size="sm" onClick={() => prefsSync.resetBackground()}>
               Reset to default
             </Button>
           }
@@ -177,10 +165,7 @@ export function PreferencesSection() {
       </SettingsCard>
 
       {/* File tree folder icon color */}
-      <SettingsCard
-        heading="Folder color"
-        description="Color of folder icons in the file tree."
-      >
+      <SettingsCard heading="Folder color" description="Color of folder icons in the file tree.">
         <SettingsRow
           title="Icon hue"
           stacked
@@ -198,11 +183,7 @@ export function PreferencesSection() {
           title="Reset folder color"
           description="Restore the default folder color."
           control={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => prefsSync.resetFolderColor()}
-            >
+            <Button variant="ghost" size="sm" onClick={() => prefsSync.resetFolderColor()}>
               Reset to default
             </Button>
           }

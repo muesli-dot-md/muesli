@@ -513,7 +513,11 @@ export default function AppShell() {
           if (t.activeId) t.toggleMode(t.activeId);
         },
       },
-      { id: "refresh-tree", title: "Refresh tree", run: () => void workspaceStore.getState().refresh() },
+      {
+        id: "refresh-tree",
+        title: "Refresh tree",
+        run: () => void workspaceStore.getState().refresh(),
+      },
     ]);
 
     // Install the global keymap. Callbacks read live state via getState()/refs
@@ -649,7 +653,11 @@ export default function AppShell() {
 
                 {/* Explorer icon row */}
                 <div className="flex items-center gap-0.5 px-2 pt-0 pb-1.5">
-                  <IconButton label="New note" onClick={() => void handleNewNote()} disabled={!root}>
+                  <IconButton
+                    label="New note"
+                    onClick={() => void handleNewNote()}
+                    disabled={!root}
+                  >
                     <SquarePen size={16} />
                   </IconButton>
                   <IconButton
@@ -696,7 +704,10 @@ export default function AppShell() {
 
                 {/* Hairline at the bottom edge of the fixed header stack: fades
                     in only while the tree is scrolled (sentinel observer). */}
-                <div className={cn("sidebar-hairline", treeScrolled && "visible")} aria-hidden="true" />
+                <div
+                  className={cn("sidebar-hairline", treeScrolled && "visible")}
+                  aria-hidden="true"
+                />
 
                 {tree ? (
                   <div className="tree-scroll flex-1 overflow-y-auto text-sm" ref={setTreeScrollEl}>
@@ -777,7 +788,9 @@ export default function AppShell() {
         {showTranscript && (
           <footer className="border-border text-muted-foreground flex shrink-0 items-center border-t bg-transparent px-3 py-0.5 text-xs">
             <Mic size={12} className="text-destructive mr-1" />
-            <span className="mr-2">{captureStatus === "error" ? "Recording error" : "Recording…"}</span>
+            <span className="mr-2">
+              {captureStatus === "error" ? "Recording error" : "Recording…"}
+            </span>
             <button
               type="button"
               className="hover:text-foreground transition-colors"

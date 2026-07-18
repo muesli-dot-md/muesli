@@ -33,9 +33,7 @@ export function ErrorPage({ title, message, action = "home", onAction }: Props) 
           muesli
         </span>
         <div className="flex flex-col gap-2">
-          <h1 className="text-xl font-semibold tracking-tight [text-wrap:balance]">
-            {title}
-          </h1>
+          <h1 className="text-xl font-semibold tracking-tight [text-wrap:balance]">{title}</h1>
           <p className="text-sm opacity-60 [text-wrap:pretty]">{message}</p>
         </div>
         {action !== "none" ? (

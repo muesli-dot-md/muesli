@@ -124,10 +124,7 @@ check("wikilink label", /<a[^>]*href="#other-page"[^>]*>a label<\/a>/.test(html)
 check("wikilink class", html.includes('class="wikilink"'));
 
 // 5) Frontmatter table rows
-check(
-  "frontmatter table",
-  /<div class="frontmatter[^"]*"><table>/.test(html),
-);
+check("frontmatter table", /<div class="frontmatter[^"]*"><table>/.test(html));
 check("frontmatter row: title", />title<\/th><td>Test Doc<\/td>/.test(html));
 check("frontmatter row: owner", />owner<\/th><td>julian<\/td>/.test(html));
 check("frontmatter not raw text", !html.includes("<hr"));

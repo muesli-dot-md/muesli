@@ -15,11 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  type AccountApi,
-  type MintedToken,
-  type TokenScopes,
-} from "@/services/accountApi";
+import { type AccountApi, type MintedToken, type TokenScopes } from "@/services/accountApi";
 import { errMsg } from "@/services/apiError";
 import { httpBase } from "@/services/identity";
 import { useT } from "@/state/i18n";

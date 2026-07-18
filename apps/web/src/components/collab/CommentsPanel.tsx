@@ -17,22 +17,13 @@ import { createGraphApi, type IncomingLink } from "@/services/graphApi";
 import { httpBase } from "@/services/identity";
 import { gotoDoc } from "@/state/route";
 import { useT } from "@/state/i18n";
-import {
-  authorName,
-  relativeTime,
-  useCollabSnapshot,
-  type CollabStore,
-} from "@/state/collabStore";
+import { authorName, relativeTime, useCollabSnapshot, type CollabStore } from "@/state/collabStore";
 import { useMentionAutocomplete } from "@/state/mentionAutocomplete";
 import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { MentionText } from "./MentionText";
 
 export interface CommentsPanelProps {
@@ -206,16 +197,13 @@ export function CommentsPanel({ store: collab, docId, shareToken }: CommentsPane
   return (
     <div className="flex flex-col gap-3 p-3">
       <p className="px-1 text-xs opacity-60">
-        {t("comments.hintPre")}{" "}
-        <span className="font-medium">{t("editor.commentAction")}</span>{" "}
+        {t("comments.hintPre")} <span className="font-medium">{t("editor.commentAction")}</span>{" "}
         {t("comments.hintPost")}
       </p>
 
-      {openThreads.length === 0 &&
-        orphanedThreads.length === 0 &&
-        resolvedThreads.length === 0 && (
-          <p className="px-1 py-4 text-center text-sm opacity-50">{t("comments.none")}</p>
-        )}
+      {openThreads.length === 0 && orphanedThreads.length === 0 && resolvedThreads.length === 0 && (
+        <p className="px-1 py-4 text-center text-sm opacity-50">{t("comments.none")}</p>
+      )}
 
       {openThreads.map((thread) => (
         <ThreadCard key={thread.id} collab={collab} thread={thread} orphaned={false} />

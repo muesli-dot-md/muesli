@@ -51,8 +51,7 @@ export function WorkspaceGeneralSection({ user, workspace, detail, toast, onChan
   const isAdmin = workspace.role === "admin";
   const adminCount = detail?.members.filter((m) => m.role === "admin").length ?? 0;
   const onlyAdmin =
-    !!detail?.members.find((m) => m.user_id === user.id && m.role === "admin") &&
-    adminCount === 1;
+    !!detail?.members.find((m) => m.user_id === user.id && m.role === "admin") && adminCount === 1;
   const dirty = nameDraft.trim() !== "" && nameDraft.trim() !== workspace.name;
 
   async function save() {
@@ -63,8 +62,7 @@ export function WorkspaceGeneralSection({ user, workspace, detail, toast, onChan
       toast(t("settings.general.saved"));
       onChanged();
     } catch (e) {
-      if (e instanceof WorkspaceApiError && e.status === 403)
-        toast(t("ws.notAllowed"), "warning");
+      if (e instanceof WorkspaceApiError && e.status === 403) toast(t("ws.notAllowed"), "warning");
       else toast(errMsg(e), "warning");
     } finally {
       setSaving(false);
@@ -79,8 +77,7 @@ export function WorkspaceGeneralSection({ user, workspace, detail, toast, onChan
       toast(t("settings.general.left", { name: workspace.name }));
       onChanged();
     } catch (e) {
-      if (e instanceof WorkspaceApiError && e.status === 409)
-        toast(t("ws.adminNeeded"), "warning");
+      if (e instanceof WorkspaceApiError && e.status === 409) toast(t("ws.adminNeeded"), "warning");
       else toast(errMsg(e), "warning");
     } finally {
       setLeaving(false);
@@ -102,8 +99,7 @@ export function WorkspaceGeneralSection({ user, workspace, detail, toast, onChan
       toast(t("settings.general.deleted", { name: workspace.name }));
       onChanged();
     } catch (e) {
-      if (e instanceof WorkspaceApiError && e.status === 403)
-        toast(t("ws.notAllowed"), "warning");
+      if (e instanceof WorkspaceApiError && e.status === 403) toast(t("ws.notAllowed"), "warning");
       else toast(errMsg(e), "warning");
     } finally {
       setDeleting(false);
@@ -113,9 +109,7 @@ export function WorkspaceGeneralSection({ user, workspace, detail, toast, onChan
   return (
     <>
       <header className="mb-5">
-        <h2 className="text-lg font-semibold tracking-tight">
-          {t("settings.nav.general")}
-        </h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("settings.nav.general")}</h2>
       </header>
 
       <SettingsCard>

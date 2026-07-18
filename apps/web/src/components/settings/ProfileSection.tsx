@@ -131,15 +131,11 @@ export function ProfileSection({ auth, toast, onUpdated }: Props) {
   return (
     <>
       <header className="mb-5">
-        <h2 className="text-lg font-semibold tracking-tight">
-          {t("settings.nav.profile")}
-        </h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("settings.nav.profile")}</h2>
       </header>
 
       {auth.mode === "open" ? (
-        <p className="text-sm text-muted-foreground [text-wrap:pretty]">
-          {t("settings.openMode")}
-        </p>
+        <p className="text-sm text-muted-foreground [text-wrap:pretty]">{t("settings.openMode")}</p>
       ) : !auth.user ? (
         <p className="text-sm text-muted-foreground [text-wrap:pretty]">
           {t("settings.signInToManage")}{" "}
@@ -163,11 +159,7 @@ export function ProfileSection({ auth, toast, onUpdated }: Props) {
               title={t("settings.profile.changeAvatar")}
               leading={
                 shownAvatar ? (
-                  <img
-                    src={shownAvatar}
-                    alt=""
-                    className="h-16 w-16 rounded-full object-cover"
-                  />
+                  <img src={shownAvatar} alt="" className="h-16 w-16 rounded-full object-cover" />
                 ) : (
                   <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-2xl font-semibold text-primary-foreground">
                     {initial}

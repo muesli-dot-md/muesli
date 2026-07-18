@@ -50,12 +50,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
 ];
 
 function isSection(v: string | undefined): v is Section {
-  return (
-    v === "profile" ||
-    v === "preferences" ||
-    v === "notifications" ||
-    v === "about"
-  );
+  return v === "profile" || v === "preferences" || v === "notifications" || v === "about";
 }
 
 interface Props {
@@ -91,10 +86,7 @@ function NavButton({
       aria-current={selected ? "page" : undefined}
       onClick={() => onSelect(item.id)}
     >
-      <item.Icon
-        className={cn("size-4", !selected && "opacity-70")}
-        aria-hidden="true"
-      />
+      <item.Icon className={cn("size-4", !selected && "opacity-70")} aria-hidden="true" />
       {item.label}
     </button>
   );
@@ -153,10 +145,7 @@ export function SettingsPanel({ initialSection, onClose }: Props) {
 
         {/* narrow panel: groups collapse to a single top tab strip */}
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <nav
-            className="flex gap-1 overflow-x-auto px-4 pb-2 @3xl:hidden"
-            aria-label="Settings"
-          >
+          <nav className="flex gap-1 overflow-x-auto px-4 pb-2 @3xl:hidden" aria-label="Settings">
             {GROUPS.flatMap((g) => g.items).map((item) => (
               <NavButton
                 key={item.id}

@@ -78,7 +78,7 @@ describe("shadcn primitives", () => {
           <Skeleton className="h-4 w-24" />
           <Spinner />
         </CardContent>
-      </Card>
+      </Card>,
     );
     expect(getByText("Save")).toBeTruthy();
     expect(getByText("Syncing")).toBeTruthy();

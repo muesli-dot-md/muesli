@@ -49,9 +49,7 @@ export default function ModeGroup() {
     }
   }, [collab, activeId, availability]);
   const rememberedAvailability =
-    lastAvailability !== null && lastAvailability.tab === activeId
-      ? lastAvailability.value
-      : null;
+    lastAvailability !== null && lastAvailability.tab === activeId ? lastAvailability.value : null;
 
   // Suggesting needs a synced doc whose server is reachable and authorized:
   // with a live store that is its current availability; while Reading (store
@@ -59,8 +57,7 @@ export default function ModeGroup() {
   // those two cases (no store, not Reading — e.g. mid-remount) the segment
   // stays unavailable until a store materializes.
   const canSuggest =
-    isRemote &&
-    (collab ? !degraded(availability) : isReading && !degraded(rememberedAvailability));
+    isRemote && (collab ? !degraded(availability) : isReading && !degraded(rememberedAvailability));
 
   // A Suggesting choice made while the store doesn't exist yet (Reading view
   // tears it down). Lifecycle: armed on selectMode("suggesting") with no
@@ -138,9 +135,7 @@ export default function ModeGroup() {
       id: "suggesting",
       label: "Suggest",
       disabled: !canSuggest,
-      title: canSuggest
-        ? undefined
-        : "Suggesting needs a synced document with a reachable server",
+      title: canSuggest ? undefined : "Suggesting needs a synced document with a reachable server",
     },
   ];
 
@@ -160,9 +155,7 @@ export default function ModeGroup() {
   // control. Editing is never disabled, so a fallback always exists.
   useEffect(() => {
     if (checkedIndex === -1) return;
-    setFocusedIndex(
-      checkedDisabled ? segments.findIndex((s) => !s.disabled) : checkedIndex,
-    );
+    setFocusedIndex(checkedDisabled ? segments.findIndex((s) => !s.disabled) : checkedIndex);
     // segments is rebuilt per render; its inputs are checkedIndex/checkedDisabled.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkedIndex, checkedDisabled]);
@@ -227,7 +220,8 @@ export default function ModeGroup() {
             // segment stays focusable and keeps pointer-events, so keyboard
             // and screen-reader users can reach it and mouse users still get
             // the title explaining why. Activation is ignored in the handlers.
-            seg.disabled && "cursor-not-allowed text-muted-foreground opacity-55 hover:text-muted-foreground",
+            seg.disabled &&
+              "cursor-not-allowed text-muted-foreground opacity-55 hover:text-muted-foreground",
           )}
           title={seg.title}
           tabIndex={focusedIndex === i ? 0 : -1}

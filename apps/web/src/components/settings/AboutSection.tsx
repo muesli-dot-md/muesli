@@ -44,18 +44,14 @@ export function AboutSection() {
   return (
     <>
       <header className="mb-5">
-        <h2 className="text-lg font-semibold tracking-tight">
-          {t("settings.nav.about")}
-        </h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("settings.nav.about")}</h2>
       </header>
 
       <SettingsCard>
         {/* identity header */}
         <SettingsRow>
           <div className="min-w-0 flex-1">
-            <p className="text-base font-semibold">
-              Muesli{meta ? ` v${meta.version}` : ""}
-            </p>
+            <p className="text-base font-semibold">Muesli{meta ? ` v${meta.version}` : ""}</p>
             <p className="text-sm text-muted-foreground [text-wrap:pretty]">
               {t("settings.about.tagline")}
             </p>
@@ -75,9 +71,7 @@ export function AboutSection() {
             {meta.commit ? (
               <SettingsRow
                 title={t("settings.about.commit")}
-                control={
-                  <span className="font-mono text-xs">{meta.commit.slice(0, 12)}</span>
-                }
+                control={<span className="font-mono text-xs">{meta.commit.slice(0, 12)}</span>}
               />
             ) : null}
             <SettingsRow

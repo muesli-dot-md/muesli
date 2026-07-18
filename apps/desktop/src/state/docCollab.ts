@@ -58,5 +58,4 @@ export const docCollabStore = createStore<DocCollabState>()((set) => ({
   },
 }));
 
-export const useDocCollab = <T>(sel: (s: DocCollabState) => T): T =>
-  useStore(docCollabStore, sel);
+export const useDocCollab = <T>(sel: (s: DocCollabState) => T): T => useStore(docCollabStore, sel);

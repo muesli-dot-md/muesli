@@ -52,7 +52,9 @@ function computePillVisible(state: UpdateState, failureMessage: string | null): 
 
 export const updatesStore = createStore<UpdatesState>()((set, get) => {
   /** Every transition routes through here so pillVisible stays derived. */
-  function patch(p: Partial<Pick<UpdatesState, "state" | "version" | "progress" | "failureMessage">>) {
+  function patch(
+    p: Partial<Pick<UpdatesState, "state" | "version" | "progress" | "failureMessage">>,
+  ) {
     const state = p.state ?? get().state;
     const failureMessage = p.failureMessage !== undefined ? p.failureMessage : get().failureMessage;
     set({ ...p, pillVisible: computePillVisible(state, failureMessage) });

@@ -24,8 +24,7 @@ import {
 } from "@/services/workspaceApi";
 
 export type InfoTarget =
-  | { kind: "doc"; doc: DocumentSummary }
-  | { kind: "folder"; folder: FolderSummary };
+  { kind: "doc"; doc: DocumentSummary } | { kind: "folder"; folder: FolderSummary };
 
 interface Props {
   target: InfoTarget | null;
@@ -286,12 +285,16 @@ export function InfoPanel({
                 <Row label={t("info.contents")} />
                 <p>
                   {t(
-                    childCounts.folders === 1 ? "common.folderCount.one" : "common.folderCount.other",
+                    childCounts.folders === 1
+                      ? "common.folderCount.one"
+                      : "common.folderCount.other",
                     { count: childCounts.folders },
                   )}{" "}
                   ·{" "}
                   {t(
-                    childCounts.docs === 1 ? "common.documentCount.one" : "common.documentCount.other",
+                    childCounts.docs === 1
+                      ? "common.documentCount.one"
+                      : "common.documentCount.other",
                     { count: childCounts.docs },
                   )}
                 </p>

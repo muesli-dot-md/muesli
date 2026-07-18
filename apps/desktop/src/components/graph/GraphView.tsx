@@ -9,7 +9,13 @@
 // loop mutates in place and bumps a frame counter so React re-renders the SVG
 // at most once per animation frame (a keystroke-safe, remount-free loop).
 
-import { useEffect, useReducer, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Minus, Plus } from "lucide-react";
 
 import { Spinner } from "@/components/ui/spinner";

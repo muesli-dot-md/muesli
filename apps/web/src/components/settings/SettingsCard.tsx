@@ -36,9 +36,7 @@ export function SettingsCard({
         </h3>
       ) : null}
       {description ? (
-        <p className="mb-2 px-1 text-xs text-muted-foreground [text-wrap:pretty]">
-          {description}
-        </p>
+        <p className="mb-2 px-1 text-xs text-muted-foreground [text-wrap:pretty]">{description}</p>
       ) : null}
       <Card
         className={cn(

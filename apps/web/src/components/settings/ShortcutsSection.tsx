@@ -8,9 +8,7 @@ import { useT, type MessageKey } from "@/state/i18n";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsRow } from "./SettingsRow";
 
-const isMac = /Mac|iPhone|iPad/.test(
-  typeof navigator === "undefined" ? "" : navigator.platform,
-);
+const isMac = /Mac|iPhone|iPad/.test(typeof navigator === "undefined" ? "" : navigator.platform);
 const mod = isMac ? "⌘" : "Ctrl";
 const shift = isMac ? "⇧" : "Shift";
 
@@ -45,9 +43,7 @@ export function ShortcutsSection() {
   return (
     <>
       <header className="mb-5">
-        <h2 className="text-lg font-semibold tracking-tight">
-          {t("settings.nav.shortcuts")}
-        </h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t("settings.nav.shortcuts")}</h2>
       </header>
 
       {GROUPS.map((group) => (

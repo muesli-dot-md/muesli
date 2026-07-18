@@ -13,9 +13,7 @@ import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
 
 export function ProfileSection() {
-  const identity = useWorkspaces(
-    (s: { identity: Identity | null }) => s.identity,
-  );
+  const identity = useWorkspaces((s: { identity: Identity | null }) => s.identity);
   const error = useWorkspaces((s: { error: string | null }) => s.error);
 
   // A signed-in OIDC user (has a name/email/avatar, or at least a "sub"
@@ -24,10 +22,7 @@ export function ProfileSection() {
   // gate is workspaces.identity + workspace linkage (activeLinked).
   const signedIn = isSignedIn(identity);
   const shownAvatar = identity?.avatar_url ?? null;
-  const initial = (identity?.display_name ?? identity?.email ?? "?")
-    .trim()
-    .charAt(0)
-    .toUpperCase();
+  const initial = (identity?.display_name ?? identity?.email ?? "?").trim().charAt(0).toUpperCase();
 
   const [copied, setCopied] = useState(false);
   async function copyUserId() {
@@ -59,11 +54,7 @@ export function ProfileSection() {
             title="Not signed in"
             description="Sign in to a muesli-server to load your profile and sync your workspaces."
             control={
-              <Button
-                variant="brand"
-                size="sm"
-                onClick={() => workspacesStore.getState().login()}
-              >
+              <Button variant="brand" size="sm" onClick={() => workspacesStore.getState().login()}>
                 Sign in…
               </Button>
             }
@@ -79,11 +70,7 @@ export function ProfileSection() {
               description={identity?.email ?? undefined}
               leading={
                 shownAvatar ? (
-                  <img
-                    src={shownAvatar}
-                    alt=""
-                    className="h-14 w-14 rounded-full object-cover"
-                  />
+                  <img src={shownAvatar} alt="" className="h-14 w-14 rounded-full object-cover" />
                 ) : (
                   <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-2xl font-semibold text-primary-foreground">
                     {initial}
@@ -111,18 +98,14 @@ export function ProfileSection() {
             />
             <SettingsRow
               title="Display name"
-              control={
-                <span className="text-sm">{identity?.display_name ?? "—"}</span>
-              }
+              control={<span className="text-sm">{identity?.display_name ?? "—"}</span>}
             />
             {identity?.id ? (
               <SettingsRow
                 title="User ID"
                 control={
                   <>
-                    <code className="font-mono text-xs text-muted-foreground">
-                      {identity.id}
-                    </code>
+                    <code className="font-mono text-xs text-muted-foreground">{identity.id}</code>
                     <Button
                       variant="ghost"
                       size="icon-xs"
@@ -140,9 +123,7 @@ export function ProfileSection() {
         </>
       )}
 
-      {error ? (
-        <p className="mt-3 px-1 text-xs text-destructive">{error}</p>
-      ) : null}
+      {error ? <p className="mt-3 px-1 text-xs text-destructive">{error}</p> : null}
     </SettingsSection>
   );
 }

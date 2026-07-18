@@ -23,9 +23,7 @@ interface FileItem {
 
 function flattenTree(node: WorkspaceNode, root: string): FileItem[] {
   if (!node.isDir) {
-    const display = node.path.startsWith(root + "/")
-      ? node.path.slice(root.length + 1)
-      : node.path;
+    const display = node.path.startsWith(root + "/") ? node.path.slice(root.length + 1) : node.path;
     return [{ path: node.path, display }];
   }
   if (!node.children) return [];
@@ -42,14 +40,8 @@ export function QuickSwitcher({ open, onClose }: Props) {
   const tree = useWorkspace((s: { tree: WorkspaceNode | null }) => s.tree);
   const root = useWorkspace((s: { root: string | null }) => s.root);
 
-  const allFiles = useMemo(
-    () => (tree && root ? flattenTree(tree, root) : []),
-    [tree, root],
-  );
-  const filtered = useMemo(
-    () => fuzzyFilter(allFiles, query, (f) => f.display),
-    [allFiles, query],
-  );
+  const allFiles = useMemo(() => (tree && root ? flattenTree(tree, root) : []), [tree, root]);
+  const filtered = useMemo(() => fuzzyFilter(allFiles, query, (f) => f.display), [allFiles, query]);
 
   useEffect(() => {
     if (open) setQuery("");
@@ -78,11 +70,7 @@ export function QuickSwitcher({ open, onClose }: Props) {
       description="Open a note by name…"
     >
       <Command shouldFilter={false} onKeyDown={handleKeyDown}>
-        <CommandInput
-          placeholder="Open note…"
-          value={query}
-          onValueChange={setQuery}
-        />
+        <CommandInput placeholder="Open note…" value={query} onValueChange={setQuery} />
         <CommandList>
           <CommandEmpty>
             {allFiles.length === 0
@@ -90,11 +78,7 @@ export function QuickSwitcher({ open, onClose }: Props) {
               : `No notes match "${query}"`}
           </CommandEmpty>
           {filtered.map((file) => (
-            <CommandItem
-              key={file.path}
-              value={file.path}
-              onSelect={() => openFile(file)}
-            >
+            <CommandItem key={file.path} value={file.path} onSelect={() => openFile(file)}>
               <span className="truncate">{file.display}</span>
             </CommandItem>
           ))}

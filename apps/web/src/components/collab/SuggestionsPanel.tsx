@@ -75,7 +75,9 @@ export function SuggestionsPanel({ store: collab }: { store: CollabStore }) {
                   <Badge variant="ghost" className="mr-1 h-4 px-1 text-[0.65rem]">
                     {draftLabel(draft)}
                   </Badge>
-                  {draft.oldText && <span className="suggest-old">{draft.oldText.slice(0, 60)}</span>}
+                  {draft.oldText && (
+                    <span className="suggest-old">{draft.oldText.slice(0, 60)}</span>
+                  )}
                   {draft.oldText && draft.insert && <span className="opacity-50"> → </span>}
                   {draft.insert && <span className="suggest-new">{draft.insert.slice(0, 60)}</span>}
                 </div>
@@ -135,7 +137,9 @@ export function SuggestionsPanel({ store: collab }: { store: CollabStore }) {
               {first.note && <p className="text-xs italic opacity-70">“{first.note}”</p>}
               {group.items.map((s) => (
                 <div key={s.id} className="rounded bg-muted/60 px-2 py-1 text-xs">
-                  {s.op.old_text && <span className="suggest-old">{s.op.old_text.slice(0, 120)}</span>}
+                  {s.op.old_text && (
+                    <span className="suggest-old">{s.op.old_text.slice(0, 120)}</span>
+                  )}
                   {s.op.old_text && s.op.insert && <span className="opacity-50"> → </span>}
                   {s.op.insert ? (
                     <span className="suggest-new">{s.op.insert.slice(0, 120)}</span>

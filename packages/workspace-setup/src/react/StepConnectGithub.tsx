@@ -79,7 +79,11 @@ export function StepConnectGithub({
         <div className="flex flex-wrap gap-3">
           <label className="flex min-w-40 flex-1 flex-col gap-1">
             <span className="text-sm">{t("wizard.prefix")}</span>
-            <Input value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="notes/" />
+            <Input
+              value={prefix}
+              onChange={(e) => setPrefix(e.target.value)}
+              placeholder="notes/"
+            />
           </label>
           <label className="flex min-w-40 flex-1 flex-col gap-1">
             <span className="text-sm">{t("wizard.tokenLabel")}</span>

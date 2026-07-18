@@ -748,7 +748,8 @@ export function HomeShell() {
         ? {
             kind: "invited",
             workspaceName:
-              (d.selectedId && label(d.workspaces.find((w) => w.id === d.selectedId) ?? d.workspaces[0])) ||
+              (d.selectedId &&
+                label(d.workspaces.find((w) => w.id === d.selectedId) ?? d.workspaces[0])) ||
               d.workspaces[0].name,
           }
         : { kind: "create" };

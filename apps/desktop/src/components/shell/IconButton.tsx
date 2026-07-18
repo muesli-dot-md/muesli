@@ -19,7 +19,14 @@ interface IconButtonProps {
  * old daisyUI `btn-xs btn-square` footprint) wrapped in a Tooltip — the Multica
  * idiom replacing bare `title` attributes.
  */
-export function IconButton({ label, onClick, disabled, active, className, children }: IconButtonProps) {
+export function IconButton({
+  label,
+  onClick,
+  disabled,
+  active,
+  className,
+  children,
+}: IconButtonProps) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -32,7 +39,9 @@ export function IconButton({ label, onClick, disabled, active, className, childr
             disabled={disabled}
             aria-label={label}
             aria-pressed={active || undefined}
-            style={active ? { background: "var(--lift)", boxShadow: "var(--shadow-lift)" } : undefined}
+            style={
+              active ? { background: "var(--lift)", boxShadow: "var(--shadow-lift)" } : undefined
+            }
           >
             {children}
           </Button>

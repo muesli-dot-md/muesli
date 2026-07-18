@@ -24,13 +24,7 @@ import {
 import { AccountMenu } from "@/components/home/AccountMenu";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  fetchMe,
-  httpBase,
-  logout,
-  type AuthInfo,
-  type Me,
-} from "@/services/identity";
+import { fetchMe, httpBase, logout, type AuthInfo, type Me } from "@/services/identity";
 import {
   createWorkspaceApi,
   type WorkspaceDetail,
@@ -47,11 +41,7 @@ import { NativeSelect } from "./NativeSelect";
 import { NotificationsSection } from "./NotificationsSection";
 import { PreferencesSection } from "./PreferencesSection";
 import { ProfileSection } from "./ProfileSection";
-import {
-  settingsNavItems,
-  type SettingsIconKey,
-  type SettingsNavItem,
-} from "./settingsNav";
+import { settingsNavItems, type SettingsIconKey, type SettingsNavItem } from "./settingsNav";
 import { ShortcutsSection } from "./ShortcutsSection";
 import { WorkspaceGeneralSection } from "./WorkspaceGeneralSection";
 
@@ -212,11 +202,7 @@ export function SettingsPage({ section, embedded = false, onUserChanged }: Props
     if (storage) {
       params.delete("storage");
       const qs = params.toString();
-      history.replaceState(
-        null,
-        "",
-        `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`,
-      );
+      history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
       if (storage === "connected") showToast(t("settings.conn.driveConnected"));
       else showToast(t("settings.conn.driveError"), "warning");
     }
@@ -258,9 +244,7 @@ export function SettingsPage({ section, embedded = false, onUserChanged }: Props
           account menu). Standalone: the full-page shell with its own header. */}
       <div
         className={
-          embedded
-            ? "flex h-full min-h-0 flex-col"
-            : "flex h-screen flex-col bg-[var(--floor)]"
+          embedded ? "flex h-full min-h-0 flex-col" : "flex h-screen flex-col bg-[var(--floor)]"
         }
       >
         {embedded ? (
@@ -268,9 +252,7 @@ export function SettingsPage({ section, embedded = false, onUserChanged }: Props
           // browser). The account menu lives in Home's sidebar, so it's not
           // repeated here.
           <header className="flex h-14 shrink-0 items-center gap-3 px-5">
-            <h1 className="text-xl font-semibold tracking-tight">
-              {t("common.settings")}
-            </h1>
+            <h1 className="text-xl font-semibold tracking-tight">{t("common.settings")}</h1>
             <Button
               variant="ghost"
               size="icon"
@@ -285,9 +267,7 @@ export function SettingsPage({ section, embedded = false, onUserChanged }: Props
         ) : (
           // top bar: title · account · close
           <header className="flex h-16 shrink-0 items-center gap-3 px-5">
-            <h1 className="text-xl font-semibold tracking-tight">
-              {t("common.settings")}
-            </h1>
+            <h1 className="text-xl font-semibold tracking-tight">{t("common.settings")}</h1>
             <div className="ml-auto flex items-center gap-2">
               <AccountMenu auth={auth} toast={showToast} onSignOut={() => void signOut()} />
               <Button

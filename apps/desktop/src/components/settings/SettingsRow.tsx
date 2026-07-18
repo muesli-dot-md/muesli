@@ -45,20 +45,13 @@ export function SettingsRow({
         <div className="min-w-0 flex-1">
           {title ? <p className="text-sm font-medium">{title}</p> : null}
           {description ? (
-            <p className="mt-0.5 text-xs text-muted-foreground [text-wrap:pretty]">
-              {description}
-            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground [text-wrap:pretty]">{description}</p>
           ) : null}
         </div>
       ) : null}
 
       {control ? (
-        <div
-          className={cn(
-            stacked ? "mt-3" : "shrink-0",
-            "flex items-center gap-2",
-          )}
-        >
+        <div className={cn(stacked ? "mt-3" : "shrink-0", "flex items-center gap-2")}>
           {control}
         </div>
       ) : null}

@@ -14,12 +14,7 @@ import { useEffect } from "react";
 
 import type { HistoryEntry } from "@/services/collabApi";
 import { useT } from "@/state/i18n";
-import {
-  authorName,
-  relativeTime,
-  useCollabSnapshot,
-  type CollabStore,
-} from "@/state/collabStore";
+import { authorName, relativeTime, useCollabSnapshot, type CollabStore } from "@/state/collabStore";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,7 +53,10 @@ export function HistoryPanel({ store: collab }: { store: CollabStore }) {
             {entry.author?.kind === "agent" ? "✦ " : ""}
             {authorName(entry.author)}
           </span>
-          <span className="opacity-50"> · {entry.origin} · {relativeTime(entry.created_at)}</span>
+          <span className="opacity-50">
+            {" "}
+            · {entry.origin} · {relativeTime(entry.created_at)}
+          </span>
           <span className="opacity-50">
             {" "}
             ·{" "}

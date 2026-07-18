@@ -76,8 +76,7 @@ export function WorkspaceMenu({ open, onOpenChange, onSettings, onSignIn }: Work
   }, [open]);
 
   /** The active workspace is the one whose folder matches the open tree root. */
-  const isActive = (view: WorkspaceView): boolean =>
-    !!view.local_path && view.local_path === root;
+  const isActive = (view: WorkspaceView): boolean => !!view.local_path && view.local_path === root;
   const activeName = list.find(isActive)?.name ?? "Select workspace";
   const activeLetter = (activeName.trim().match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
 
@@ -271,13 +270,22 @@ export function WorkspaceMenu({ open, onOpenChange, onSettings, onSignIn }: Work
                     disabled={busy}
                     onClick={() => void promote(view)}
                   >
-                    {busy ? <Spinner className="size-3.5" /> : <Cloud size={15} aria-hidden="true" />}
+                    {busy ? (
+                      <Spinner className="size-3.5" />
+                    ) : (
+                      <Cloud size={15} aria-hidden="true" />
+                    )}
                   </button>
                 ) : null}
               </div>
             ))}
 
-            <button type="button" className={`${rowClass} opacity-80 hover:opacity-100`} role="menuitem" onClick={() => void openLocal()}>
+            <button
+              type="button"
+              className={`${rowClass} opacity-80 hover:opacity-100`}
+              role="menuitem"
+              onClick={() => void openLocal()}
+            >
               <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
                 <FolderOpen size={16} />
               </span>
@@ -292,7 +300,10 @@ export function WorkspaceMenu({ open, onOpenChange, onSettings, onSignIn }: Work
                 disabled={busy}
                 onClick={() => act(() => setShowCreateWizard(true))}
               >
-                <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
+                <span
+                  className="flex size-5 shrink-0 items-center justify-center"
+                  aria-hidden="true"
+                >
                   <Cloud size={16} />
                 </span>
                 <span className="min-w-0 flex-1 truncate">Create remote workspace…</span>
@@ -304,7 +315,12 @@ export function WorkspaceMenu({ open, onOpenChange, onSettings, onSignIn }: Work
             {/* settings (opens the desktop settings view in the main panel;
                 theme selection lives there — Appearance → Theme cards — by
                 user choice, no quick toggle here) */}
-            <button type="button" className={rowClass} role="menuitem" onClick={() => act(onSettings)}>
+            <button
+              type="button"
+              className={rowClass}
+              role="menuitem"
+              onClick={() => act(onSettings)}
+            >
               <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
                 <Settings size={16} className="opacity-70" />
               </span>
@@ -323,7 +339,10 @@ export function WorkspaceMenu({ open, onOpenChange, onSettings, onSignIn }: Work
                   role="menuitem"
                   onClick={() => act(() => void workspacesStore.getState().logout())}
                 >
-                  <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
+                  <span
+                    className="flex size-5 shrink-0 items-center justify-center"
+                    aria-hidden="true"
+                  >
                     <LogOut size={16} />
                   </span>
                   <span className="min-w-0 flex-1 truncate">Sign out</span>
@@ -332,8 +351,16 @@ export function WorkspaceMenu({ open, onOpenChange, onSettings, onSignIn }: Work
             ) : !openMode ? (
               <>
                 <div className="my-1 h-px bg-border" aria-hidden="true" />
-                <button type="button" className={rowClass} role="menuitem" onClick={() => act(onSignIn)}>
-                  <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
+                <button
+                  type="button"
+                  className={rowClass}
+                  role="menuitem"
+                  onClick={() => act(onSignIn)}
+                >
+                  <span
+                    className="flex size-5 shrink-0 items-center justify-center"
+                    aria-hidden="true"
+                  >
                     <LogOut size={16} className="opacity-70" />
                   </span>
                   <span className="min-w-0 flex-1 truncate">Sign in…</span>
@@ -344,7 +371,9 @@ export function WorkspaceMenu({ open, onOpenChange, onSettings, onSignIn }: Work
         </Popover>
       </div>
 
-      {showCreateWizard ? <CreateWorkspaceModal onClose={() => setShowCreateWizard(false)} /> : null}
+      {showCreateWizard ? (
+        <CreateWorkspaceModal onClose={() => setShowCreateWizard(false)} />
+      ) : null}
     </>
   );
 }

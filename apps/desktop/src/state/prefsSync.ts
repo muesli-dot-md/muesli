@@ -19,7 +19,12 @@
 // and one change-watcher per synced store pokes engine.onLocalChange().
 
 import { apiRequest } from "@/services/collab/apiRequest";
-import { createPrefsSync, type Prefs, type PrefsPatch, type PrefsSync } from "@/services/prefsSyncCore";
+import {
+  createPrefsSync,
+  type Prefs,
+  type PrefsPatch,
+  type PrefsSync,
+} from "@/services/prefsSyncCore";
 import { accentStore, ACCENT_PRESETS, type AccentId } from "./accent";
 import { backgroundStore } from "./background";
 import { folderColorStore } from "./folderColor";

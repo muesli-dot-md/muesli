@@ -289,7 +289,12 @@ export default function Editor() {
           style={{ left: affordance.x, top: affordance.y }}
         >
           {!composerOpen ? (
-            <Button variant="outline" size="xs" className="bg-popover shadow" onClick={openComposer}>
+            <Button
+              variant="outline"
+              size="xs"
+              className="bg-popover shadow"
+              onClick={openComposer}
+            >
               {suggestMode ? t("editor.suggestAction") : t("editor.commentAction")}
             </Button>
           ) : suggestMode ? (

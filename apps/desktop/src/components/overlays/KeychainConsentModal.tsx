@@ -50,24 +50,15 @@ export function KeychainConsentModal({ onGrant, onDecline }: Props) {
         aria-modal="true"
         aria-label="Muesli uses your Mac's Keychain"
       >
-        <h3 className="text-base font-semibold">
-          Muesli uses your Mac&apos;s Keychain
-        </h3>
+        <h3 className="text-base font-semibold">Muesli uses your Mac&apos;s Keychain</h3>
         <p className="text-sm text-muted-foreground [text-wrap:pretty]">
-          To keep you signed in, Muesli saves your login token in the macOS
-          Keychain, the same protected store as your passwords. macOS may ask
-          you for permission. Muesli can only reach its own entry, never your
-          passwords, and stores nothing else there. Your token goes only to the
-          server you sign in to, and Muesli is open source, so you can verify
-          this yourself.
+          To keep you signed in, Muesli saves your login token in the macOS Keychain, the same
+          protected store as your passwords. macOS may ask you for permission. Muesli can only reach
+          its own entry, never your passwords, and stores nothing else there. Your token goes only
+          to the server you sign in to, and Muesli is open source, so you can verify this yourself.
         </p>
         <div className="mt-2 flex items-center justify-between">
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-muted-foreground"
-            onClick={decline}
-          >
+          <Button type="button" variant="ghost" className="text-muted-foreground" onClick={decline}>
             Not now
           </Button>
           <Button type="button" variant="brand" onClick={grant}>

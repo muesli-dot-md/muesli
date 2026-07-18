@@ -5,10 +5,7 @@
 // required (preferences are server-side and user-scoped).
 import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/switch";
-import {
-  createNotificationsApi,
-  type Preference,
-} from "@/services/notifications/notificationsApi";
+import { createNotificationsApi, type Preference } from "@/services/notifications/notificationsApi";
 import type { Identity } from "@/services/tauri";
 import { useWorkspaces, workspacesStore } from "@/state/workspaces";
 import { SettingsCard } from "./SettingsCard";
@@ -16,9 +13,7 @@ import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
 
 export function NotificationsSection() {
-  const identity = useWorkspaces(
-    (s: { identity: Identity | null }) => s.identity,
-  );
+  const identity = useWorkspaces((s: { identity: Identity | null }) => s.identity);
   const signedIn = !!identity;
 
   const [prefs, setPrefs] = useState<Preference[]>([]);
@@ -26,12 +21,8 @@ export function NotificationsSection() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const inAppMention = prefs.find(
-    (p) => p.event_type === "mention" && p.channel === "in_app",
-  );
-  const emailMention = prefs.find(
-    (p) => p.event_type === "mention" && p.channel === "email",
-  );
+  const inAppMention = prefs.find((p) => p.event_type === "mention" && p.channel === "in_app");
+  const emailMention = prefs.find((p) => p.event_type === "mention" && p.channel === "email");
 
   useEffect(() => {
     if (!signedIn || loaded) return;
@@ -60,9 +51,7 @@ export function NotificationsSection() {
     // Optimistic; roll back on failure.
     setPrefs((prev) =>
       prev.map((p) =>
-        p.event_type === "mention" && p.channel === channel
-          ? { ...p, enabled }
-          : p,
+        p.event_type === "mention" && p.channel === channel ? { ...p, enabled } : p,
       ),
     );
     try {
@@ -72,9 +61,7 @@ export function NotificationsSection() {
     } catch (e) {
       setPrefs((prev) =>
         prev.map((p) =>
-          p.event_type === "mention" && p.channel === channel
-            ? { ...p, enabled: !enabled }
-            : p,
+          p.event_type === "mention" && p.channel === channel ? { ...p, enabled: !enabled } : p,
         ),
       );
       setError(`Couldn't save that setting: ${e}`);
@@ -104,9 +91,7 @@ export function NotificationsSection() {
               <Switch
                 checked={inAppMention?.enabled ?? true}
                 disabled={!loaded || saving || inAppMention?.toggleable === false}
-                onCheckedChange={(checked: boolean) =>
-                  void togglePref("in_app", checked)
-                }
+                onCheckedChange={(checked: boolean) => void togglePref("in_app", checked)}
                 aria-label="In-app inbox"
               />
             }
@@ -119,9 +104,7 @@ export function NotificationsSection() {
               <Switch
                 checked={emailMention?.enabled ?? true}
                 disabled={!loaded || saving || emailMention?.toggleable === false}
-                onCheckedChange={(checked: boolean) =>
-                  void togglePref("email", checked)
-                }
+                onCheckedChange={(checked: boolean) => void togglePref("email", checked)}
                 aria-label="Email me when I'm mentioned"
               />
             }
@@ -129,9 +112,7 @@ export function NotificationsSection() {
         </SettingsCard>
       )}
 
-      {error ? (
-        <p className="mt-3 px-1 text-xs text-destructive">{error}</p>
-      ) : null}
+      {error ? <p className="mt-3 px-1 text-xs text-destructive">{error}</p> : null}
     </SettingsSection>
   );
 }

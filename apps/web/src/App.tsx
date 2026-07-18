@@ -7,14 +7,7 @@
 // loaded, switches are pure component swaps (no reload). The key= remounts
 // DocApp per doc (docId + shareToken), which opens/destroys one collab session.
 
-import {
-  Component,
-  lazy,
-  Suspense,
-  useEffect,
-  useRef,
-  type ReactNode,
-} from "react";
+import { Component, lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
