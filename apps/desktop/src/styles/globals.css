@@ -11,35 +11,14 @@
 @custom-variant dark (&:where(.dark, .dark *, [data-theme$="-dark"], [data-theme$="-dark"] *));
 
 /* Tailwind v4 scans this app's own source by default but NOT the shared
-   workspace packages. The editor widgets in packages/editor-core build DOM
-   with Tailwind utility class strings; without these directives any utility
-   used ONLY there is silently dropped from the compiled CSS and the widget
-   renders unstyled. Paths are relative to THIS file. */
-@source "../../../../packages/editor-core/src/**/*.{ts,tsx,svelte}";
+   workspace packages. @muesli/editor-core is deliberately utility-free (it
+   emits only its own neutral classes, styled in app.css), so it needs no
+   @source line. workspace-setup's Svelte components still carry utility
+   strings; that line goes when they do. Paths are relative to THIS file. */
 @source "../../../../packages/workspace-setup/src/**/*.{ts,tsx,svelte}";
 @source "../**/*.{ts,tsx}";
 
 @theme {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  /* daisyUI-era radius token: editor-core widgets emit `rounded-box` (frontmatter
-     card, table context menu, mention dropdown). Registering it here makes
-     Tailwind 4 generate that utility; app.css's :root compat block carries the
-     same value for plain var(--radius-box) consumers. */
-  --radius-box: 0.75rem;
-}
-
-/* daisyUI-era color tokens still emitted as UTILITIES by @muesli/editor-core
-   widget DOM (`bg-base-100/200`, `border-base-300`) and the in-app mention
-   dropdown. Without a theme registration Tailwind 4 never generates those
-   utilities and the widgets lose their surface tints/borders. `inline` so the
-   utilities reference the shared --arc-* palette vars directly — values flip
-   with [data-theme$="-dark"] exactly like the :root compat aliases in app.css. */
-@theme inline {
-  --color-base-100: var(--arc-base-100);
-  --color-base-200: var(--arc-base-200);
-  --color-base-300: var(--arc-base-300);
-  --color-base-content: var(--arc-base-content);
-  --color-error: var(--arc-error);
-  --color-error-content: var(--arc-error-content);
 }

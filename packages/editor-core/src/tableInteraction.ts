@@ -103,7 +103,7 @@ export function buildTableWidget(
       const result = evalTableFormula(raw, parsed, self);
       if (isFormulaError(result)) {
         const chip = document.createElement("span");
-        chip.className = "cm-live-formula-error badge badge-sm badge-error gap-1 align-middle";
+        chip.className = "cm-live-formula-error";
         chip.textContent = "#ERR";
         chip.title = `${labels.formulaError}: ${result.message}`;
         cell.appendChild(chip);
@@ -322,7 +322,7 @@ export function buildTableWidget(
 
   // --- structural context menu (Quip-style, right-click) --------------------
   // Replaces the old always-visible ×/+ floating controls. A right-click on any
-  // cell opens a small daisyUI-styled menu positioned at the pointer, whose
+  // cell opens a small app-styled menu (.cm-live-table-menu) positioned at the pointer, whose
   // actions are all relative to that cell. Every action mutates the parsed model
   // and re-serializes through tableMarkdownFromParsed → onCommit (the SAME
   // write-back path the cell-edit commit uses). The menu is appended to document
@@ -366,8 +366,7 @@ export function buildTableWidget(
   ): void {
     closeMenu();
     const menu = document.createElement("div");
-    menu.className =
-      "cm-live-table-menu menu menu-sm bg-base-100 border border-base-300 rounded-box";
+    menu.className = "cm-live-table-menu";
     menu.setAttribute("role", "menu");
 
     // A header right-click has no body row; anchor row inserts/deletes at the
@@ -388,7 +387,7 @@ export function buildTableWidget(
       if (item.divider && i > 0) li.classList.add("cm-live-table-menu-sep");
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "cm-live-table-menu-item active:scale-[0.96]";
+      btn.className = "cm-live-table-menu-item";
       btn.setAttribute("role", "menuitem");
       btn.textContent = item.label;
       // Header-row delete-row is a no-op on an empty body; that's handled by the

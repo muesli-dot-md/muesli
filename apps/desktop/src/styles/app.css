@@ -576,6 +576,9 @@ input.cm-live-task {
 .cm-live-table-menu .cm-live-table-menu-item:hover {
   background: var(--color-base-200);
 }
+.cm-live-table-menu .cm-live-table-menu-item:active {
+  transform: scale(0.96);
+}
 /* A subtle divider between the insert items and the delete items. */
 .cm-live-table-menu .cm-live-table-menu-sep {
   margin-top: 0.25rem;
@@ -584,22 +587,27 @@ input.cm-live-task {
 }
 
 /* @-mention autocomplete dropdown (state/mentionAutocomplete.ts builds a body-
-   appended UL with daisyUI-era class names + role="listbox"). daisyUI's .menu
-   component styles are gone, so restyle here to the Multica idiom — raised
-   surface, hairline ring, h-8 rows — keyed on the role so the rules can never
-   leak onto the table context menu above (role="menu"). Tailwind still supplies
-   the layout utilities the module emits (absolute z-50 max-h-56 w-56 p-1 …). */
-.menu[role="listbox"] {
+   appended UL with class "mention-menu" + role="listbox"). Fully styled here —
+   the module emits no utility classes — in the Multica idiom: raised surface,
+   hairline ring, h-8 rows. */
+.mention-menu {
+  position: absolute;
+  z-index: 50;
   display: flex;
   flex-direction: column;
+  flex-wrap: nowrap;
+  width: 14rem;
+  max-height: 14rem;
+  overflow-y: auto;
   margin: 0;
+  padding: 0.25rem;
   list-style: none;
   background: var(--surface-raised, var(--color-base-100));
-  border-color: var(--surface-border, var(--color-base-300));
+  border: 1px solid var(--surface-border, var(--color-base-300));
   border-radius: var(--radius-box, 0.75rem);
   box-shadow: var(--shadow-overlay, 0 10px 30px oklch(0% 0 0 / 0.18));
 }
-.menu[role="listbox"] li a {
+.mention-menu li a {
   display: flex;
   align-items: center;
   height: 2rem;
@@ -610,28 +618,27 @@ input.cm-live-task {
   cursor: pointer;
   transition: background-color 120ms ease;
 }
-.menu[role="listbox"] li a:hover {
+.mention-menu li a:hover {
   background: var(--surface-hover, var(--color-base-200));
 }
-.menu[role="listbox"] li a.active {
+.mention-menu li a.active {
   background: var(--surface-selected, var(--color-base-200));
   color: var(--surface-selected-foreground, var(--color-base-content));
 }
 
-/* ── daisyUI component classes still emitted by @muesli/editor-core ──────────
-   The editor widgets build DOM with daisyUI-era component classes (badge /
-   alert / checkbox); daisyUI itself is gone, so each gets a small explicit
-   recreation in the app's own idiom (surface tokens, hairline rings, tints).
-   Scoped to the co-emitted widget classes where one exists — same pattern as
-   .menu[role="listbox"] above — so they can never leak onto shadcn markup. */
+/* ── editor-core widget classes ──────────────────────────────────────────────
+   @muesli/editor-core ships NO css and emits only its own neutral classes
+   (cm-live-*, callout*, mermaid-error, frontmatter); each gets an explicit
+   recreation in the app's own idiom (surface tokens, hairline rings, tints). */
 
-/* Formula #ERR chips — emitted as "cm-live-formula-error badge badge-sm
-   badge-error" by both the WYSIWYG table (tableInteraction.ts) and the
-   rendered-markdown table (render.ts). Compact error-tinted pill. */
-.cm-live-formula-error.badge {
+/* Formula #ERR chips — emitted as "cm-live-formula-error" by both the WYSIWYG
+   table (tableInteraction.ts) and the rendered-markdown table (render.ts).
+   Compact error-tinted pill. */
+.cm-live-formula-error {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+  vertical-align: middle;
   padding: 0.05rem 0.45rem;
   border-radius: 9999px;
   font-family: ui-sans-serif, system-ui, sans-serif;
@@ -644,11 +651,12 @@ input.cm-live-task {
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-error) 35%, transparent);
 }
 
-/* daisyUI .alert — the mermaid parse-error box ("alert alert-error
-   mermaid-error") and the `> [!NOTE]`-style callouts ("callout alert
-   alert-info|success|warning|error"). Base card + per-kind tint; the
-   .prose-muesli .callout / .callout-important rules layer on top. */
-.alert {
+/* Callout / error cards — the `> [!NOTE]`-style callouts ("callout
+   callout-info|success|warning|error|important", render.ts) and the mermaid
+   parse-error box ("mermaid-error", mermaid.ts). Base card + per-kind tint;
+   the .prose-muesli .callout / .callout-important rules layer on top. */
+.callout,
+.mermaid-error {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
@@ -658,37 +666,37 @@ input.cm-live-task {
   background: var(--color-base-200);
   font-size: 0.875rem;
 }
-.alert.alert-info {
+.callout.callout-info {
   border-color: color-mix(in oklch, var(--color-info) 40%, transparent);
   background: color-mix(in oklch, var(--color-info) 10%, transparent);
 }
-.alert.alert-success {
+.callout.callout-success {
   border-color: color-mix(in oklch, var(--color-success) 40%, transparent);
   background: color-mix(in oklch, var(--color-success) 10%, transparent);
 }
-.alert.alert-warning {
+.callout.callout-warning {
   border-color: color-mix(in oklch, var(--color-warning) 45%, transparent);
   background: color-mix(in oklch, var(--color-warning) 12%, transparent);
 }
-.alert.alert-error,
+.callout.callout-error,
 .mermaid-error {
   border-color: color-mix(in oklch, var(--color-error) 40%, transparent);
   background: color-mix(in oklch, var(--color-error) 9%, transparent);
   color: var(--color-error);
 }
 
-/* daisyUI .checkbox — the live-preview task checkbox ("cm-live-task checkbox
-   checkbox-xs", widgets.ts). A REAL <input type=checkbox>: appearance-none
-   square with a hairline ring, filled with the accent + white check when
-   checked. Alignment/margin come from input.cm-live-task above. */
-input.checkbox {
+/* Task checkbox — the live-preview task item ("cm-live-task", widgets.ts).
+   A REAL <input type=checkbox>: appearance-none square with a hairline ring,
+   filled with the accent + white check when checked. Alignment comes from the
+   input.cm-live-task rule above; this block owns the visual. */
+input.cm-live-task {
   appearance: none;
   -webkit-appearance: none;
-  width: 1rem;
-  height: 1rem;
+  width: 0.875rem; /* ~14px */
+  height: 0.875rem;
   flex-shrink: 0;
   margin: 0;
-  border-radius: 4px;
+  border-radius: 3.5px;
   background: var(--color-base-100);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-content) 32%, transparent);
   cursor: pointer;
@@ -696,25 +704,20 @@ input.checkbox {
     background-color 0.12s ease,
     box-shadow 0.12s ease;
 }
-input.checkbox:hover:not(:checked) {
+input.cm-live-task:hover:not(:checked) {
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-content) 50%, transparent);
 }
-input.checkbox:focus-visible {
+input.cm-live-task:focus-visible {
   outline: 2px solid color-mix(in oklch, var(--color-primary) 55%, transparent);
   outline-offset: 1px;
 }
-input.checkbox:checked {
+input.cm-live-task:checked {
   background-color: var(--color-primary);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-6.5'/%3E%3C/svg%3E");
   background-size: 0.75em 0.75em;
   background-position: center;
   background-repeat: no-repeat;
   box-shadow: none;
-}
-input.checkbox.checkbox-xs {
-  width: 0.875rem; /* ~14px */
-  height: 0.875rem;
-  border-radius: 3.5px;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -836,10 +839,16 @@ input.checkbox.checkbox-xs {
   color: oklch(0.45 0.2 295);
 }
 
-/* Frontmatter: compact metadata table at the top of the document */
+/* Frontmatter: compact metadata table at the top of the document. Card tint,
+   hairline border and radius were formerly the emitted utilities
+   `rounded-box border border-base-300 bg-base-200`; editor-core now emits only
+   the bare `frontmatter` class, so the card look lives here. */
 .prose-muesli .frontmatter {
   margin: 0 0 1rem;
   overflow-x: auto;
+  background: var(--color-base-200);
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-box, 0.75rem);
 }
 .prose-muesli .frontmatter table {
   margin: 0;

@@ -61,8 +61,9 @@ export function mentionAutocomplete(
     if (!trigger || matches.length === 0) return close();
     if (!menu) {
       menu = document.createElement("ul");
-      menu.className =
-        "menu menu-sm absolute z-50 max-h-56 w-56 flex-nowrap overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1 shadow-lg";
+      // All styling lives in styles/app.css keyed on this class (body-appended,
+      // so Tailwind utilities are deliberately avoided here).
+      menu.className = "mention-menu";
       menu.setAttribute("role", "listbox");
       document.body.appendChild(menu);
     }

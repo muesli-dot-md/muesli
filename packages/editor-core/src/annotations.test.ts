@@ -80,7 +80,7 @@ describe("collab decorations", () => {
     expect(styleText).toContain("cm-suggest-deletion");
     expect(styleText).toContain("cm-suggest-insertion");
     expect(styleText).toContain("cm-collab-flash");
-    // Theme-aware: colors derive from daisyUI semantic vars, not hardcoded hex.
+    // Theme-aware: colors derive from semantic CSS vars, not hardcoded hex.
     expect(styleText).toContain("var(--color-warning)");
   });
 

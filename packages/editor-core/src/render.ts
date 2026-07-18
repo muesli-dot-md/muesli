@@ -245,14 +245,16 @@ const wikilink = {
 };
 
 // --- Callouts ----------------------------------------------------------------
-// GitHub-style `> [!NOTE]` blockquotes -> daisyUI alert-styled blocks.
+// GitHub-style `> [!NOTE]` blockquotes -> styled callout blocks. Styling is
+// app-side, keyed on the `callout` / `callout-*` classes (editor-core ships no
+// CSS).
 
 const CALLOUTS: Record<string, { title: string; cls: string }> = {
-  NOTE: { title: "Note", cls: "alert-info" },
-  TIP: { title: "Tip", cls: "alert-success" },
+  NOTE: { title: "Note", cls: "callout-info" },
+  TIP: { title: "Tip", cls: "callout-success" },
   IMPORTANT: { title: "Important", cls: "callout-important" },
-  WARNING: { title: "Warning", cls: "alert-warning" },
-  CAUTION: { title: "Caution", cls: "alert-error" },
+  WARNING: { title: "Warning", cls: "callout-warning" },
+  CAUTION: { title: "Caution", cls: "callout-error" },
 };
 
 const CALLOUT_MARKER = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?:\r?\n|$)/i;
@@ -277,7 +279,8 @@ function calloutOf(
 }
 
 // --- Frontmatter -------------------------------------------------------------
-// A leading `---\n…\n---` block becomes a compact daisyUI key/value table.
+// A leading `---\n…\n---` block becomes a compact key/value table (app-styled
+// via `.frontmatter`).
 // Simple `key: value` line parsing only; nested structures collapse onto the
 // preceding key as plain strings (per ADR 0015 this is render-only — the raw
 // text in the CRDT is untouched).
@@ -306,8 +309,8 @@ function extractFrontmatter(src: string): { html: string; body: string } {
     )
     .join("");
   const html =
-    `<div class="frontmatter rounded-box border border-base-300 bg-base-200">` +
-    `<table class="table table-xs"><tbody>${rows}</tbody></table></div>\n`;
+    `<div class="frontmatter">` +
+    `<table><tbody>${rows}</tbody></table></div>\n`;
   return { html, body: src.slice(m[0].length) };
 }
 
@@ -329,13 +332,13 @@ md.use({
       }
       return false; // fall back to the default code renderer
     },
-    // `> [!NOTE]`-style callouts -> daisyUI alert blocks.
+    // `> [!NOTE]`-style callouts -> styled callout blocks.
     blockquote(token: Tokens.Blockquote): string | false {
       const callout = calloutOf(token, (s) => md.lexer(s));
       if (!callout) return false;
       const body = md.parser(callout.tokens);
       return (
-        `<div class="callout alert ${callout.cls}" data-callout="${callout.kind}" role="note">` +
+        `<div class="callout ${callout.cls}" data-callout="${callout.kind}" role="note">` +
         `<div class="callout-content"><p class="callout-title">${callout.title}</p>${body}</div>` +
         `</div>\n`
       );
@@ -357,7 +360,7 @@ md.use({
           const result = evalTableFormula(raw, parsed, { row: gridRow, col });
           if (isFormulaError(result)) {
             return (
-              `<span class="cm-live-formula-error badge badge-sm badge-error" ` +
+              `<span class="cm-live-formula-error" ` +
               `title="${escapeHtml(result.message)}">#ERR</span>`
             );
           }

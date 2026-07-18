@@ -7,7 +7,8 @@
 // desktop app adds `collabTheme` to its extensions explicitly; the web app
 // keeps styling the same classes via app.css and does not use this theme.
 //
-// Colors use daisyUI semantic CSS vars via color-mix() rather than hardcoded
+// Colors use semantic CSS vars (--color-warning/error/success/primary, aliased
+// by each app's token system) via color-mix() rather than hardcoded
 // oklch literals, so they stay legible in BOTH arc-light and arc-dark (the vars
 // are redefined per [data-theme]).
 import { EditorView } from "@codemirror/view";

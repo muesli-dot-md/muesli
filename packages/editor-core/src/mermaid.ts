@@ -19,8 +19,8 @@ export const MERMAID_SECURITY_LEVEL = "strict";
 let mermaidPromise: Promise<typeof import("mermaid").default> | null = null;
 
 function isDarkTheme(): boolean {
-  // daisyUI sets data-theme when configured; default config follows the
-  // OS preference, so fall back to prefers-color-scheme.
+  // Both apps set data-theme on <html> ("arc-light" / "arc-dark"); fall back
+  // to prefers-color-scheme when unset.
   const explicit = document.documentElement.getAttribute("data-theme");
   if (explicit) return explicit.includes("dark");
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -54,7 +54,7 @@ function escapeHtml(s: string): string {
 
 function errorBox(message: string, source: string): string {
   return (
-    `<div class="alert alert-error mermaid-error" role="alert">` +
+    `<div class="mermaid-error" role="alert">` +
     `<span><strong>Mermaid:</strong> ${escapeHtml(message)}</span></div>` +
     `<pre class="mermaid-source">${escapeHtml(source)}</pre>`
   );

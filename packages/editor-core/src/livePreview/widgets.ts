@@ -63,7 +63,7 @@ export class CheckboxWidget extends WidgetType {
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = this.checked;
-    input.className = "cm-live-task checkbox checkbox-xs";
+    input.className = "cm-live-task";
     // labels is a getter, called here (toDOM time) so every widget build picks
     // up the app's current locale — never cached across builds.
     input.setAttribute("aria-label", view.state.facet(livePreviewOptions).labels().toggleTask);
