@@ -9,7 +9,8 @@
     "noEmit": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "useDefineForClassFields": true
+    "useDefineForClassFields": true,
+    "jsx": "react-jsx"
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.svelte"]
 }

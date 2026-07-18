@@ -9,6 +9,18 @@
       "svelte": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./react": {
+      "types": "./src/react/index.ts",
+      "default": "./src/react/index.ts"
+    },
+    "./react/wizard-common": {
+      "types": "./src/react/wizard-common.ts",
+      "default": "./src/react/wizard-common.ts"
+    },
+    "./react/*": {
+      "types": "./src/react/*.tsx",
+      "default": "./src/react/*.tsx"
+    },
     "./WorkspaceWizard.svelte": {
       "svelte": "./src/WorkspaceWizard.svelte",
       "default": "./src/WorkspaceWizard.svelte"
@@ -51,9 +63,12 @@
     "check": "svelte-check --tsconfig ./tsconfig.json"
   },
   "peerDependencies": {
+    "react": "^19.0.0",
     "svelte": "^5.0.0"
   },
   "devDependencies": {
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
     "svelte": "^5.0.0",
     "svelte-check": "^4.7.1",
     "typescript": "~5.7.0",
