@@ -113,7 +113,6 @@ export default function EditorPane() {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   // The DOM node we mount CodeMirror into.
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const commentTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const collabStore = useDocCollab((s) => s.store);
   const isRemote = useDocCollab((s) => s.isRemote);
@@ -226,8 +225,9 @@ export default function EditorPane() {
   }, [collabStore, composerRequest, showAffordance, positionAffordance, openComposer]);
 
   // Mention autocomplete for the comment composer textarea (imperative DOM
-  // dropdown, ported from the Svelte action).
-  useMentionAutocomplete(commentTextareaRef, { members: collabStore?.members ?? [] });
+  // dropdown, ported from the Svelte action). Callback ref so the autocomplete
+  // attaches the moment the composer's textarea mounts.
+  const commentTextareaRef = useMentionAutocomplete({ members: collabStore?.members ?? [] });
 
   // Feed the open doc's collab store from editor transactions: keep its UTF-16
   // selection fresh (so addComment/addDraft anchor to the live selection) and

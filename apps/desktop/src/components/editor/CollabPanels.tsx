@@ -75,8 +75,8 @@ function ThreadCard({
   orphaned: boolean;
 }) {
   const [reply, setReply] = useState("");
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  useMentionAutocomplete(inputRef, { members: collab.members });
+  // Callback ref: attaches the mention autocomplete when the reply input mounts.
+  const inputRef = useMentionAutocomplete({ members: collab.members });
 
   async function sendReply() {
     const body = reply.trim();

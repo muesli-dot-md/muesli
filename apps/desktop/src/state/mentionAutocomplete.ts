@@ -8,7 +8,7 @@
 // the dropdown. Values are written through the native value setter and an
 // `input` event is dispatched so controlled React inputs stay in sync.
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   detectTrigger,
   filterMembers,
@@ -162,18 +162,22 @@ export function mentionAutocomplete(
 }
 
 /**
- * React wrapper: attach the autocomplete to the input/textarea in `ref`.
- * Mounts once per element; `opts.members` updates flow through handle.update()
- * without re-attaching (mirrors the Svelte action's update()).
+ * React wrapper: returns a CALLBACK REF to put on the input/textarea. A plain
+ * `useEffect(..., [ref.current])` misses the render where the element first
+ * mounts (ref.current is still null at render time), so the first "@" typed
+ * after the composer opens would show no dropdown. Capturing the element via
+ * useState instead re-runs the attach effect exactly when the node appears/
+ * disappears (same pattern as AppShell's treeScrollEl). `opts.members` updates
+ * flow through handle.update() without re-attaching (mirrors the Svelte
+ * action's update()).
  */
 export function useMentionAutocomplete(
-  ref: RefObject<Field | null>,
   opts: MentionAutocompleteParams,
-): void {
+): (el: Field | null) => void {
+  const [el, setEl] = useState<Field | null>(null);
   const handleRef = useRef<MentionAutocompleteHandle | null>(null);
 
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
     handleRef.current = mentionAutocomplete(el, opts);
     return () => {
@@ -182,9 +186,12 @@ export function useMentionAutocomplete(
     };
     // Re-attach only when the element changes; member updates go through update().
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ref.current]);
+  }, [el]);
 
   useEffect(() => {
     handleRef.current?.update(opts);
   }, [opts.members]);
+
+  // Stable identity so passing it as `ref` never causes detach/re-attach churn.
+  return useCallback((node: Field | null) => setEl(node), []);
 }
