@@ -32,7 +32,7 @@
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "codemirror": "^6.0.2",
-    "dompurify": "^3.4.11",
+    "dompurify": "^3.4.12",
     "katex": "^0.17.0",
     "lib0": "^0.2.117",
     "lucide-svelte": "^1.0.1",
