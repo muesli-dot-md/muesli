@@ -88,7 +88,7 @@
     "dompurify": "^3.2.0",
     "katex": "^0.17.0",
     "marked": "^15.0.0",
-    "mermaid": "^11.15.0"
+    "mermaid": "^11.16.1"
   },
   "peerDependencies": {
     "@codemirror/lang-css": "^6.3.1",
